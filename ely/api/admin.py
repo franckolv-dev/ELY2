@@ -202,3 +202,24 @@ async def revert(iid: int, user=Depends(auth.admin_user)):
         asyncio.get_running_loop().call_later(2, pipeline.request_restart)
         return {"ok": True, "message": "Modification annulée, redémarrage…"}
     return {"ok": True, "message": "Modification annulée. Redémarre Ely pour l'appliquer."}
+
+
+# ---------------------------------------------------------------------- extensions MCP
+@router.get("/api/admin/mcp")
+def mcp_state(user=Depends(auth.admin_user)):
+    from ..mcp_client import load_config, manager
+
+    return {"servers": load_config(), "status": manager.status()}
+
+
+class McpIn(BaseModel):
+    servers: dict
+
+
+@router.put("/api/admin/mcp")
+async def mcp_save(body: McpIn, user=Depends(auth.admin_user)):
+    from ..mcp_client import manager, save_config
+
+    save_config(body.servers)
+    await manager.start_all()
+    return {"status": manager.status()}

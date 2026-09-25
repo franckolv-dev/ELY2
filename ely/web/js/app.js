@@ -143,6 +143,7 @@ function App() {
   const [voiceTick, setVoiceTick] = useState(params.get("voice") ? 1 : 0);
   const [pwa, setPwa] = useState(null);
   const [pushBanner, setPushBanner] = useState(false);
+  const [noModel, setNoModel] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const scrollRef = useRef();
   const stick = useRef(true);
@@ -169,7 +170,7 @@ function App() {
     if (!me) return;
     loadConvs();
     get("/api/tools").then((l) => setTools(Object.fromEntries(l.map((t) => [t.name, t]))));
-    get("/api/models").then((d) => setModels(d.models.filter((m) => m.reachable))).catch(() => {});
+    get("/api/models").then((d) => { setModels(d.models.filter((m) => m.reachable)); setNoModel(!d.roles.main?.effective); }).catch(() => {});
     const stop = connectEvents(onEvent);
     if (location.pathname === "/share") {
       const text = [params.get("title"), params.get("text"), params.get("url")].filter(Boolean).join("\n");
@@ -350,6 +351,9 @@ function App() {
             ${pushBanner ? html`<div class="banner" style="margin-top:10px"><span>🔔</span><span class="grow">Active les notifications pour être prévenu quand Ely a fini ou a besoin de toi.</span>
               <button class="btn small primary" onClick=${async () => { await window.elyEnablePush(); setPushBanner(false); }}>Activer</button>
               <button class="icon-btn" onClick=${() => { localStorage.setItem("ely-push-dismissed", "1"); setPushBanner(false); }}><${Icon} name="close" size=${16} /></button></div>` : null}
+            ${noModel ? html`<div class="banner" style="margin-top:10px;background:color-mix(in srgb, var(--err) 12%, transparent)"><span>⚠️</span>
+              <span class="grow">Aucun modèle disponible : ajoute une clé d'API dans le fichier <code>.env</code> ou lance LM Studio.</span>
+              ${me.role === "admin" ? html`<button class="btn small" onClick=${() => setSettingsTab("modeles")}>Modèles</button>` : null}</div>` : null}
             ${!cur ? html`<div class="welcome">
                 <div><h1>${hello} <span>${me.name}</span>,<br/>que puis-je faire pour toi ?</h1></div>
                 <p>Demande-moi une information ou une vraie action : je m'en occupe jusqu'au bout, même quand l'application est fermée.</p>

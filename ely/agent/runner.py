@@ -170,7 +170,11 @@ class Runner:
             except Exception as e:
                 log.exception("tâche %s", run_id)
                 db.run("UPDATE runs SET status = 'error', error = ?, updated_at = ? WHERE id = ?", (str(e)[:1000], now(), run_id))
-                note = {"role": "assistant", "content": f"⚠️ Erreur interne : {e}", "kind": "note"}
+                from ..llm import LLMError
+
+                hint = (" — vérifie les clés d'API dans .env ou que LM Studio est lancé (Réglages → Modèles)."
+                        if isinstance(e, LLMError) else "")
+                note = {"role": "assistant", "content": f"⚠️ {e}{hint}", "kind": "note"}
                 mid = save_message(st.conversation_id, run_id, note)
                 await self.emit(st, "message", {"message": public_message(db.one("SELECT * FROM messages WHERE id = ?", (mid,)))})
             finally:

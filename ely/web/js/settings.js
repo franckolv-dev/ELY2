@@ -347,15 +347,45 @@ function SelfDev({ openConversation }) {
     </div>`;
 }
 
+function Extensions() {
+  const [data, reload] = useLoad(() => get("/api/admin/mcp"));
+  const [text, setText] = useState(null);
+  const [busy, setBusy] = useState(false);
+  if (!data) return html`<div class="spinner"></div>`;
+  const value = text ?? JSON.stringify(data.servers, null, 2);
+  async function save() {
+    let servers;
+    try { servers = JSON.parse(value || "{}"); } catch (e) { toast("JSON invalide : " + e.message); return; }
+    setBusy(true);
+    try { await put("/api/admin/mcp", { servers }); setText(null); await reload(); toast("Serveurs MCP rechargés"); } catch (e) { toast(e.message); }
+    setBusy(false);
+  }
+  return html`
+    <h2>Extensions MCP</h2><p class="muted">Branche des serveurs MCP : leurs outils deviennent ceux d'Ely (Home Assistant, Notion, GitHub, fichiers du Mac…).
+      Tu peux aussi simplement demander à Ely : « branche-toi sur tel serveur MCP ».</p>
+    <div class="card">
+      ${Object.keys(data.status).length ? html`<div class="list">${Object.entries(data.status).map(([n, s]) => html`<div class="list-item">
+        <div class="grow"><b>${n}</b><div class="sub">${s.status}${s.tools.length ? " · " + s.tools.join(", ") : ""}</div></div>
+        <span class=${"pill " + (s.status.startsWith("ok") ? "ok" : "err")}>${s.status.startsWith("ok") ? "OK" : "erreur"}</span></div>`)}</div>`
+        : html`<div class="faint">Aucun serveur branché.</div>`}
+    </div>
+    <div class="card">
+      <h3>Configuration</h3>
+      <p class="desc">Format : <code>{"nom": {"command": "npx", "args": ["-y", "paquet-mcp"], "env": {}}}</code> ou <code>{"nom": {"url": "https://…/mcp"}}</code></p>
+      <textarea class="input" rows="12" style="font-family:var(--mono);font-size:13px" value=${value} onInput=${(e) => setText(e.target.value)}></textarea>
+      <div><button class="btn primary" disabled=${busy} onClick=${save}>${busy ? "Connexion…" : "Enregistrer et recharger"}</button></div>
+    </div>`;
+}
+
 // ---------------------------------------------------------------- conteneur
 export function Settings({ me, onMe, tab, onTab, onClose, pwa, openConversation }) {
   const tabs = [["profil", "👤", "Profil"], ["memoire", "🧠", "Mémoire"], ["connexions", "🔗", "Connexions"], ["identifiants", "🔑", "Identifiants"],
     ["taches", "⏰", "Tâches planifiées"], ["fichiers", "🗂️", "Fichiers"]];
-  const admin = [["modeles", "🤖", "Modèles"], ["utilisateurs", "👥", "Utilisateurs"], ["conso", "📈", "Consommation"], ["auto", "🛠️", "Auto-amélioration"]];
+  const admin = [["modeles", "🤖", "Modèles"], ["utilisateurs", "👥", "Utilisateurs"], ["conso", "📈", "Consommation"], ["mcp", "🧩", "Extensions MCP"], ["auto", "🛠️", "Auto-amélioration"]];
   const pane = {
     profil: html`<${Profile} me=${me} onMe=${onMe} pwa=${pwa} />`, memoire: html`<${Memory} />`, connexions: html`<${Connections} />`,
     identifiants: html`<${Vault} />`, taches: html`<${Schedules} />`, fichiers: html`<${Files} />`, modeles: html`<${Models} />`,
-    utilisateurs: html`<${Users} />`, conso: html`<${Usage} />`, auto: html`<${SelfDev} openConversation=${(id) => { onClose(); openConversation(id); }} />`,
+    utilisateurs: html`<${Users} />`, conso: html`<${Usage} />`, mcp: html`<${Extensions} />`, auto: html`<${SelfDev} openConversation=${(id) => { onClose(); openConversation(id); }} />`,
   }[tab] || html`<${Profile} me=${me} onMe=${onMe} pwa=${pwa} />`;
   useEffect(() => { const k = (e) => e.key === "Escape" && onClose(); addEventListener("keydown", k); return () => removeEventListener("keydown", k); }, []);
   return html`<div class="sheet-scrim" onClick=${onClose}></div>

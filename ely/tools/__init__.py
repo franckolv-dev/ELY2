@@ -206,5 +206,6 @@ def load_builtin_tools() -> None:
     """Importe les modules d'outils (l'import suffit à les enregistrer)."""
     from . import web, browser, comms, pim, social, files, memory, planning, media, delegate  # noqa: F401
     from ..selfdev import tools as _selfdev  # noqa: F401
+    from .. import mcp_client  # noqa: F401
     from ..selfdev.plugins import load_plugins
     load_plugins()

@@ -205,3 +205,23 @@ def test_think_filter_split_tags():
 def test_parse_json_loose():
     assert parse_json_loose('Voici : ```json\n{"done": false, "missing": "a : b"}\n```') == {"done": False, "missing": "a : b"}
     assert parse_json_loose('<think>hmm</think> {"a": {"b": "}"}} fin') == {"a": {"b": "}"}}
+
+
+async def test_anthropic_drops_rejected_optional_features(server):
+    """Si l'API refuse une option récente, Ely la retire et réessaie au lieu d'abandonner Claude."""
+    import anthropic
+
+    p = AnthropicProvider("sk-test", base_url=server)
+    calls = []
+    real = p._chat
+
+    async def flaky(model, ref, system, messages, tools, on_delta, max_tokens, effort, keep_thinking):
+        calls.append(set(p.disabled))
+        if "fallbacks" not in p.disabled:
+            raise LLMError("anthropic: requête refusée (Unexpected beta header server-side-fallback)", status=400)
+        return await real(model, ref, system, messages, tools, on_delta, max_tokens, effort, keep_thinking)
+
+    p._chat = flaky
+    r = await p.chat("claude-opus-5", ["s"], [{"role": "user", "content": "x"}], None)
+    assert r.text == "Je regarde." and "fallbacks" in p.disabled and len(calls) == 2
+    assert anthropic  # le SDK reste la voie d'appel

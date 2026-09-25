@@ -115,6 +115,10 @@ class Registry:
                     models = await asyncio.wait_for(prov.list_models(), 12)
                     self.catalog[name] = models
                     self.status[name] = f"ok ({len(models)} modèles)"
+                    short = [m.id for m in models if name == "lmstudio" and m.loaded and m.kind == "llm" and m.context < 16000]
+                    if short:
+                        self.status[name] += (f" · ⚠️ contexte trop court pour {', '.join(short)} : "
+                                              "règle au moins 32768 tokens dans LM Studio")
                 except Exception as e:  # fournisseur éteint, clé invalide…
                     fallback = [ModelInfo(id=m, provider=name) for m in STATIC_FALLBACK.get(name, [])]
                     self.catalog[name] = fallback
@@ -216,6 +220,7 @@ class Registry:
         if not chain:
             raise LLMError("Aucun modèle disponible : configure une clé d'API ou lance LM Studio.", kind="not_found")
         errors = []
+        transient = False
         for i, ref in enumerate(chain):
             try:
                 prov, mid = self.provider_for(ref)
@@ -231,6 +236,7 @@ class Registry:
                 except LLMError as e:
                     log.warning("modèle %s (essai %d) : %s", ref, attempt + 1, e)
                     errors.append(f"{ref}: {e}")
+                    transient = transient or e.retryable
                     if e.retryable and attempt < 2:
                         await asyncio.sleep(2 * (3 ** attempt))
                         if on_switch:
@@ -239,7 +245,7 @@ class Registry:
                     break
             if i + 1 < len(chain) and on_switch:
                 await on_switch(chain[i + 1], f"{ref} indisponible, bascule sur {chain[i + 1]}")
-        raise LLMError("Tous les modèles ont échoué : " + " | ".join(errors[-4:]), retryable=True)
+        raise LLMError("Aucun modèle n'a pu répondre : " + " | ".join(errors[-4:]), retryable=transient)
 
     async def complete(self, prompt: str, *, role: str = "fast", system: str = "", max_tokens: int = 4000,
                        user_id: int | None = None, purpose: str = "background") -> str:

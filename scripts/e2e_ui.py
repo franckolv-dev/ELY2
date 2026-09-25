@@ -22,6 +22,7 @@ async def main() -> None:
     async with async_playwright() as p:
         browser = await p.chromium.launch(executable_path=EXE)
         ctx = await browser.new_context(viewport={"width": 1440, "height": 900}, locale="fr-FR", color_scheme="light")
+        await ctx.add_init_script("localStorage.setItem('ely-push-dismissed', '1')")
         page = await ctx.new_page()
         page.on("console", lambda m: errors.append(f"console {m.type}: {m.text}") if m.type == "error" else None)
         page.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
@@ -86,6 +87,7 @@ async def main() -> None:
         # 5) sombre
         dark = await browser.new_context(viewport={"width": 1440, "height": 900}, locale="fr-FR", color_scheme="dark",
                                          storage_state=await ctx.storage_state())
+        await dark.add_init_script("localStorage.setItem('ely-push-dismissed', '1')")
         dpage = await dark.new_page()
         await dpage.goto(BASE)
         await dpage.wait_for_selector(".conv")
@@ -96,6 +98,7 @@ async def main() -> None:
 
         # 6) téléphone Android
         phone = await browser.new_context(**p.devices["Pixel 7"], locale="fr-FR", storage_state=await ctx.storage_state())
+        await phone.add_init_script("localStorage.setItem('ely-push-dismissed', '1')")
         m = await phone.new_page()
         m.on("pageerror", lambda e: errors.append(f"mobile pageerror: {e}"))
         await m.goto(BASE)

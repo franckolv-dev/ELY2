@@ -25,11 +25,12 @@ WEB = Path(__file__).resolve().parent.parent / "web"
 async def lifespan(app: FastAPI):
     from ..channels.telegram import polling_loop
     from ..scheduler import scheduler_loop
+    from ..mcp_client import manager as mcp
     from ..selfdev.pipeline import check_rollback
 
     load_builtin_tools()
     check_rollback()
-    await registry.refresh()
+    await asyncio.gather(registry.refresh(), mcp.start_all())
     resumed = await runner.resume_all()
     log.info("Ely %s prête : %d outils, fournisseurs %s, %d tâche(s) reprise(s)", __version__, len(TOOLS), registry.status, resumed)
     background = [asyncio.create_task(scheduler_loop()), asyncio.create_task(polling_loop())]
@@ -38,6 +39,7 @@ async def lifespan(app: FastAPI):
         t.cancel()
     await runner.shutdown()
     await manager.shutdown()
+    await mcp.stop_all()
 
 
 def create_app() -> FastAPI:

@@ -255,15 +255,18 @@ class AgentLoop:
                 if e.kind == "context":
                     await self.compact(history, force=True)
                     continue
-                if attempt >= len(RETRY_DELAYS):
+                if attempt >= len(RETRY_DELAYS) or not e.retryable:  # clé refusée, aucun modèle… : inutile d'attendre
                     raise
                 delay = RETRY_DELAYS[attempt]
                 await self.emit("status", {"status": "retrying", "detail": f"Modèles indisponibles, nouvel essai dans {delay} s : {str(e)[:200]}"})
                 await asyncio.sleep(delay)
 
     async def compact(self, history: list[dict], force: bool = False) -> None:
-        ref = registry.chain("main", self.conv.get("model") or None)[:1]
-        ctx_len = registry.info(ref[0]).context if ref else 128_000
+        try:
+            ref = registry.chain("main", self.conv.get("model") or None)[:1]
+            ctx_len = registry.info(ref[0]).context if ref else 128_000
+        except Exception:
+            ctx_len = 128_000
         limit = min(settings.context_soft_limit, int(ctx_len * 0.6))
         if not force and estimate_tokens(history) < limit:
             return
