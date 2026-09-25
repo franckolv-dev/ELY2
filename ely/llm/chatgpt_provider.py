@@ -56,18 +56,44 @@ def stored() -> dict | None:
 
 def status() -> dict:
     st = stored()
+    base = {"codex_file": codex_file_exists(), "codex_model": codex_config().get("model", ""),
+            "keyring": codex_config().get("cli_auth_credentials_store", "") in ("keyring", "auto")}
     if not st:
-        return {"connected": False, "codex_file": codex_file_exists()}
+        return {"connected": False, **base}
     return {"connected": not st.get("reconnect_required"), "reconnect_required": bool(st.get("reconnect_required")),
-            "account_id": st.get("account_id", ""), "codex_file": codex_file_exists()}
+            "account_id": st.get("account_id", ""), **base}
+
+
+def codex_home() -> Path:
+    return Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
 
 
 def codex_file() -> Path:
-    return Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")) / "auth.json"
+    return codex_home() / "auth.json"
 
 
 def codex_file_exists() -> bool:
     return codex_file().exists()
+
+
+def codex_config() -> dict:
+    """~/.codex/config.toml : modèle utilisé dans Codex, mode de stockage des identifiants."""
+    import tomllib
+
+    try:
+        return tomllib.loads((codex_home() / "config.toml").read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def model_names() -> list[str]:
+    """Modèles proposés : CHATGPT_MODELS, puis celui configuré dans Codex, puis le modèle par défaut."""
+    names = [m.strip() for m in os.environ.get("CHATGPT_MODELS", "").split(",") if m.strip()]
+    configured = str(codex_config().get("model") or "").strip()
+    for m in [configured, "gpt-5.5"]:
+        if m and m not in names:
+            names.append(m)
+    return names
 
 
 async def _refresh(state: dict, force: bool = False) -> dict:
@@ -95,7 +121,11 @@ async def import_auth(raw: str | dict | None = None) -> dict:
     """Importe les jetons (texte collé, ou ~/.codex/auth.json si rien n'est fourni) et les valide."""
     if raw is None:
         if not codex_file_exists():
-            raise LLMError(f"{codex_file()} introuvable : installe le CLI Codex et lance « codex login ».", kind="auth")
+            if codex_config().get("cli_auth_credentials_store") in ("keyring", "auto"):
+                raise LLMError("Codex range ses identifiants dans le trousseau macOS, pas dans un fichier. Ajoute la ligne "
+                               'cli_auth_credentials_store = "file" dans ~/.codex/config.toml, relance « codex login », '
+                               "puis réimporte.", kind="auth")
+            raise LLMError(f"{codex_file()} introuvable : lance « codex login » (Sign in with ChatGPT) puis réimporte.", kind="auth")
         raw = codex_file().read_text()
     async with _lock:
         await _refresh(parse_auth_json(raw), force=True)
@@ -121,8 +151,7 @@ class ChatGPTProvider:
     name = "chatgpt"
 
     def __init__(self) -> None:
-        names = os.environ.get("CHATGPT_MODELS", "gpt-5.5")
-        self.models = [ModelInfo(id=m.strip(), provider="chatgpt", context=272_000) for m in names.split(",") if m.strip()]
+        self.models = [ModelInfo(id=m, provider="chatgpt", context=272_000) for m in model_names()]
 
     async def list_models(self) -> list[ModelInfo]:
         return self.models

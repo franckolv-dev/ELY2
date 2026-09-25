@@ -233,9 +233,11 @@ const ROLE_INFO = {
 };
 
 function ChatGPTCard({ onChange }) {
-  const [st, reload] = useLoad(() => get("/api/admin/chatgpt"));
+  const [st, reload, error] = useLoad(() => get("/api/admin/chatgpt"));
   const [paste, setPaste] = useState("");
   const [busy, setBusy] = useState(false);
+  if (error) return html`<div class="card"><h3>💬 Abonnement ChatGPT</h3>
+    <p class="desc">Indisponible : ${/404|Not Found/i.test(error) ? "redémarre Ely (Ctrl+C puis ./ely.sh) pour activer cette fonction." : error}</p></div>`;
   if (!st) return null;
   async function doImport(text) {
     setBusy(true);
@@ -247,6 +249,7 @@ function ChatGPTCard({ onChange }) {
     <h3>💬 Abonnement ChatGPT ${st.connected ? html`<span class="pill ok">connecté</span>` : st.reconnect_required ? html`<span class="pill err">à reconnecter</span>` : null}</h3>
     <p class="desc">Utilise GPT avec ton forfait ChatGPT, sans payer au token (même mécanisme que l'ancienne version : jetons du CLI Codex).
       Les modèles apparaissent ensuite sous le fournisseur <code>chatgpt</code>. Mécanisme non officiel, soumis aux limites de ton forfait.</p>
+    ${st.codex_model ? html`<p class="desc">Modèle configuré dans Codex : <code>${st.codex_model}</code> (proposé comme <code>chatgpt:${st.codex_model}</code>).</p>` : null}
     ${st.connected ? html`<div class="row"><span class="faint small">Compte ${st.account_id || "ChatGPT"}</span>
         <button class="btn small danger" onClick=${async () => { await del("/api/admin/chatgpt"); reload(); onChange(); }}>Déconnecter</button></div>`
       : html`
@@ -270,7 +273,13 @@ function Models() {
   if (!data) return html`<div class="spinner"></div>`;
   const llms = data.all.filter((m) => m.kind === "llm");
   const embeds = data.all.filter((m) => m.kind === "embeddings" || /embed/i.test(m.id));
-  async function setRole(role, value) { await put("/api/admin/models", { [role]: value }); reload(); toast("Modèle enregistré — actif immédiatement"); }
+  async function setRole(role, value) {
+    if (value === "__autre__") {
+      value = (prompt("Modèle (fournisseur:nom), ex. chatgpt:gpt-6 ou openai:gpt-5.5", "") || "").trim();
+      if (!value) { reload(); return; }
+    }
+    await put("/api/admin/models", { [role]: value }); reload(); toast("Modèle enregistré — actif immédiatement");
+  }
   return html`
     <h2>Modèles</h2><p class="muted">Ely choisit automatiquement les meilleurs modèles disponibles ; tu peux imposer les tiens. En cas de panne, elle bascule sur le suivant.</p>
     <div class="card">
@@ -280,6 +289,7 @@ function Models() {
           <option value="auto">Automatique</option>
           ${(role === "embed" ? embeds : llms).map((m) => html`<option value=${m.ref}>${m.ref}${m.reachable ? "" : " (injoignable)"}</option>`)}
           ${data.roles[role]?.configured !== "auto" && !data.all.some((m) => m.ref === data.roles[role]?.configured) ? html`<option value=${data.roles[role]?.configured}>${data.roles[role]?.configured}</option>` : null}
+          <option value="__autre__">Autre modèle…</option>
         </select></div>`)}
     </div>
     <${ChatGPTCard} onChange=${reload} />

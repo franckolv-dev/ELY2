@@ -172,3 +172,25 @@ def test_search_chain_uses_every_configured_key(monkeypatch):
         monkeypatch.setenv(k, "x")
     names = [n for n, _ in web._providers()]
     assert names[:4] == ["serper", "exa", "searchcans", "google"] and names[-1] == "ddgs"
+
+
+def test_codex_model_is_offered(tmp_path, monkeypatch):
+    (tmp_path / "config.toml").write_text('model = "gpt-6"\nmodel_reasoning_effort = "high"\n')
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    monkeypatch.delenv("CHATGPT_MODELS", raising=False)
+    assert cg.model_names() == ["gpt-6", "gpt-5.5"]
+    assert [m.id for m in cg.ChatGPTProvider().models] == ["gpt-6", "gpt-5.5"]
+    assert cg.status()["codex_model"] == "gpt-6"
+    monkeypatch.setenv("CHATGPT_MODELS", "gpt-6-mini")
+    assert cg.model_names() == ["gpt-6-mini", "gpt-6", "gpt-5.5"]
+
+
+async def test_missing_auth_file_explains_what_to_do(tmp_path, monkeypatch):
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    with pytest.raises(LLMError) as e:
+        await cg.import_auth()
+    assert "codex login" in str(e.value)
+    (tmp_path / "config.toml").write_text('cli_auth_credentials_store = "keyring"\n')
+    with pytest.raises(LLMError) as e:
+        await cg.import_auth()
+    assert "trousseau" in str(e.value) and 'cli_auth_credentials_store = "file"' in str(e.value)
