@@ -178,3 +178,19 @@ async def test_seed_skills_match_real_requests(ctx):
     hits = relevant_skills(ctx.user_id, "Publie un post sur LinkedIn à propos de notre catalogue")
     assert hits and "LinkedIn" in hits[0]["name"]
     assert not relevant_skills(ctx.user_id, "Quelle est la capitale du Japon ?")
+
+
+async def test_seed_skills_read_email_codes_instead_of_asking():
+    from ely.db import db
+    from ely.memory.seed import seed_skills
+
+    seed_skills()
+    row = db.one("SELECT id, content FROM skills WHERE name = 'Prendre un rendez-vous médical sur Doctolib'")
+    # base d'une version précédente : le code reçu par e-mail était demandé à l'utilisateur
+    old = row["content"].split("   Code reçu par e-mail")[0] + "   Code reçu par SMS ou e-mail → ask_user (c'est le seul cas où demander).\n5. suite"
+    db.run("UPDATE skills SET content = ? WHERE id = ?", (old, row["id"]))
+    seed_skills()
+    content = db.val("SELECT content FROM skills WHERE id = ?", (row["id"],))
+    assert "ask_user (c'est le seul cas" in content and "SMS ou e-mail → ask_user" not in content
+    assert "le lire dans la messagerie" in content and content.endswith("5. suite")
+    assert db.one("SELECT rowid FROM skills_fts WHERE skills_fts MATCH 'messagerie' AND rowid = ?", (row["id"],))

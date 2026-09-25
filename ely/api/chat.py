@@ -252,16 +252,22 @@ async def events(request: Request, user=Depends(auth.current_user)):
 # ---------------------------------------------------------------------- navigateur en direct
 @router.get("/api/browser/frame")
 async def browser_frame(conversation_id: int | None = None, fresh: bool = False, user=Depends(auth.current_user)):
-    ub = manager.users.get(user["id"])
-    if ub and (fresh or not conversation_id):
+    ub = manager.current(user["id"])
+
+    async def live():
         page = await ub.page(ub.active_key)
-        return {"image": await ub.frame(page), "url": page.url}
+        try:
+            return {"image": await ub.frame(page), "url": page.url}
+        except Exception:  # Chrome peut refuser la capture d'une fenêtre masquée
+            return {"image": None, "url": page.url}
+
+    if ub and (fresh or not conversation_id):
+        return await live()
     st = runner.states.get(conversation_id or 0)
     if st and st.last_frame and st.user_id == user["id"]:
         return st.last_frame
     if ub:
-        page = await ub.page(ub.active_key)
-        return {"image": await ub.frame(page), "url": page.url}
+        return await live()
     return {"image": None, "url": ""}
 
 
@@ -292,7 +298,10 @@ async def browser_action(body: BrowserAction, user=Depends(auth.current_user)):
     elif body.action == "back":
         await page.go_back()
     await asyncio.sleep(0.8)
-    return {"image": await ub.frame(page), "url": page.url}
+    try:
+        return {"image": await ub.frame(page), "url": page.url}
+    except Exception:
+        return {"image": None, "url": page.url}
 
 
 # ---------------------------------------------------------------------- fichiers

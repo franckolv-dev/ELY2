@@ -11,6 +11,7 @@ Agent personnel autonome : FastAPI + SQLite + interface PWA sans compilation. To
 ## Repères
 - Boucle d'agent : `ely/agent/loop.py` (contrôleur d'objectif `verify`, compaction, sous-agents) ; tâches de fond et flux SSE : `ely/agent/runner.py`
 - Modèles : `ely/llm/registry.py` (rôles main/strong/fast/local/embed, choix auto, repli) ; réglages admin en base, relus à chaque appel
+- Navigateur : `ely/chrome.py` (Chrome de l'utilisateur via l'extension `extension/`, prioritaire) et `ely/browser.py` (interne, secours) ; l'outil `browser` ne voit que l'interface commune
 - Outils : décorateur `@tool` dans `ely/tools/__init__.py` ; un outil renvoie `ToolResult`, ne lève jamais vers le modèle
 - Garder la liste d'outils courte et les descriptions concises (coût en tokens à chaque tour)
 - Format de message canonique : voir l'en-tête de `ely/llm/base.py`

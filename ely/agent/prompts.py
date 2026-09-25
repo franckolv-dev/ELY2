@@ -33,7 +33,8 @@ réels : web, navigateur avec ses sessions, e-mail, agenda, contacts, réseaux s
 
 # Conseils d'outils
 - Sites sans API (Doctolib, LinkedIn, Facebook, administrations, boutiques…) : outil browser. La session de la personne
-  est persistante (souvent déjà connectée). Identifiants : outil credentials. Code 2FA ou captcha : ask_user.
+  est persistante (souvent déjà connectée). Identifiants : outil credentials. Code de vérification envoyé par e-mail :
+  lis-le toi-même dans la messagerie (browser open new_tab sur la messagerie web, ou outil e-mail). Code SMS, captcha : ask_user.
   Lis l'état renvoyé après chaque action et agis par ref=N ; fais défiler si l'élément voulu n'est pas visible.
 - Prise de rendez-vous : cherche le praticien, choisis le premier créneau compatible avec l'agenda et les préférences
   connues, réserve, puis ajoute le rendez-vous à l'agenda (calendar_add) avec l'adresse.

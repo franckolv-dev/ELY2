@@ -122,35 +122,21 @@ CONSENT_JS = r"""
 """
 
 
-class UserBrowser:
-    def __init__(self, user_id: int, context) -> None:
+class BaseUserBrowser:
+    """Ce qui est commun au navigateur interne et au Chrome de l'utilisateur."""
+
+    kind = "interne"
+
+    def __init__(self, user_id: int) -> None:
         self.user_id = user_id
-        self.context = context
         self.pages: dict[str, object] = {}
         self.locks: dict[str, asyncio.Lock] = {}
         self.last_used = time.time()
         self.active_key = "main"
         self.on_frame = None  # rappel pour la vue en direct
-        context.on("page", self._on_new_page)
-
-    def _on_new_page(self, page) -> None:
-        # un clic a ouvert un nouvel onglet : il devient la page active
-        page.on("dialog", lambda d: asyncio.ensure_future(d.accept()))
-        self.pages[self.active_key] = page
 
     def lock(self, key: str) -> asyncio.Lock:
         return self.locks.setdefault(key, asyncio.Lock())
-
-    async def page(self, key: str = "main"):
-        self.last_used = time.time()
-        self.active_key = key
-        p = self.pages.get(key)
-        if p is None or p.is_closed():
-            open_pages = [x for x in self.context.pages if not x.is_closed() and x not in self.pages.values()]
-            p = open_pages[0] if (open_pages and key == "main") else await self.context.new_page()
-            p.on("dialog", lambda d: asyncio.ensure_future(d.accept()))
-            self.pages[key] = p
-        return p
 
     async def settle(self, page, timeout: float = 4000) -> None:
         try:
@@ -172,7 +158,7 @@ class UserBrowser:
             return f"(page illisible : {err})"
         pages_count = max(1, round(s["height"] / max(1, s["vh"])))
         cur = min(pages_count, 1 + round(s["scroll"] / max(1, s["vh"])))
-        tabs = [p for p in self.context.pages if not p.is_closed()]
+        tabs = await self.list_pages()
         head = f"Page : {s['title']}\nURL : {s['url']}\nÉcran {cur}/{pages_count}"
         if len(tabs) > 1:
             head += f" · {len(tabs)} onglets ouverts"
@@ -183,6 +169,40 @@ class UserBrowser:
     async def frame(self, page, quality: int = 55) -> str:
         data = await page.screenshot(type="jpeg", quality=quality)
         return base64.b64encode(data).decode()
+
+
+class UserBrowser(BaseUserBrowser):
+    """Navigateur interne (Chromium piloté par Playwright), avec un profil persistant par utilisateur."""
+
+    def __init__(self, user_id: int, context) -> None:
+        super().__init__(user_id)
+        self.context = context
+        context.on("page", self._on_new_page)
+
+    def _on_new_page(self, page) -> None:
+        # un clic a ouvert un nouvel onglet : il devient la page active
+        page.on("dialog", lambda d: asyncio.ensure_future(d.accept()))
+        self.pages[self.active_key] = page
+
+    async def page(self, key: str = "main"):
+        self.last_used = time.time()
+        self.active_key = key
+        p = self.pages.get(key)
+        if p is None or p.is_closed():
+            open_pages = [x for x in self.context.pages if not x.is_closed() and x not in self.pages.values()]
+            p = open_pages[0] if (open_pages and key == "main") else await self.context.new_page()
+            p.on("dialog", lambda d: asyncio.ensure_future(d.accept()))
+            self.pages[key] = p
+        return p
+
+    async def new_page(self, key: str = "main"):
+        p = await self.context.new_page()
+        p.on("dialog", lambda d: asyncio.ensure_future(d.accept()))
+        self.pages[key] = p
+        return p
+
+    async def list_pages(self) -> list:
+        return [p for p in self.context.pages if not p.is_closed()]
 
     async def close(self) -> None:
         try:
@@ -217,7 +237,19 @@ class BrowserManager:
                 self._reaper = asyncio.create_task(self._reap())
         return self._pw
 
-    async def for_user(self, user_id: int) -> UserBrowser:
+    def current(self, user_id: int) -> BaseUserBrowser | None:
+        """Le navigateur qu'Ely utilise en ce moment pour cet utilisateur (Chrome ou interne)."""
+        from .chrome import chrome_for
+
+        return chrome_for(user_id) or self.users.get(user_id)
+
+    async def for_user(self, user_id: int) -> BaseUserBrowser:
+        """Chrome de l'utilisateur si l'extension est connectée, sinon navigateur interne."""
+        from .chrome import chrome_for
+
+        chrome = chrome_for(user_id)
+        if chrome:
+            return chrome
         async with self._lock:
             ub = self.users.get(user_id)
             if ub:

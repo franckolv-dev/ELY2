@@ -20,19 +20,22 @@ async def _emit_frame(ctx: ToolContext, ub, page) -> None:
 
 @tool(
     "browser",
-    """Navigateur web réel avec la session persistante de l'utilisateur (ses connexions aux sites restent actives).
-Pour agir sur n'importe quel site : prendre un rendez-vous (Doctolib…), publier (LinkedIn, Facebook…), remplir un formulaire, acheter, se connecter.
+    """Navigateur web réel. Extension connectée : le Chrome de l'utilisateur (toutes ses sessions : messagerie, Doctolib…),
+dans une fenêtre dédiée ; sinon un navigateur interne à session persistante.
+Pour agir sur n'importe quel site : rendez-vous, publication, formulaire, achat, connexion.
 Après chaque action tu reçois l'état de la page : texte visible + éléments interactifs numérotés [N]. Agis avec ref=N.
-Actions : open(url) · snapshot · click(ref) · type(ref, text, submit?) · select(ref, text) · press(key: Enter, Tab, Escape, ArrowDown…)
+Actions : open(url, new_tab?) · snapshot · click(ref) · type(ref, text, submit?) · select(ref, text) · press(key: Enter, Tab, Escape, ArrowDown…)
 · scroll(direction: down|up) · back · screenshot (image de la page) · wait(seconds) · text (tout le texte de la page)
 · tabs · switch_tab(tab) · eval(js) · upload(ref, text=chemin du fichier) · close_tab.
-Identifiants : récupère-les avec l'outil credentials. Si un code 2FA ou un captcha bloque, utilise ask_user.""",
+Identifiants : outil credentials. Code de vérification envoyé par e-mail : ouvre la messagerie web dans un nouvel onglet
+(open new_tab, ex. outlook.office.com), lis le dernier message, puis switch_tab. Captcha ou code introuvable : ask_user.""",
     {
         "action": {"type": "string", "enum": ACTIONS},
         "url": {"type": "string"},
         "ref": {"type": "integer", "description": "Numéro de l'élément [N]"},
         "text": {"type": "string", "description": "Texte à saisir, option à choisir, ou chemin de fichier (upload)"},
         "submit": {"type": "boolean", "description": "Appuyer sur Entrée après la saisie"},
+        "new_tab": {"type": "boolean", "description": "open : dans un nouvel onglet (la page courante reste ouverte)"},
         "key": {"type": "string"},
         "direction": {"type": "string", "enum": ["down", "up"]},
         "seconds": {"type": "number"},
@@ -43,7 +46,7 @@ Identifiants : récupère-les avec l'outil credentials. Si un code 2FA ou un cap
 )
 async def browser(ctx: ToolContext, action: str, url: str = "", ref: int | None = None, text: str = "",
                   submit: bool = False, key: str = "", direction: str = "down", seconds: float = 2,
-                  tab: int | None = None, js: str = "") -> ToolResult:
+                  tab: int | None = None, js: str = "", new_tab: bool = False) -> ToolResult:
     ub = await manager.for_user(ctx.user_id)
     page_key = ctx.extra.get("browser_key", "main")
     async with ub.lock(page_key):
@@ -61,6 +64,8 @@ async def browser(ctx: ToolContext, action: str, url: str = "", ref: int | None 
                 return ToolResult("url manquante", is_error=True)
             if not url.startswith(("http://", "https://", "file:", "about:")):
                 url = "https://" + url
+            if new_tab:
+                page = await ub.new_page(page_key)
             try:
                 await page.goto(url, wait_until="domcontentloaded", timeout=45000)
             except Exception as e:
@@ -121,11 +126,13 @@ async def browser(ctx: ToolContext, action: str, url: str = "", ref: int | None 
             body = await page.evaluate("() => document.body ? document.body.innerText : ''")
             return ToolResult(f"URL : {page.url}\n\n{body}")
         elif action == "tabs":
-            pages = [p for p in ub.context.pages if not p.is_closed()]
+            pages = await ub.list_pages()
             lines = [f"{i}: {await p.title()} — {p.url}{' (actif)' if p is page else ''}" for i, p in enumerate(pages)]
+            if ub.kind == "chrome":
+                lines.append("(onglets de la fenêtre d'Ely dans Chrome)")
             return ToolResult("\n".join(lines) or "aucun onglet")
         elif action == "switch_tab":
-            pages = [p for p in ub.context.pages if not p.is_closed()]
+            pages = await ub.list_pages()
             if tab is None or not (0 <= tab < len(pages)):
                 return ToolResult("index d'onglet invalide (voir action=tabs)", is_error=True)
             page = pages[tab]

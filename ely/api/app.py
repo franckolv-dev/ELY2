@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .. import __version__
 from ..agent.runner import runner
+from .. import chrome
 from ..browser import manager
 from ..llm import registry
 from ..tools import TOOLS, load_builtin_tools
@@ -50,6 +51,7 @@ def create_app() -> FastAPI:
     app.include_router(chat.router)
     app.include_router(settings_routes.router)
     app.include_router(admin.router)
+    app.include_router(chrome.router)
 
     @app.get("/api/health")
     async def health():

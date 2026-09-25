@@ -109,13 +109,24 @@ ta demande ─▶ tâche de fond persistante ─▶ réfléchir ─▶ agir (out
 - **Efficacité** : une trentaine d'outils concis (~4 000 tokens au lieu de ~61 000), cache de prompt, lecture des pages
   web sous forme compacte d'éléments numérotés, contexte élagué puis résumé pour les longues missions.
 
-## Le navigateur d'Ely
+## Le navigateur d'Ely : ton Chrome
 
-La plupart des vraies actions (Doctolib, Facebook, sites administratifs, boutiques) passent par un **vrai Chromium
-avec un profil persistant par utilisateur** : tu te connectes une fois, la session reste. Le bouton 🌐 affiche le
-navigateur **en direct**. Avec **« Prendre la main »**, tu cliques et tapes toi-même dedans, pratique pour la première
-connexion, un captcha ou une double authentification. Tes identifiants peuvent aussi être rangés dans
-Réglages → Identifiants : Ely s'en sert pour se connecter seule.
+Avec l'extension **« Ely pour Chrome »** (dossier `extension/`), Ely agit **dans ton Chrome**, avec toutes tes sessions
+(messagerie, Doctolib, LinkedIn…), dans une fenêtre à part qui ne touche pas à tes onglets. Un site envoie un code
+de vérification par e-mail ? Ely ouvre ta messagerie web dans un autre onglet, lit le code et le saisit.
+
+1. Chrome → `chrome://extensions` → active le **Mode développeur** (en haut à droite).
+2. **Charger l'extension non empaquetée** → choisis le dossier `extension` d'Ely.
+3. Ouvre Ely dans ce Chrome et connecte-toi : l'extension se relie toute seule (icône Ely : état et adresse du serveur,
+   `http://localhost:8000` par défaut).
+
+Pendant qu'Ely travaille, Chrome affiche « Ely a commencé le débogage de ce navigateur » : c'est normal, la barre
+disparaît quand elle a fini. Réglages → Connexions → Chrome permet de revenir au navigateur interne.
+
+**Navigateur interne (secours)** : quand Chrome est fermé, Ely utilise un Chromium à elle, avec un profil persistant
+par utilisateur (tu t'y connectes une fois, la session reste). Le bouton globe affiche le navigateur **en direct** ; avec
+**« Prendre la main »**, tu cliques et tapes toi-même dedans (captcha, première connexion). Les identifiants rangés dans
+Réglages → Identifiants servent aux deux navigateurs.
 
 ## La mémoire : Ely te connaît de mieux en mieux
 
@@ -192,9 +203,11 @@ ely/
   memory/     store.py (profil, souvenirs hybrides, historique, compétences), learner.py
   selfdev/    metrics.py, plugins.py, pipeline.py (worktree, tests, déploiement), tools.py
   integrations/ google.py, mail.py, social.py        channels/ telegram.py        mcp_client.py
+  browser.py  navigateur interne (Playwright)        chrome.py  pont vers l'extension Chrome
+extension/    « Ely pour Chrome » (MV3, sans compilation)
   api/        app.py, chat.py, settings_routes.py, admin.py
   web/        interface PWA (Preact + htm, sans étape de compilation)
-tests/        68 tests : boucle, outils, navigateur réel, adaptateurs (faux serveurs OpenAI/Anthropic), API, MCP, auto-modification
+tests/        76 tests : boucle, outils, navigateur réel, extension Chrome réelle, adaptateurs (faux serveurs OpenAI/Anthropic), API, MCP, auto-modification
 scripts/      mock_llm.py (faux modèle pour essayer sans tokens), e2e_ui.py (parcours complet de l'interface)
 ```
 
@@ -213,6 +226,6 @@ qui fait avancer la tâche.
 ## Limites à connaître
 
 - Certains sites détectent les robots (captcha, vérification) : Ely te le signale et tu prends la main quelques secondes.
-- La première connexion à un site (Doctolib, LinkedIn…) se fait une fois, dans le navigateur d'Ely ou via le coffre d'identifiants.
+- Sans l'extension Chrome, la première connexion à un site (Doctolib, LinkedIn…) se fait une fois dans le navigateur d'Ely ou via le coffre d'identifiants.
 - Un petit modèle local seul ne mène pas bien une longue démarche : garde au moins une clé cloud pour l'agent principal.
 - Sécurité minimale par choix : Ely a un accès complet (code, shell, identifiants). Garde-la derrière Tailscale, pas sur Internet ouvert.

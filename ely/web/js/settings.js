@@ -123,7 +123,30 @@ function Memory() {
 // ---------------------------------------------------------------- connexions
 const Status = ({ on, label }) => (on ? html`<span class="pill ok">${label}</span>` : null);
 
-function Connections() {
+function ChromeRow({ me, onMe }) {
+  const [st, reload] = useLoad(() => get("/api/chrome"));
+  useEffect(() => { const t = setInterval(reload, 4000); return () => clearInterval(t); }, []);
+  if (!st) return null;
+  const badge = st.connected ? html` <span class="pill ok">connecté</span>` : null;
+  return html`<${Row} title="Chrome" hint="Ely agit dans ton Chrome, avec tes sessions (messagerie, Doctolib…), dans une fenêtre à part." badge=${badge}>
+    ${st.connected ? html`
+      <label class="toggle"><${Switch} checked=${st.use !== "interne"} onChange=${async (v) => {
+        const u = await patch("/api/me", { settings: { browser: v ? "chrome" : "interne" } }); onMe(u); reload(); }} />
+        Utiliser mon Chrome plutôt que le navigateur interne</label>
+      <p class="desc">Un code de vérification envoyé par e-mail ? Ely le lit elle-même dans ta messagerie ouverte dans Chrome.
+        Quand Chrome est fermé, elle se rabat sur son navigateur interne.</p>`
+    : html`
+      <ol>
+        <li>Dans Chrome, ouvre <code>chrome://extensions</code> et active le « Mode développeur » (en haut à droite).</li>
+        <li>« Charger l'extension non empaquetée » → choisis le dossier <code>${st.folder}</code>.</li>
+        <li>Ouvre Ely dans ce Chrome et connecte-toi : l'extension se relie toute seule.
+          Autre adresse que <code>http://localhost:8000</code> ? Saisis-la dans la fenêtre de l'extension (icône Ely).</li>
+      </ol>
+      <p class="desc">En attendant, Ely utilise son navigateur interne (sessions séparées de ton Chrome).</p>`}
+  <//>`;
+}
+
+function Connections({ me, onMe }) {
   const [data, reload] = useLoad(() => get("/api/integrations"));
   const [mail, setMail] = useState({ address: "", password: "", imap_host: "", smtp_host: "", smtp_port: "" });
   const [adv, setAdv] = useState(false);
@@ -143,6 +166,7 @@ function Connections() {
   const Linked = ({ who, extra, onOff, off = "Déconnecter" }) => html`<div class="row"><span>${who}</span>${extra ? html`<span class="meta-text">${extra}</span>` : null}
     <button class="btn small danger" onClick=${onOff}>${off}</button></div>`;
   return html`
+    <${ChromeRow} me=${me} onMe=${onMe} />
     <${Row} title="Google" hint="Gmail, Agenda, Contacts." badge=${html` <${Status} on=${data.google.connected} label="connecté" />`}>
       ${data.google.connected ? html`<${Linked} who=${data.google.email} onOff=${() => disconnect("google")} />`
         : data.google.available ? html`<div><a class="btn primary" href="/api/integrations/google/start">Connecter mon compte Google</a></div>`
@@ -164,7 +188,7 @@ function Connections() {
     <${Row} title="LinkedIn" hint="Publication de posts." badge=${html` <${Status} on=${data.linkedin.connected} label="connecté" />`}>
       ${data.linkedin.connected ? html`<${Linked} who=${data.linkedin.name} onOff=${() => disconnect("linkedin")} />`
         : data.linkedin.available ? html`<div><a class="btn primary" href="/api/integrations/linkedin/start">Connecter LinkedIn</a></div>`
-        : html`<p class="desc">Sans API, Ely publie avec son navigateur : connecte-toi une fois à LinkedIn dans le navigateur d'Ely (bouton globe en haut).</p>`}
+        : html`<p class="desc">Sans API, Ely publie avec le navigateur : ton Chrome si l'extension est installée, sinon connecte-toi une fois à LinkedIn dans le navigateur d'Ely (bouton globe en haut).</p>`}
     <//>
     <${Row} title="Page Facebook" hint="Publication sur une page par API." badge=${html` <${Status} on=${data.facebook.connected} label="connectée" />`}>
       ${data.facebook.connected ? html`<${Linked} who=${"Page " + data.facebook.page_id} onOff=${() => disconnect("facebook")} />`
@@ -196,7 +220,7 @@ function Vault() {
       <div class="row nowrap"><input class="input" placeholder="Identifiant" autocomplete="off" value=${f.username} onInput=${(e) => setF({ ...f, username: e.target.value })} />
         <input class="input" type="password" placeholder="Mot de passe" autocomplete="new-password" value=${f.password} onInput=${(e) => setF({ ...f, password: e.target.value })} /></div>
       <div><button class="btn primary" disabled=${!f.service} onClick=${async () => { await post("/api/credentials", f); setF({ service: "", url: "", username: "", password: "", notes: "" }); reload(); }}>Enregistrer</button></div>
-      <p class="desc">Site protégé par une clé d'accès (passkey) ? Connecte-toi une fois dans le navigateur d'Ely : la session reste enregistrée.</p>
+      <p class="desc">Avec l'extension Chrome (Connexions), Ely profite des sessions déjà ouvertes dans ton Chrome, clés d'accès comprises.</p>
     <//>
     <${Row} title="Enregistrés" hint=${items ? `${items.length} identifiant${items.length > 1 ? "s" : ""}` : ""}>
       <div class="list">${(items || []).map((c) => html`<div class="list-item center" key=${c.id}>
@@ -440,7 +464,7 @@ export function Settings({ me, onMe, tab, onTab, onClose, pwa, prefs, openConver
   const key = all.includes(tab) ? tab : "profil";
   const num = (k) => String(all.indexOf(k) + 1).padStart(2, "0");
   const body = {
-    profil: html`<${Profile} me=${me} onMe=${onMe} pwa=${pwa} prefs=${prefs} />`, memoire: html`<${Memory} />`, connexions: html`<${Connections} />`,
+    profil: html`<${Profile} me=${me} onMe=${onMe} pwa=${pwa} prefs=${prefs} />`, memoire: html`<${Memory} />`, connexions: html`<${Connections} me=${me} onMe=${onMe} />`,
     identifiants: html`<${Vault} />`, taches: html`<${Schedules} />`, fichiers: html`<${Files} />`, modeles: html`<${Models} />`,
     utilisateurs: html`<${Users} />`, conso: html`<${Usage} />`, mcp: html`<${Extensions} />`,
     auto: html`<${SelfDev} openConversation=${(id) => { onClose(); openConversation(id); }} />`,

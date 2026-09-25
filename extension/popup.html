@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <style>
+    :root { --bg: #f5f7fa; --ink: #0f141d; --muted: #5b6270; --sunken: #eceef3; --accent: #c9f14c; --accent-ink: #1b2305; --err: #c2410c; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #2a2e32; --ink: #f4f6f8; --muted: #c3c8cf; --sunken: #383d43; } }
+    body { margin: 0; width: 300px; padding: 16px; background: var(--bg); color: var(--ink); font: 13px/1.5 system-ui, -apple-system, sans-serif; }
+    .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 16px; margin-bottom: 12px; }
+    .mark { width: 18px; height: 18px; border-radius: 6px; background: var(--accent); display: grid; place-items: center; }
+    .mark::after { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent-ink); }
+    .state { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--err); }
+    .dot.on { background: #4d9a2f; }
+    .detail { color: var(--muted); margin: 4px 0 14px; }
+    label { display: block; color: var(--muted); margin-bottom: 4px; }
+    input { box-sizing: border-box; width: 100%; height: 34px; border: 0; border-radius: 10px; padding: 0 10px; background: var(--sunken); color: var(--ink); font: 12px ui-monospace, Menlo, monospace; outline: none; }
+    .row { display: flex; gap: 8px; margin-top: 10px; }
+    button, a.btn { flex: 1; height: 32px; border-radius: 999px; border: 0; cursor: pointer; font: inherit; font-weight: 500; text-decoration: none; display: grid; place-items: center; }
+    .primary { background: var(--ink); color: var(--bg); }
+    .ghost { background: var(--sunken); color: var(--ink); }
+  </style>
+</head>
+<body>
+  <div class="brand"><span class="mark"></span>ely</div>
+  <div class="state"><span class="dot" id="dot"></span><span id="status">…</span></div>
+  <div class="detail" id="detail"></div>
+  <label for="url">Adresse d'Ely</label>
+  <input id="url" placeholder="http://localhost:8000" spellcheck="false">
+  <div class="row">
+    <button class="primary" id="save">Reconnecter</button>
+    <a class="btn ghost" id="open" target="_blank">Ouvrir Ely</a>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
