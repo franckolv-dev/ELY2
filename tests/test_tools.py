@@ -165,3 +165,16 @@ async def test_browser_fills_a_form(ctx, tmp_path):
     from ely.browser import manager
 
     await manager.shutdown()
+
+
+async def test_seed_skills_match_real_requests(ctx):
+    from ely.memory.seed import seed_skills
+    from ely.memory.store import relevant_skills
+
+    seed_skills()
+    assert seed_skills() == 0  # idempotent
+    hits = relevant_skills(ctx.user_id, "Prends-moi rendez-vous chez le dentiste sur Doctolib jeudi")
+    assert hits and "Doctolib" in hits[0]["name"]
+    hits = relevant_skills(ctx.user_id, "Publie un post sur LinkedIn à propos de notre catalogue")
+    assert hits and "LinkedIn" in hits[0]["name"]
+    assert not relevant_skills(ctx.user_id, "Quelle est la capitale du Japon ?")

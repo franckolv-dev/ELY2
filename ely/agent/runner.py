@@ -173,7 +173,7 @@ class Runner:
                 from ..llm import LLMError
 
                 hint = (" — vérifie les clés d'API dans .env ou que LM Studio est lancé (Réglages → Modèles)."
-                        if isinstance(e, LLMError) else "")
+                        if isinstance(e, LLMError) and "Aucun modèle disponible" not in str(e) else "")
                 note = {"role": "assistant", "content": f"⚠️ {e}{hint}", "kind": "note"}
                 mid = save_message(st.conversation_id, run_id, note)
                 await self.emit(st, "message", {"message": public_message(db.one("SELECT * FROM messages WHERE id = ?", (mid,)))})

@@ -33,6 +33,7 @@ install() {
     echo "→ fichier .env créé : ajoute tes clés d'API (ou lance simplement LM Studio)."
   fi
   sha1sum pyproject.toml 2>/dev/null | cut -d' ' -f1 > .venv/.deps || shasum pyproject.toml | cut -d' ' -f1 > .venv/.deps
+  echo "✓ installation terminée"
 }
 
 deps_changed() {

@@ -28,8 +28,11 @@ async def lifespan(app: FastAPI):
     from ..mcp_client import manager as mcp
     from ..selfdev.pipeline import check_rollback
 
+    from ..memory.seed import seed_skills
+
     load_builtin_tools()
     check_rollback()
+    seed_skills()
     await asyncio.gather(registry.refresh(), mcp.start_all())
     resumed = await runner.resume_all()
     log.info("Ely %s prête : %d outils, fournisseurs %s, %d tâche(s) reprise(s)", __version__, len(TOOLS), registry.status, resumed)
