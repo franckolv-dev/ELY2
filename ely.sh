@@ -97,6 +97,9 @@ start() {
       echo "↻ redémarrage d'Ely…"
       continue
     fi
+    if [ "$code" -eq 3 ]; then  # port occupé : le message est déjà affiché, inutile de réessayer en boucle
+      exit 3
+    fi
     if [ "$code" -ne 0 ] && [ "$code" -ne 130 ] && [ "$code" -ne 143 ]; then
       echo "✗ Ely s'est arrêtée (code $code), redémarrage dans 5 s…"
       sleep 5

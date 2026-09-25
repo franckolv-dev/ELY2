@@ -41,6 +41,10 @@ cd ELY2
 
 Les autres commandes : `./ely.sh install` (mise à jour des dépendances), `./ely.sh test` (tests), `./ely.sh unservice`.
 
+**« Le port 8000 est déjà utilisé »** : un autre programme l'occupe, souvent l'ancien Ely en Docker
+(`docker compose down` dans son dossier) ou une instance d'Ely déjà lancée en service. Ely affiche qui l'occupe ;
+tu peux aussi simplement choisir un autre port avec `ELY_PORT=8001` dans `.env`.
+
 ### LM Studio
 
 Onglet **Développeur → Démarrer le serveur** (port 1234). Ely découvre seule les modèles installés.
@@ -187,7 +191,7 @@ ely/
   integrations/ google.py, mail.py, social.py        channels/ telegram.py        mcp_client.py
   api/        app.py, chat.py, settings_routes.py, admin.py
   web/        interface PWA (Preact + htm, sans étape de compilation)
-tests/        58 tests : boucle, outils, navigateur réel, adaptateurs (faux serveurs OpenAI/Anthropic), API, MCP, auto-modification
+tests/        62 tests : boucle, outils, navigateur réel, adaptateurs (faux serveurs OpenAI/Anthropic), API, MCP, auto-modification
 scripts/      mock_llm.py (faux modèle pour essayer sans tokens), e2e_ui.py (parcours complet de l'interface)
 ```
 
