@@ -1,7 +1,7 @@
 // Réglages : profil, mémoire, connexions, identifiants, tâches, fichiers, administration.
 import { html, useEffect, useState } from "/static/vendor/preact-htm.js";
-import { api, del, get, patch, post, put, upload } from "/static/js/api.js";
-import { Icon, bytes, dateTime, fileIcon, md, timeAgo, toast } from "/static/js/util.js";
+import { del, get, patch, post, put, upload } from "/static/js/api.js";
+import { ACCENTS, FileTag, Icon, bytes, dateTime, md, timeAgo, toast } from "/static/js/util.js";
 import { frenchVoices, speak } from "/static/js/voice.js";
 
 function useLoad(fn, deps = []) {
@@ -13,15 +13,29 @@ function useLoad(fn, deps = []) {
 }
 
 const copy = (text) => navigator.clipboard?.writeText(text).then(() => toast("Copié"));
+const Loading = () => html`<div class="spinner big"></div>`;
+
+// Section de réglages : libellé et aide à gauche, contrôles à droite
+const Row = ({ title, hint, badge, children }) => html`<section class="srow">
+  <div class="srow-label"><b>${title}${badge || null}</b>${hint ? html`<span>${hint}</span>` : null}</div>
+  <div class="srow-body">${children}</div>
+</section>`;
+
+const Seg = ({ options, value, onChange }) => html`<div class="seg">${options.map(([v, label, swatch]) => html`
+  <button class=${value === v ? "on" : ""} onClick=${() => onChange(v)}>${swatch ? html`<span class="swatch" style=${"background:" + swatch}></span>` : null}${label}</button>`)}</div>`;
+
+const Switch = ({ checked, onChange, title }) => html`<span class="switch" title=${title}>
+  <input type="checkbox" checked=${checked} onChange=${(e) => onChange(e.target.checked)} /><span></span></span>`;
+
+const Empty = ({ children }) => html`<div class="empty">${children}</div>`;
 
 // ---------------------------------------------------------------- profil
-function Profile({ me, onMe, pwa }) {
+function Profile({ me, onMe, pwa, prefs }) {
   const [name, setName] = useState(me.name);
   const [tz, setTz] = useState(me.settings.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone);
   const [pw, setPw] = useState({ current: "", next: "" });
   const [readAloud, setReadAloud] = useState(localStorage.getItem("ely-read") === "1");
   const [voice, setVoice] = useState(localStorage.getItem("ely-voice") || "");
-  const [theme, setTheme] = useState(localStorage.getItem("ely-theme") || "auto");
   const voices = frenchVoices();
   async function save() {
     const u = await patch("/api/me", { name, settings: { timezone: tz } });
@@ -31,44 +45,38 @@ function Profile({ me, onMe, pwa }) {
     try { await patch("/api/me", { password: pw.next, current_password: pw.current }); setPw({ current: "", next: "" }); toast("Mot de passe modifié"); }
     catch (e) { toast(e.message); }
   }
-  function applyTheme(v) {
-    setTheme(v); localStorage.setItem("ely-theme", v);
-    if (v === "auto") document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme", v);
-  }
   return html`
-    <h2>Profil</h2><p class="muted">Ton compte et tes préférences d'utilisation.</p>
-    <div class="card">
-      <label class="field">Prénom (utilisé par Ely pour signer tes messages)<input class="input" value=${name} onInput=${(e) => setName(e.target.value)} /></label>
-      <label class="field">Fuseau horaire<input class="input" value=${tz} onInput=${(e) => setTz(e.target.value)} /></label>
-      <div class="row"><button class="btn primary" onClick=${save}>Enregistrer</button><span class="faint small">${me.email} · ${me.role === "admin" ? "administrateur" : "utilisateur"}</span></div>
-    </div>
-    <div class="card">
-      <h3>🔔 Notifications</h3>
-      <p class="desc">Sois prévenu sur ton téléphone quand Ely a terminé une tâche ou a besoin de toi.</p>
-      <div class="row">
-        <button class="btn" onClick=${() => window.elyEnablePush?.()}>Activer sur cet appareil</button>
-        <button class="btn ghost" onClick=${async () => { const r = await post("/api/push/test"); toast(r.sent ? "Notification envoyée" : "Aucun appareil abonné"); }}>Tester</button>
-      </div>
-    </div>
-    <div class="card">
-      <h3>🔊 Voix</h3>
-      <label class="row"><span class="switch"><input type="checkbox" checked=${readAloud} onChange=${(e) => { setReadAloud(e.target.checked); localStorage.setItem("ely-read", e.target.checked ? "1" : "0"); }} /><span></span></span>
+    <${Row} title="Compte" hint="Ely utilise ton prénom pour signer tes messages.">
+      <label class="field">Prénom<input class="input" value=${name} onInput=${(e) => setName(e.target.value)} /></label>
+      <label class="field">Fuseau horaire<input class="input mono" value=${tz} onInput=${(e) => setTz(e.target.value)} /></label>
+      <div class="row"><button class="btn primary" onClick=${save}>Enregistrer</button>
+        <span class="meta-text">${me.email} · ${me.role === "admin" ? "administrateur" : "utilisateur"}</span></div>
+    <//>
+    <${Row} title="Apparence" hint="Thème et couleur d'accent sur cet appareil.">
+      <${Seg} value=${prefs.theme} onChange=${prefs.setTheme} options=${[["auto", "Automatique"], ["light", "Clair"], ["dark", "Sombre"]]} />
+      <${Seg} value=${prefs.accent} onChange=${prefs.setAccent} options=${ACCENTS} />
+      ${pwa ? html`<div><button class="btn" onClick=${pwa}><${Icon} name="phone" /> Installer l'application sur cet appareil</button></div>` : null}
+    <//>
+    <${Row} title="Voix" hint="Lecture des réponses.">
+      <label class="toggle"><${Switch} checked=${readAloud} onChange=${(v) => { setReadAloud(v); localStorage.setItem("ely-read", v ? "1" : "0"); }} />
         Lire les réponses à voix haute</label>
-      ${voices.length ? html`<label class="field">Voix<select class="input" value=${voice} onChange=${(e) => { setVoice(e.target.value); localStorage.setItem("ely-voice", e.target.value); speak("Bonjour, je suis Ely."); }}>
-        <option value="">Automatique</option>${voices.map((v) => html`<option value=${v.name}>${v.name}</option>`)}</select></label>` : null}
-    </div>
-    <div class="card">
-      <h3>🎨 Apparence</h3>
-      <div class="row">${[["auto", "Automatique"], ["light", "Clair"], ["dark", "Sombre"]].map(([v, l]) => html`<button class=${"btn small" + (theme === v ? " primary" : "")} onClick=${() => applyTheme(v)}>${l}</button>`)}</div>
-      ${pwa ? html`<button class="btn" onClick=${pwa}>📲 Installer l'application sur cet appareil</button>` : null}
-    </div>
-    <div class="card">
-      <h3>🔒 Mot de passe</h3>
-      <input class="input" type="password" placeholder="Mot de passe actuel" value=${pw.current} onInput=${(e) => setPw({ ...pw, current: e.target.value })} />
-      <input class="input" type="password" placeholder="Nouveau mot de passe" value=${pw.next} onInput=${(e) => setPw({ ...pw, next: e.target.value })} />
+      <select class="input" aria-label="Voix" value=${voice} onChange=${(e) => { setVoice(e.target.value); localStorage.setItem("ely-voice", e.target.value); speak("Bonjour, je suis Ely."); }}>
+        <option value="">Automatique</option>${voices.map((v) => html`<option value=${v.name}>${v.name}</option>`)}</select>
+    <//>
+    <${Row} title="Notifications" hint="Sois prévenu sur ton téléphone quand Ely a terminé une tâche ou a besoin de toi.">
+      <div class="row">
+        <button class="btn accent" onClick=${() => window.elyEnablePush?.()}>Activer sur cet appareil</button>
+        <button class="btn" onClick=${async () => { const r = await post("/api/push/test"); toast(r.sent ? "Notification envoyée" : "Aucun appareil abonné"); }}>Tester</button>
+      </div>
+    <//>
+    <${Row} title="Mot de passe" hint="Au moins 6 caractères.">
+      <input class="input" type="password" placeholder="Mot de passe actuel" autocomplete="current-password" value=${pw.current} onInput=${(e) => setPw({ ...pw, current: e.target.value })} />
+      <input class="input" type="password" placeholder="Nouveau mot de passe" autocomplete="new-password" value=${pw.next} onInput=${(e) => setPw({ ...pw, next: e.target.value })} />
       <div><button class="btn" onClick=${changePw} disabled=${!pw.next}>Changer</button></div>
-    </div>
-    <button class="btn danger" onClick=${async () => { await post("/api/auth/logout"); location.href = "/"; }}><${Icon} name="logout" size=${16} /> Se déconnecter</button>`;
+    <//>
+    <${Row} title="Session">
+      <div><button class="btn danger" onClick=${async () => { await post("/api/auth/logout"); location.href = "/"; }}><${Icon} name="logout" /> Se déconnecter</button></div>
+    <//>`;
 }
 
 // ---------------------------------------------------------------- mémoire
@@ -77,36 +85,44 @@ function Memory() {
   const [profile, setProfile] = useState(null);
   const [fact, setFact] = useState("");
   const [open, setOpen] = useState({});
-  if (!data) return html`<div class="spinner"></div>`;
+  if (!data) return html`<${Loading} />`;
   const prof = profile ?? data.profile;
+  async function add() {
+    if (!fact.trim()) return;
+    await post("/api/memory", { content: fact }); setFact(""); reload();
+  }
   return html`
-    <h2>Mémoire</h2><p class="muted">Ce qu'Ely a appris sur toi au fil des échanges. Tout est modifiable.</p>
-    <div class="card">
-      <h3>🧠 Ce qu'Ely sait de toi</h3>
-      <p class="desc">Toujours présent dans son esprit. Ely le met à jour elle-même après chaque échange.</p>
-      <textarea class="input" rows="10" value=${prof} placeholder="Rien encore : parle-lui de toi !" onInput=${(e) => setProfile(e.target.value)}></textarea>
-      <div><button class="btn primary" disabled=${profile === null} onClick=${async () => { await put("/api/memory/profile", { content: prof }); setProfile(null); reload(); toast("Profil enregistré"); }}>Enregistrer</button></div>
+    <div class="block">
+      <div class="block-head"><b>Ce qu'Ely sait de toi</b><span>Toujours présent dans son esprit.</span></div>
+      <textarea class="memo" value=${prof} placeholder="Rien encore : parle-lui de toi !" onInput=${(e) => setProfile(e.target.value)}></textarea>
+      <div class="row"><button class="btn primary" disabled=${profile === null} onClick=${async () => { await put("/api/memory/profile", { content: prof }); setProfile(null); reload(); toast("Profil enregistré"); }}>Enregistrer</button>
+        <span class="meta-text">mis à jour après chaque échange</span></div>
     </div>
-    <div class="card">
-      <h3>💭 Souvenirs (${data.memories.length})</h3>
-      <div class="row" style="flex-wrap:nowrap"><input class="input" placeholder="Ajouter un souvenir (ex. Mon dentiste est le Dr Leroy)" value=${fact} onInput=${(e) => setFact(e.target.value)} />
-        <button class="btn" disabled=${!fact} onClick=${async () => { await post("/api/memory", { content: fact }); setFact(""); reload(); }}>Ajouter</button></div>
-      <div class="list">${data.memories.map((m) => html`<div class="list-item">
-        <div class="grow">${m.content}<div class="sub">${m.category} · ${m.source} · ${timeAgo(m.updated_at)}${m.uses ? ` · utilisé ${m.uses}×` : ""}</div></div>
-        <button class="icon-btn" title="Oublier" onClick=${async () => { await del(`/api/memory/${m.id}`); reload(); }}><${Icon} name="trash" size=${16} /></button></div>`)}</div>
+    <div class="block">
+      <div class="block-head"><b>Souvenirs</b><span class="count">${data.memories.length}</span></div>
+      <div class="addrow"><input placeholder="Ajouter un souvenir (ex. Mon dentiste est le Dr Leroy)" value=${fact}
+          onInput=${(e) => setFact(e.target.value)} onKeyDown=${(e) => { if (e.key === "Enter") add(); }} />
+        <button disabled=${!fact.trim()} onClick=${add}>Ajouter</button></div>
+      <div class="list">${data.memories.map((m) => html`<div class="list-item" key=${m.id}>
+        <div class="grow"><span>${m.content}</span>
+          <div class="tags"><span class="tag">${m.category}</span><span class="tag">${m.source}</span><span>${timeAgo(m.updated_at)}</span>${m.uses ? html`<span>· utilisé ${m.uses}×</span>` : null}</div></div>
+        <button class="icon-btn" title="Oublier" onClick=${async () => { await del(`/api/memory/${m.id}`); reload(); }}><${Icon} name="trash" size=${14} /></button></div>`)}
+        ${!data.memories.length ? html`<${Empty}>Aucun souvenir pour l'instant.<//>` : null}</div>
     </div>
-    <div class="card">
-      <h3>🎓 Compétences apprises (${data.skills.length})</h3>
-      <p class="desc">Procédures qu'Ely a mises au point en réussissant des tâches. Elle les réutilise automatiquement.</p>
-      <div class="list">${data.skills.map((s) => html`<div class="list-item"><div class="grow">
-        <b style="cursor:pointer" onClick=${() => setOpen({ ...open, [s.id]: !open[s.id] })}>${s.name}</b> ${s.user_id === null ? html`<span class="pill accent">partagée</span>` : null}
-        <div class="sub">${s.description} · utilisée ${s.uses}×</div>
-        ${open[s.id] ? html`<div class="md small" style="margin-top:8px" dangerouslySetInnerHTML=${{ __html: md(s.content) }}></div>` : null}</div>
-        <button class="icon-btn" title="Supprimer" onClick=${async () => { if (confirm("Supprimer cette compétence ?")) { await del(`/api/skills/${s.id}`); reload(); } }}><${Icon} name="trash" size=${16} /></button></div>`)}</div>
+    <div class="block">
+      <div class="block-head"><b>Compétences apprises</b><span class="count">${data.skills.length}</span>
+        <span>Procédures mises au point en réussissant des tâches, réutilisées automatiquement.</span></div>
+      <div class="list">${data.skills.map((s) => html`<div class="list-item" key=${s.id}><div class="grow">
+        <b style="cursor:pointer" onClick=${() => setOpen({ ...open, [s.id]: !open[s.id] })}>${s.name}</b>
+        <div class="tags">${s.user_id === null ? html`<span class="tag">partagée</span>` : null}<span>${s.description} · utilisée ${s.uses}×</span></div>
+        ${open[s.id] ? html`<div class="md skill-body" dangerouslySetInnerHTML=${{ __html: md(s.content) }}></div>` : null}</div>
+        <button class="icon-btn" title="Supprimer" onClick=${async () => { if (confirm("Supprimer cette compétence ?")) { await del(`/api/skills/${s.id}`); reload(); } }}><${Icon} name="trash" size=${14} /></button></div>`)}</div>
     </div>`;
 }
 
 // ---------------------------------------------------------------- connexions
+const Status = ({ on, label }) => (on ? html`<span class="pill ok">${label}</span>` : null);
+
 function Connections() {
   const [data, reload] = useLoad(() => get("/api/integrations"));
   const [mail, setMail] = useState({ address: "", password: "", imap_host: "", smtp_host: "", smtp_port: "" });
@@ -114,7 +130,7 @@ function Connections() {
   const [fb, setFb] = useState({ page_id: "", page_token: "" });
   const [tg, setTg] = useState(null);
   const [saving, setSaving] = useState(false);
-  if (!data) return html`<div class="spinner"></div>`;
+  if (!data) return html`<${Loading} />`;
   const disconnect = async (p) => { if (confirm("Déconnecter ?")) { await del(`/api/integrations/${p}`); reload(); } };
   async function saveMail() {
     setSaving(true);
@@ -124,56 +140,49 @@ function Connections() {
     } catch (e) { toast(e.message, 6000); }
     setSaving(false);
   }
+  const Linked = ({ who, extra, onOff, off = "Déconnecter" }) => html`<div class="row"><span>${who}</span>${extra ? html`<span class="meta-text">${extra}</span>` : null}
+    <button class="btn small danger" onClick=${onOff}>${off}</button></div>`;
   return html`
-    <h2>Connexions</h2><p class="muted">Donne à Ely l'accès à tes services pour qu'elle agisse à ta place. Sans connexion, elle utilise son navigateur.</p>
-    <div class="card">
-      <h3>🟢 Google — Gmail, Agenda, Contacts ${data.google.connected ? html`<span class="pill ok">connecté</span>` : null}</h3>
-      ${data.google.connected ? html`<div class="row"><span>${data.google.email}</span><button class="btn small danger" onClick=${() => disconnect("google")}>Déconnecter</button></div>`
+    <${Row} title="Google" hint="Gmail, Agenda, Contacts." badge=${html` <${Status} on=${data.google.connected} label="connecté" />`}>
+      ${data.google.connected ? html`<${Linked} who=${data.google.email} onOff=${() => disconnect("google")} />`
         : data.google.available ? html`<div><a class="btn primary" href="/api/integrations/google/start">Connecter mon compte Google</a></div>`
         : html`<p class="desc">À activer par l'administrateur : GOOGLE_CLIENT_ID et GOOGLE_CLIENT_SECRET dans le fichier .env
             (URI de redirection : <code>${data.google.redirect_uri}</code>). En attendant, utilise la boîte mail ci-dessous.</p>`}
-    </div>
-    <div class="card">
-      <h3>✉️ Boîte mail (IMAP/SMTP) ${data.email.connected ? html`<span class="pill ok">connectée</span>` : null}</h3>
-      ${data.email.connected ? html`<div class="row"><span>${data.email.address}</span><span class="faint small">${data.email.imap_host}</span>
-          <button class="btn small danger" onClick=${() => disconnect("email")}>Déconnecter</button></div>`
-        : html`<p class="desc">Fonctionne avec Gmail, Outlook, iCloud, Free, Orange, SFR, OVH… Utilise un <b>mot de passe d'application</b>
-            (Gmail : myaccount.google.com/apppasswords · iCloud : appleid.apple.com).</p>
+    <//>
+    <${Row} title="Boîte mail" hint="IMAP / SMTP : Gmail, Outlook, iCloud, Free, Orange, OVH…" badge=${html` <${Status} on=${data.email.connected} label="connectée" />`}>
+      ${data.email.connected ? html`<${Linked} who=${data.email.address} extra=${data.email.imap_host} onOff=${() => disconnect("email")} />`
+        : html`<p class="desc">Utilise un <b>mot de passe d'application</b> (Gmail : myaccount.google.com/apppasswords · iCloud : appleid.apple.com).</p>
           <input class="input" placeholder="adresse@exemple.fr" value=${mail.address} onInput=${(e) => setMail({ ...mail, address: e.target.value })} />
           <input class="input" type="password" placeholder="Mot de passe d'application" value=${mail.password} onInput=${(e) => setMail({ ...mail, password: e.target.value })} />
-          ${adv ? html`<div class="row" style="flex-wrap:nowrap">
+          ${adv ? html`<div class="row nowrap">
               <input class="input" placeholder="Serveur IMAP (auto)" value=${mail.imap_host} onInput=${(e) => setMail({ ...mail, imap_host: e.target.value })} />
               <input class="input" placeholder="Serveur SMTP (auto)" value=${mail.smtp_host} onInput=${(e) => setMail({ ...mail, smtp_host: e.target.value })} />
               <input class="input" placeholder="Port" style="width:90px" value=${mail.smtp_port} onInput=${(e) => setMail({ ...mail, smtp_port: e.target.value })} /></div>` : null}
           <div class="row"><button class="btn primary" disabled=${!mail.address || !mail.password || saving} onClick=${saveMail}>${saving ? "Vérification…" : "Connecter"}</button>
             <button class="btn ghost small" onClick=${() => setAdv(!adv)}>Réglages avancés</button></div>`}
-    </div>
-    <div class="card">
-      <h3>💼 LinkedIn ${data.linkedin.connected ? html`<span class="pill ok">connecté</span>` : null}</h3>
-      ${data.linkedin.connected ? html`<div class="row"><span>${data.linkedin.name}</span><button class="btn small danger" onClick=${() => disconnect("linkedin")}>Déconnecter</button></div>`
+    <//>
+    <${Row} title="LinkedIn" hint="Publication de posts." badge=${html` <${Status} on=${data.linkedin.connected} label="connecté" />`}>
+      ${data.linkedin.connected ? html`<${Linked} who=${data.linkedin.name} onOff=${() => disconnect("linkedin")} />`
         : data.linkedin.available ? html`<div><a class="btn primary" href="/api/integrations/linkedin/start">Connecter LinkedIn</a></div>`
-        : html`<p class="desc">Sans API, Ely publie avec son navigateur : connecte-toi une fois à LinkedIn dans le navigateur d'Ely (bouton 🌐 en haut).</p>`}
-    </div>
-    <div class="card">
-      <h3>📘 Page Facebook ${data.facebook.connected ? html`<span class="pill ok">connectée</span>` : null}</h3>
-      ${data.facebook.connected ? html`<div class="row"><span>Page ${data.facebook.page_id}</span><button class="btn small danger" onClick=${() => disconnect("facebook")}>Déconnecter</button></div>`
-        : html`<p class="desc">Pour publier sur une page par API (sinon Ely utilise son navigateur, y compris pour ton profil personnel).</p>
-          <div class="row" style="flex-wrap:nowrap"><input class="input" placeholder="ID de la page" value=${fb.page_id} onInput=${(e) => setFb({ ...fb, page_id: e.target.value })} />
-          <input class="input" placeholder="Jeton d'accès de la page" value=${fb.page_token} onInput=${(e) => setFb({ ...fb, page_token: e.target.value })} />
-          <button class="btn" disabled=${!fb.page_id || !fb.page_token} onClick=${async () => { await post("/api/integrations/facebook", fb); reload(); }}>Enregistrer</button></div>`}
-    </div>
-    <div class="card">
-      <h3>✈️ Telegram ${data.telegram.linked ? html`<span class="pill ok">relié</span>` : null}</h3>
-      ${!data.telegram.available ? html`<p class="desc">À activer par l'administrateur (TELEGRAM_BOT_TOKEN dans .env). Permet de parler à Ely depuis Telegram, y compris en vocal.</p>`
-        : data.telegram.linked ? html`<div class="row"><span>@${data.telegram.username || "relié"}</span><button class="btn small danger" onClick=${() => disconnect("telegram")}>Délier</button></div>`
-        : tg ? html`<p class="desc">Ouvre ce lien sur ton téléphone, ou envoie <code>${tg.command}</code> au bot :</p>${tg.url ? html`<a class="btn primary" href=${tg.url} target="_blank">Ouvrir Telegram</a>` : null}`
+        : html`<p class="desc">Sans API, Ely publie avec son navigateur : connecte-toi une fois à LinkedIn dans le navigateur d'Ely (bouton globe en haut).</p>`}
+    <//>
+    <${Row} title="Page Facebook" hint="Publication sur une page par API." badge=${html` <${Status} on=${data.facebook.connected} label="connectée" />`}>
+      ${data.facebook.connected ? html`<${Linked} who=${"Page " + data.facebook.page_id} onOff=${() => disconnect("facebook")} />`
+        : html`<p class="desc">Sinon Ely utilise son navigateur, y compris pour ton profil personnel.</p>
+          <div class="row nowrap"><input class="input" placeholder="ID de la page" value=${fb.page_id} onInput=${(e) => setFb({ ...fb, page_id: e.target.value })} />
+          <input class="input" placeholder="Jeton d'accès de la page" value=${fb.page_token} onInput=${(e) => setFb({ ...fb, page_token: e.target.value })} /></div>
+          <div><button class="btn" disabled=${!fb.page_id || !fb.page_token} onClick=${async () => { await post("/api/integrations/facebook", fb); reload(); }}>Enregistrer</button></div>`}
+    <//>
+    <${Row} title="Telegram" hint="Parler à Ely depuis Telegram, y compris en vocal." badge=${html` <${Status} on=${data.telegram.linked} label="relié" />`}>
+      ${!data.telegram.available ? html`<p class="desc">À activer par l'administrateur (TELEGRAM_BOT_TOKEN dans .env).</p>`
+        : data.telegram.linked ? html`<${Linked} who=${"@" + (data.telegram.username || "relié")} onOff=${() => disconnect("telegram")} off="Délier" />`
+        : tg ? html`<p class="desc">Ouvre ce lien sur ton téléphone, ou envoie <code>${tg.command}</code> au bot :</p>${tg.url ? html`<div><a class="btn primary" href=${tg.url} target="_blank">Ouvrir Telegram</a></div>` : null}`
         : html`<div><button class="btn" onClick=${async () => setTg(await post("/api/integrations/telegram/link"))}>Relier mon Telegram</button></div>`}
-    </div>
-    <div class="card">
-      <h3>📆 Agenda d'Ely sur ton téléphone</h3>
+    <//>
+    <${Row} title="Agenda sur ton téléphone" hint="Abonnement iCal à l'agenda tenu par Ely.">
       <p class="desc">Sans compte Google connecté, Ely tient ton agenda. Abonne-toi à ce lien depuis Google Agenda (« À partir de l'URL »), Apple Calendrier ou Outlook.</p>
       <div class="copy-field"><input class="input" readonly value=${data.ics_url} /><button class="btn" onClick=${() => copy(data.ics_url)}>Copier</button></div>
-    </div>`;
+    <//>`;
 }
 
 // ---------------------------------------------------------------- identifiants
@@ -181,46 +190,47 @@ function Vault() {
   const [items, reload] = useLoad(() => get("/api/credentials"));
   const [f, setF] = useState({ service: "", url: "", username: "", password: "", notes: "" });
   return html`
-    <h2>Identifiants</h2><p class="muted">Les accès qu'Ely utilise pour se connecter à tes sites (Doctolib, Ameli, impots.gouv…). Elle y enregistre aussi ceux que tu lui donnes.</p>
-    <div class="card">
-      <div class="row" style="flex-wrap:nowrap"><input class="input" placeholder="Service (ex. Doctolib)" value=${f.service} onInput=${(e) => setF({ ...f, service: e.target.value })} />
+    <${Row} title="Ajouter" hint="Ely s'en sert pour se connecter à ta place.">
+      <div class="row nowrap"><input class="input" placeholder="Service (ex. Doctolib)" value=${f.service} onInput=${(e) => setF({ ...f, service: e.target.value })} />
         <input class="input" placeholder="Adresse du site" value=${f.url} onInput=${(e) => setF({ ...f, url: e.target.value })} /></div>
-      <div class="row" style="flex-wrap:nowrap"><input class="input" placeholder="Identifiant" value=${f.username} onInput=${(e) => setF({ ...f, username: e.target.value })} />
-        <input class="input" type="password" placeholder="Mot de passe" value=${f.password} onInput=${(e) => setF({ ...f, password: e.target.value })} /></div>
+      <div class="row nowrap"><input class="input" placeholder="Identifiant" autocomplete="off" value=${f.username} onInput=${(e) => setF({ ...f, username: e.target.value })} />
+        <input class="input" type="password" placeholder="Mot de passe" autocomplete="new-password" value=${f.password} onInput=${(e) => setF({ ...f, password: e.target.value })} /></div>
       <div><button class="btn primary" disabled=${!f.service} onClick=${async () => { await post("/api/credentials", f); setF({ service: "", url: "", username: "", password: "", notes: "" }); reload(); }}>Enregistrer</button></div>
-    </div>
-    <div class="card"><div class="list">${(items || []).map((c) => html`<div class="list-item">
-      <div class="grow"><b>${c.service}</b><div class="sub">${c.username || "—"} · ${c.url || "—"} · ${timeAgo(c.updated_at)}</div></div>
-      <button class="icon-btn" onClick=${async () => { if (confirm("Supprimer ?")) { await del(`/api/credentials/${c.id}`); reload(); } }}><${Icon} name="trash" size=${16} /></button></div>`)}
-      ${items && !items.length ? html`<div class="faint">Aucun identifiant pour l'instant.</div>` : null}</div></div>`;
+      <p class="desc">Site protégé par une clé d'accès (passkey) ? Connecte-toi une fois dans le navigateur d'Ely : la session reste enregistrée.</p>
+    <//>
+    <${Row} title="Enregistrés" hint=${items ? `${items.length} identifiant${items.length > 1 ? "s" : ""}` : ""}>
+      <div class="list">${(items || []).map((c) => html`<div class="list-item center" key=${c.id}>
+        <div class="grow"><b>${c.service}</b><div class="tags"><span>${c.username || "—"}</span><span>·</span><span>${c.url || "—"}</span><span>·</span><span>${timeAgo(c.updated_at)}</span></div></div>
+        <button class="icon-btn" title="Supprimer" onClick=${async () => { if (confirm("Supprimer ?")) { await del(`/api/credentials/${c.id}`); reload(); } }}><${Icon} name="trash" size=${14} /></button></div>`)}
+        ${items && !items.length ? html`<${Empty}>Aucun identifiant pour l'instant.<//>` : null}</div>
+    <//>`;
 }
 
 // ---------------------------------------------------------------- tâches planifiées
 function Schedules() {
   const [items, reload] = useLoad(() => get("/api/schedules"));
-  return html`
-    <h2>Tâches planifiées</h2><p class="muted">Rappels, veilles et routines qu'Ely exécute seule. Pour en créer : « tous les lundis à 8h, fais-moi un point sur… ».</p>
-    <div class="card"><div class="list">${(items || []).map((s) => html`<div class="list-item">
-      <label class="switch" title="Activer"><input type="checkbox" checked=${!!s.enabled} onChange=${async (e) => { await patch(`/api/schedules/${s.id}`, { enabled: e.target.checked }); reload(); }} /><span></span></label>
-      <div class="grow">${s.instruction}<div class="sub">${s.cron ? `Récurrente (${s.cron})` : "Une fois"} · ${s.next_run && s.enabled ? "prochaine : " + dateTime(s.next_run) : "terminée"}${s.last_run ? " · dernière : " + timeAgo(s.last_run) : ""}</div></div>
-      <button class="icon-btn" onClick=${async () => { await del(`/api/schedules/${s.id}`); reload(); }}><${Icon} name="trash" size=${16} /></button></div>`)}
-      ${items && !items.length ? html`<div class="faint">Aucune tâche planifiée.</div>` : null}</div></div>`;
+  if (!items) return html`<${Loading} />`;
+  return html`<div class="list">${items.map((s) => html`<div class="list-item" key=${s.id}>
+      <${Switch} title="Activer" checked=${!!s.enabled} onChange=${async (v) => { await patch(`/api/schedules/${s.id}`, { enabled: v }); reload(); }} />
+      <div class="grow"><span>${s.instruction}</span>
+        <div class="tags"><span class="tag">${s.cron ? s.cron : "une fois"}</span>
+          <span>${s.next_run && s.enabled ? "prochaine : " + dateTime(s.next_run) : "terminée"}${s.last_run ? " · dernière : " + timeAgo(s.last_run) : ""}</span></div></div>
+      <button class="icon-btn" title="Supprimer" onClick=${async () => { await del(`/api/schedules/${s.id}`); reload(); }}><${Icon} name="trash" size=${14} /></button></div>`)}
+    ${!items.length ? html`<${Empty}>Aucune tâche planifiée.<//>` : null}</div>`;
 }
 
 // ---------------------------------------------------------------- fichiers
 function Files() {
   const [items, reload] = useLoad(() => get("/api/files"));
   return html`
-    <h2>Fichiers</h2><p class="muted">Documents reçus, créés ou téléchargés par Ely.</p>
-    <div class="card">
-      <label class="btn" style="justify-self:start">Ajouter des fichiers<input type="file" multiple style="display:none" onChange=${async (e) => { for (const f of e.target.files) await upload(f); reload(); }} /></label>
-      <div class="list">${(items || []).map((f) => html`<div class="list-item">
-        <span style="font-size:20px">${fileIcon(f.path)}</span>
-        <div class="grow"><a href=${"/files/" + encodeURI(f.path)} target="_blank">${f.path}</a><div class="sub">${bytes(f.size)} · ${timeAgo(f.mtime)}</div></div>
-        <a class="icon-btn" href=${"/files/" + encodeURI(f.path) + "?download=1"} title="Télécharger"><${Icon} name="download" size=${16} /></a>
-        <button class="icon-btn" onClick=${async () => { if (confirm("Supprimer ce fichier ?")) { await del(`/api/files?path=${encodeURIComponent(f.path)}`); reload(); } }}><${Icon} name="trash" size=${16} /></button></div>`)}
-        ${items && !items.length ? html`<div class="faint">Aucun fichier.</div>` : null}</div>
-    </div>`;
+    <div class="row" style="margin-bottom:8px"><label class="btn primary">Ajouter des fichiers<input type="file" multiple style="display:none"
+      onChange=${async (e) => { for (const f of e.target.files) await upload(f); reload(); }} /></label></div>
+    <div class="list">${(items || []).map((f) => html`<div class="list-item center" key=${f.path}>
+      <${FileTag} path=${f.path} />
+      <div class="grow"><a href=${"/files/" + encodeURI(f.path)} target="_blank">${f.path}</a><div class="tags"><span>${bytes(f.size)}</span><span>·</span><span>${timeAgo(f.mtime)}</span></div></div>
+      <a class="icon-btn" href=${"/files/" + encodeURI(f.path) + "?download=1"} title="Télécharger"><${Icon} name="download" size=${14} /></a>
+      <button class="icon-btn" title="Supprimer" onClick=${async () => { if (confirm("Supprimer ce fichier ?")) { await del(`/api/files?path=${encodeURIComponent(f.path)}`); reload(); } }}><${Icon} name="trash" size=${14} /></button></div>`)}
+      ${items && !items.length ? html`<${Empty}>Aucun fichier.<//>` : null}</div>`;
 }
 
 // ---------------------------------------------------------------- administration : modèles
@@ -232,12 +242,13 @@ const ROLE_INFO = {
   embed: ["Vecteurs mémoire", "Recherche sémantique des souvenirs (LM Studio nomic-embed…)."],
 };
 
-function ChatGPTCard({ onChange }) {
+function ChatGPTRow({ onChange }) {
   const [st, reload, error] = useLoad(() => get("/api/admin/chatgpt"));
   const [paste, setPaste] = useState("");
   const [busy, setBusy] = useState(false);
-  if (error) return html`<div class="card"><h3>💬 Abonnement ChatGPT</h3>
-    <p class="desc">Indisponible : ${/404|Not Found/i.test(error) ? "redémarre Ely (Ctrl+C puis ./ely.sh) pour activer cette fonction." : error}</p></div>`;
+  const hint = "GPT avec ton forfait ChatGPT, sans payer au token.";
+  if (error) return html`<${Row} title="Abonnement ChatGPT" hint=${hint}>
+    <p class="desc">Indisponible : ${/404|Not Found/i.test(error) ? "redémarre Ely (Ctrl+C puis ./ely.sh) pour activer cette fonction." : error}</p><//>`;
   if (!st) return null;
   async function doImport(text) {
     setBusy(true);
@@ -245,32 +256,32 @@ function ChatGPTCard({ onChange }) {
     catch (e) { toast(e.message, 7000); }
     setBusy(false);
   }
-  return html`<div class="card">
-    <h3>💬 Abonnement ChatGPT ${st.connected ? html`<span class="pill ok">connecté</span>` : st.reconnect_required ? html`<span class="pill err">à reconnecter</span>` : null}</h3>
-    <p class="desc">Utilise GPT avec ton forfait ChatGPT, sans payer au token (même mécanisme que l'ancienne version : jetons du CLI Codex).
-      Les modèles apparaissent ensuite sous le fournisseur <code>chatgpt</code>. Mécanisme non officiel, soumis aux limites de ton forfait.</p>
+  const badge = st.connected ? html` <span class="pill ok">connecté</span>` : st.reconnect_required ? html` <span class="pill err">à reconnecter</span>` : null;
+  return html`<${Row} title="Abonnement ChatGPT" hint=${hint} badge=${badge}>
+    <p class="desc">Même mécanisme que l'ancienne version : jetons du CLI Codex. Les modèles apparaissent sous le fournisseur <code>chatgpt</code>.
+      Mécanisme non officiel, soumis aux limites de ton forfait.</p>
     ${st.codex_model ? html`<p class="desc">Modèle configuré dans Codex : <code>${st.codex_model}</code> (proposé comme <code>chatgpt:${st.codex_model}</code>).</p>` : null}
-    ${st.connected ? html`<div class="row"><span class="faint small">Compte ${st.account_id || "ChatGPT"}</span>
+    ${st.connected ? html`<div class="row"><span class="meta-text">compte ${st.account_id || "ChatGPT"}</span>
         <button class="btn small danger" onClick=${async () => { await del("/api/admin/chatgpt"); reload(); onChange(); }}>Déconnecter</button></div>`
       : html`
-        <ol class="small muted" style="margin:0;padding-left:18px">
+        <ol>
           <li>Sur ce Mac, dans un terminal : <code>brew install codex</code> (ou <code>npm i -g @openai/codex</code>)</li>
           <li><code>codex login</code> puis choisis « Sign in with ChatGPT »</li>
           <li>Reviens ici et clique « Importer ».</li>
         </ol>
-        <div class="row"><button class="btn primary" disabled=${busy} onClick=${() => doImport("")}>${busy ? "Vérification…" : st.codex_file ? "Importer depuis ce Mac (~/.codex/auth.json)" : "Importer depuis ~/.codex/auth.json"}</button></div>
-        <details><summary class="small muted" style="cursor:pointer">Ely tourne sur une autre machine ? Colle le contenu de auth.json</summary>
-          <textarea class="input" rows="4" style="margin-top:8px;font-family:var(--mono);font-size:12px" value=${paste} onInput=${(e) => setPaste(e.target.value)}></textarea>
+        <div><button class="btn primary" disabled=${busy} onClick=${() => doImport("")}>${busy ? "Vérification…" : st.codex_file ? "Importer depuis ce Mac (~/.codex/auth.json)" : "Importer depuis ~/.codex/auth.json"}</button></div>
+        <details><summary>Ely tourne sur une autre machine ? Colle le contenu de auth.json</summary>
+          <textarea class="input mono" rows="4" value=${paste} onInput=${(e) => setPaste(e.target.value)}></textarea>
           <button class="btn small" style="margin-top:8px" disabled=${!paste || busy} onClick=${() => doImport(paste)}>Importer ce contenu</button>
         </details>
         <p class="desc">Après l'import, Ely renouvelle elle-même les jetons ; le CLI Codex pourra te redemander « codex login ».</p>`}
-  </div>`;
+  <//>`;
 }
 
 function Models() {
   const [data, reload] = useLoad(() => Promise.all([get("/api/models"), get("/api/admin/models/all")]).then(([a, b]) => ({ ...a, all: b })));
   const [busy, setBusy] = useState(false);
-  if (!data) return html`<div class="spinner"></div>`;
+  if (!data) return html`<${Loading} />`;
   const llms = data.all.filter((m) => m.kind === "llm");
   const embeds = data.all.filter((m) => m.kind === "embeddings" || /embed/i.test(m.id));
   async function setRole(role, value) {
@@ -281,26 +292,22 @@ function Models() {
     await put("/api/admin/models", { [role]: value }); reload(); toast("Modèle enregistré — actif immédiatement");
   }
   return html`
-    <h2>Modèles</h2><p class="muted">Ely choisit automatiquement les meilleurs modèles disponibles ; tu peux imposer les tiens. En cas de panne, elle bascule sur le suivant.</p>
-    <div class="card">
-      ${Object.entries(ROLE_INFO).map(([role, [label, desc]]) => html`<div class="list-item" style="align-items:center">
-        <div class="grow"><b>${label}</b><div class="sub">${desc}<br/>Actuel : <code>${data.roles[role]?.effective || "—"}</code></div></div>
-        <select class="input" style="width:min(320px, 50vw)" value=${data.roles[role]?.configured} onChange=${(e) => setRole(role, e.target.value)}>
-          <option value="auto">Automatique</option>
-          ${(role === "embed" ? embeds : llms).map((m) => html`<option value=${m.ref}>${m.ref}${m.reachable ? "" : " (injoignable)"}</option>`)}
-          ${data.roles[role]?.configured !== "auto" && !data.all.some((m) => m.ref === data.roles[role]?.configured) ? html`<option value=${data.roles[role]?.configured}>${data.roles[role]?.configured}</option>` : null}
-          <option value="__autre__">Autre modèle…</option>
-        </select></div>`)}
-    </div>
-    <${ChatGPTCard} onChange=${reload} />
-    <div class="card">
-      <h3>Fournisseurs</h3>
-      <div class="list">${Object.entries(data.providers).map(([p, s]) => html`<div class="list-item"><div class="grow"><b>${p}</b><div class="sub">${s}</div></div>
-        <span class=${"pill " + (s.startsWith("ok") ? "ok" : "err")}>${s.startsWith("ok") ? "OK" : "hors ligne"}</span></div>`)}</div>
-      <p class="desc">Ajoute des clés dans le fichier .env (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, MISTRAL_API_KEY, DEEPSEEK_API_KEY, OPENROUTER_API_KEY…)
-        puis clique « Actualiser » : pas besoin de redémarrer Ely.</p>
+    ${Object.entries(ROLE_INFO).map(([role, [label, desc]]) => html`<${Row} title=${label} hint=${desc}>
+      <select class="input" value=${data.roles[role]?.configured} onChange=${(e) => setRole(role, e.target.value)}>
+        <option value="auto">Automatique</option>
+        ${(role === "embed" ? embeds : llms).map((m) => html`<option value=${m.ref}>${m.ref}${m.reachable ? "" : " (injoignable)"}</option>`)}
+        ${data.roles[role]?.configured !== "auto" && !data.all.some((m) => m.ref === data.roles[role]?.configured) ? html`<option value=${data.roles[role]?.configured}>${data.roles[role]?.configured}</option>` : null}
+        <option value="__autre__">Autre modèle…</option>
+      </select>
+      <span class="meta-text">actuel : ${data.roles[role]?.effective || "—"}</span>
+    <//>`)}
+    <${ChatGPTRow} onChange=${reload} />
+    <${Row} title="Fournisseurs" hint="Clés d'API lues dans le fichier .env, sans redémarrage.">
+      <div class="list">${Object.entries(data.providers).map(([p, s]) => html`<div class="list-item center" key=${p}><div class="grow"><b>${p}</b><div class="sub">${s}</div></div>
+        <span class=${"pill " + (s.startsWith("ok") ? "ok" : "err")}>${s.startsWith("ok") ? "ok" : "hors ligne"}</span></div>`)}</div>
+      <p class="desc">Ajoute des clés dans .env (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, MISTRAL_API_KEY, DEEPSEEK_API_KEY, OPENROUTER_API_KEY…) puis clique « Actualiser ».</p>
       <div><button class="btn" disabled=${busy} onClick=${async () => { setBusy(true); await post("/api/admin/models/refresh"); await reload(); setBusy(false); }}>${busy ? "Interrogation…" : "Actualiser les modèles"}</button></div>
-    </div>`;
+    <//>`;
 }
 
 function Users() {
@@ -308,23 +315,22 @@ function Users() {
   const [f, setF] = useState({ email: "", name: "", password: "" });
   const [invite, setInvite] = useState("");
   return html`
-    <h2>Utilisateurs</h2><p class="muted">Chaque utilisateur a son propre Ely : mémoire, connexions, fichiers et navigateur séparés.</p>
-    <div class="card">
-      <h3>Inviter</h3>
-      <div class="row"><button class="btn" onClick=${async () => { const r = await post("/api/admin/invites"); setInvite(`${location.origin}/?invite=${r.code}`); }}>Créer un lien d'invitation</button></div>
+    <${Row} title="Inviter" hint="Un lien à ouvrir pour créer son compte.">
+      <div><button class="btn" onClick=${async () => { const r = await post("/api/admin/invites"); setInvite(`${location.origin}/?invite=${r.code}`); }}>Créer un lien d'invitation</button></div>
       ${invite ? html`<div class="copy-field"><input class="input" readonly value=${invite} /><button class="btn" onClick=${() => copy(invite)}>Copier</button></div>` : null}
-      <h3>Ou créer directement un compte</h3>
-      <div class="row" style="flex-wrap:nowrap"><input class="input" placeholder="E-mail" value=${f.email} onInput=${(e) => setF({ ...f, email: e.target.value })} />
-        <input class="input" placeholder="Prénom" value=${f.name} onInput=${(e) => setF({ ...f, name: e.target.value })} />
-        <input class="input" placeholder="Mot de passe" value=${f.password} onInput=${(e) => setF({ ...f, password: e.target.value })} />
-        <button class="btn primary" onClick=${async () => { try { await post("/api/admin/users", f); setF({ email: "", name: "", password: "" }); reload(); } catch (e) { toast(e.message); } }}>Créer</button></div>
-    </div>
-    <div class="card"><table class="table"><thead><tr><th>Nom</th><th>E-mail</th><th>Rôle</th><th>Tâches</th><th>Vu</th><th></th></tr></thead><tbody>
-      ${(users || []).map((u) => html`<tr><td>${u.name}</td><td>${u.email}</td>
-        <td><select class="input" style="padding:4px 8px" value=${u.role} onChange=${async (e) => { try { await patch(`/api/admin/users/${u.id}`, { role: e.target.value }); } catch (err) { toast(err.message); } reload(); }}>
+    <//>
+    <${Row} title="Créer un compte" hint="Directement, avec un mot de passe provisoire.">
+      <div class="row nowrap"><input class="input" placeholder="E-mail" value=${f.email} onInput=${(e) => setF({ ...f, email: e.target.value })} />
+        <input class="input" placeholder="Prénom" value=${f.name} onInput=${(e) => setF({ ...f, name: e.target.value })} /></div>
+      <input class="input" placeholder="Mot de passe" value=${f.password} onInput=${(e) => setF({ ...f, password: e.target.value })} />
+      <div><button class="btn primary" onClick=${async () => { try { await post("/api/admin/users", f); setF({ email: "", name: "", password: "" }); reload(); } catch (e) { toast(e.message); } }}>Créer</button></div>
+    <//>
+    <div class="table-wrap"><table class="table"><thead><tr><th>Nom</th><th>E-mail</th><th>Rôle</th><th>Tâches</th><th>Vu</th><th></th></tr></thead><tbody>
+      ${(users || []).map((u) => html`<tr key=${u.id}><td>${u.name}</td><td>${u.email}</td>
+        <td><select class="input" value=${u.role} onChange=${async (e) => { try { await patch(`/api/admin/users/${u.id}`, { role: e.target.value }); } catch (err) { toast(err.message); } reload(); }}>
           <option value="user">utilisateur</option><option value="admin">admin</option></select></td>
-        <td>${u.runs}</td><td>${u.last_seen ? timeAgo(u.last_seen) : "—"}</td>
-        <td><button class="icon-btn" onClick=${async () => { if (confirm(`Supprimer ${u.email} et toutes ses données ?`)) { try { await del(`/api/admin/users/${u.id}`); reload(); } catch (e) { toast(e.message); } } }}><${Icon} name="trash" size=${16} /></button></td></tr>`)}
+        <td class="num">${u.runs}</td><td class="num">${u.last_seen ? timeAgo(u.last_seen) : "—"}</td>
+        <td><button class="icon-btn soft" title="Supprimer" onClick=${async () => { if (confirm(`Supprimer ${u.email} et toutes ses données ?`)) { try { await del(`/api/admin/users/${u.id}`); reload(); } catch (e) { toast(e.message); } } }}><${Icon} name="trash" size=${14} /></button></td></tr>`)}
     </tbody></table></div>`;
 }
 
@@ -332,28 +338,25 @@ function Usage() {
   const [days, setDays] = useState(30);
   const [data] = useLoad(() => get(`/api/admin/usage?days=${days}`), [days]);
   return html`
-    <h2>Consommation</h2><p class="muted">Tokens et coût estimé par utilisateur, modèle et usage (les modèles locaux sont gratuits).</p>
-    <div class="row" style="margin-bottom:12px">${[1, 7, 30, 365].map((d) => html`<button class=${"btn small" + (d === days ? " primary" : "")} onClick=${() => setDays(d)}>${d === 1 ? "24 h" : d === 365 ? "1 an" : d + " jours"}</button>`)}</div>
+    <div style="margin-bottom:24px"><${Seg} value=${days} onChange=${setDays} options=${[[1, "24 h"], [7, "7 jours"], [30, "30 jours"], [365, "1 an"]]} /></div>
     ${data ? html`<div class="kpis"><div class="kpi"><b>${data.total_cost.toFixed(2)} $</b><span>coût estimé</span></div>
       <div class="kpi"><b>${data.rows.reduce((a, r) => a + r.calls, 0)}</b><span>appels de modèles</span></div>
       <div class="kpi"><b>${Math.round(data.rows.reduce((a, r) => a + (r.input || 0) + (r.output || 0), 0) / 1000)} k</b><span>tokens</span></div></div>
-      <div class="card" style="overflow-x:auto"><table class="table"><thead><tr><th>Utilisateur</th><th>Modèle</th><th>Usage</th><th>Appels</th><th>Entrée</th><th>Cache</th><th>Sortie</th><th>Coût</th></tr></thead><tbody>
-        ${data.rows.map((r) => html`<tr><td>${r.user}</td><td><code>${r.model}</code></td><td>${r.purpose}</td><td>${r.calls}</td><td>${r.input}</td><td>${r.cached}</td><td>${r.output}</td><td>${r.cost ? r.cost.toFixed(3) + " $" : "—"}</td></tr>`)}
-      </tbody></table></div>` : html`<div class="spinner"></div>`}`;
+      <div class="table-wrap"><table class="table"><thead><tr><th>Utilisateur</th><th>Modèle</th><th>Usage</th><th>Appels</th><th>Entrée</th><th>Cache</th><th>Sortie</th><th>Coût</th></tr></thead><tbody>
+        ${data.rows.map((r) => html`<tr><td>${r.user}</td><td><code>${r.model}</code></td><td>${r.purpose}</td><td class="num">${r.calls}</td><td class="num">${r.input}</td>
+          <td class="num">${r.cached}</td><td class="num">${r.output}</td><td class="num">${r.cost ? r.cost.toFixed(3) + " $" : "—"}</td></tr>`)}
+      </tbody></table></div>` : html`<${Loading} />`}`;
 }
-
-const KIND = { code: "🧬", plugin: "🔌", guidelines: "📝", skill: "🎓" };
 
 function SelfDev({ openConversation }) {
   const [data, reload] = useLoad(() => get("/api/admin/selfdev"));
   const [goal, setGoal] = useState("");
   const [guide, setGuide] = useState(null);
   const [detail, setDetail] = useState(null);
-  if (!data) return html`<div class="spinner"></div>`;
+  if (!data) return html`<${Loading} />`;
   const m = data.metrics;
   const ok = (m.by_status.done || 0);
   return html`
-    <h2>Auto-amélioration</h2><p class="muted">Ely mesure ses performances et s'améliore : leçons, compétences, nouveaux outils, et corrections de son propre code (testées, avec retour arrière automatique).</p>
     <div class="kpis">
       <div class="kpi"><b>${m.runs}</b><span>tâches (7 j)</span></div>
       <div class="kpi"><b>${m.runs ? Math.round(100 * ok / m.runs) : 0} %</b><span>terminées</span></div>
@@ -361,41 +364,37 @@ function SelfDev({ openConversation }) {
       <div class="kpi"><b>${m.verify_rejections}</b><span>relances du contrôleur</span></div>
       <div class="kpi"><b>${m.estimated_cost_usd} $</b><span>coût estimé</span></div>
     </div>
-    <div class="card">
-      <h3>🛠️ Lancer une session</h3>
-      <div class="row" style="flex-wrap:nowrap"><input class="input" placeholder="Objectif (facultatif) : ex. « sois plus rapide sur Doctolib »" value=${goal} onInput=${(e) => setGoal(e.target.value)} />
+    <${Row} title="Lancer une session" hint="Ely analyse ses mesures et s'améliore.">
+      <div class="row nowrap"><input class="input" placeholder="Objectif (facultatif) : « sois plus rapide sur Doctolib »" value=${goal} onInput=${(e) => setGoal(e.target.value)} />
         <button class="btn primary" onClick=${async () => { const r = await post("/api/admin/selfdev/run", { goal }); toast("Session lancée"); openConversation(r.conversation_id); }}>Lancer</button></div>
-      <label class="row"><span class="switch"><input type="checkbox" checked=${data.auto} onChange=${async (e) => { await put("/api/admin/selfdev", { auto: e.target.checked }); reload(); }} /><span></span></span>
-        Session automatique chaque nuit à <input class="input" type="number" min="0" max="23" style="width:70px" value=${data.hour} onChange=${async (e) => { await put("/api/admin/selfdev", { hour: parseInt(e.target.value) }); reload(); }} /> h</label>
-    </div>
-    <div class="card">
-      <h3>📝 Leçons tirées de l'expérience</h3>
-      <p class="desc">Consignes injectées dans chaque tâche. Ely les écrit elle-même ; tu peux les corriger.</p>
+      <label class="toggle small"><${Switch} checked=${data.auto} onChange=${async (v) => { await put("/api/admin/selfdev", { auto: v }); reload(); }} />
+        Session automatique chaque nuit à <input class="input mono" type="number" min="0" max="23" style="width:72px;min-height:34px" value=${data.hour}
+          onChange=${async (e) => { await put("/api/admin/selfdev", { hour: parseInt(e.target.value) }); reload(); }} /> h</label>
+    <//>
+    <${Row} title="Leçons tirées de l'expérience" hint="Consignes injectées dans chaque tâche. Ely les écrit ; tu peux les corriger.">
       <textarea class="input" rows="6" value=${guide ?? data.guidelines} placeholder="Aucune leçon pour l'instant." onInput=${(e) => setGuide(e.target.value)}></textarea>
       <div><button class="btn" disabled=${guide === null} onClick=${async () => { await put("/api/admin/selfdev", { guidelines: guide }); setGuide(null); reload(); toast("Enregistré"); }}>Enregistrer</button></div>
-    </div>
-    ${data.plugins.length ? html`<div class="card"><h3>🔌 Outils créés par Ely</h3><div class="list">${data.plugins.map((p) => html`<div class="list-item">
-      <label class="switch"><input type="checkbox" checked=${p.enabled} onChange=${async (e) => { await post(`/api/admin/plugins/${p.name}`, { enabled: e.target.checked }); reload(); }} /><span></span></label>
-      <div class="grow"><b>${p.name}</b><div class="sub">${p.tools.join(", ") || "—"}</div></div></div>`)}</div></div>` : null}
-    ${m.tools.length ? html`<div class="card"><h3>📊 Outils les plus en échec (7 j)</h3><table class="table"><thead><tr><th>Outil</th><th>Appels</th><th>Erreurs</th><th>Durée moy.</th></tr></thead><tbody>
-      ${m.tools.slice(0, 8).map((t) => html`<tr><td>${t.name}</td><td>${t.calls}</td><td>${t.errors || 0}</td><td>${t.avg_ms} ms</td></tr>`)}</tbody></table></div>` : null}
-    <div class="card">
-      <h3>📜 Journal des améliorations</h3>
-      <div class="list">${data.journal.map((j) => html`<div class="list-item">
-        <span style="font-size:18px">${KIND[j.kind] || "•"}</span>
+    <//>
+    ${data.plugins.length ? html`<${Row} title="Outils créés par Ely" hint="Extensions chargées à chaud."><div class="list">${data.plugins.map((p) => html`<div class="list-item center" key=${p.name}>
+      <${Switch} checked=${p.enabled} onChange=${async (v) => { await post(`/api/admin/plugins/${p.name}`, { enabled: v }); reload(); }} />
+      <div class="grow"><b>${p.name}</b><div class="sub">${p.tools.join(", ") || "—"}</div></div></div>`)}</div><//>` : null}
+    ${m.tools.length ? html`<${Row} title="Outils les plus en échec" hint="Sur 7 jours."><div class="table-wrap"><table class="table"><thead><tr><th>Outil</th><th>Appels</th><th>Erreurs</th><th>Durée</th></tr></thead><tbody>
+      ${m.tools.slice(0, 8).map((t) => html`<tr><td><code>${t.name}</code></td><td class="num">${t.calls}</td><td class="num">${t.errors || 0}</td><td class="num">${t.avg_ms} ms</td></tr>`)}</tbody></table></div><//>` : null}
+    <${Row} title="Journal des améliorations" hint="Chaque modification, avec retour arrière possible.">
+      <div class="list">${data.journal.map((j) => html`<div class="list-item" key=${j.id}>
         <div class="grow"><b style="cursor:pointer" onClick=${async () => setDetail(detail?.id === j.id ? null : await get(`/api/admin/improvements/${j.id}`))}>${j.title}</b>
-          <div class="sub">${j.status} · ${dateTime(j.created_at)}${j.commit_sha ? " · " + j.commit_sha.slice(0, 10) : ""}</div>
+          <div class="tags"><span class="tag">${j.kind}</span><span>${j.status} · ${dateTime(j.created_at)}${j.commit_sha ? " · " + j.commit_sha.slice(0, 10) : ""}</span></div>
           ${detail?.id === j.id ? html`${detail.detail ? html`<div class="small muted">${detail.detail}</div>` : null}${detail.diff ? html`<pre class="diff">${detail.diff}</pre>` : null}` : null}</div>
         ${j.kind === "code" && j.status === "deployed" ? html`<button class="btn small" onClick=${async () => { if (confirm("Annuler cette modification du code ?")) { try { const r = await post(`/api/admin/improvements/${j.id}/revert`); toast(r.message); reload(); } catch (e) { toast(e.message); } } }}>Annuler</button>` : null}
-      </div>`)}${!data.journal.length ? html`<div class="faint">Rien pour l'instant.</div>` : null}</div>
-    </div>`;
+      </div>`)}${!data.journal.length ? html`<${Empty}>Rien pour l'instant.<//>` : null}</div>
+    <//>`;
 }
 
 function Extensions() {
   const [data, reload] = useLoad(() => get("/api/admin/mcp"));
   const [text, setText] = useState(null);
   const [busy, setBusy] = useState(false);
-  if (!data) return html`<div class="spinner"></div>`;
+  if (!data) return html`<${Loading} />`;
   const value = text ?? JSON.stringify(data.servers, null, 2);
   async function save() {
     let servers;
@@ -405,42 +404,65 @@ function Extensions() {
     setBusy(false);
   }
   return html`
-    <h2>Extensions MCP</h2><p class="muted">Branche des serveurs MCP : leurs outils deviennent ceux d'Ely (Home Assistant, Notion, GitHub, fichiers du Mac…).
-      Tu peux aussi simplement demander à Ely : « branche-toi sur tel serveur MCP ».</p>
-    <div class="card">
-      ${Object.keys(data.status).length ? html`<div class="list">${Object.entries(data.status).map(([n, s]) => html`<div class="list-item">
+    <${Row} title="Serveurs" hint="État et outils fournis.">
+      ${Object.keys(data.status).length ? html`<div class="list">${Object.entries(data.status).map(([n, s]) => html`<div class="list-item center" key=${n}>
         <div class="grow"><b>${n}</b><div class="sub">${s.status}${s.tools.length ? " · " + s.tools.join(", ") : ""}</div></div>
-        <span class=${"pill " + (s.status.startsWith("ok") ? "ok" : "err")}>${s.status.startsWith("ok") ? "OK" : "erreur"}</span></div>`)}</div>`
-        : html`<div class="faint">Aucun serveur branché.</div>`}
-    </div>
-    <div class="card">
-      <h3>Configuration</h3>
+        <span class=${"pill " + (s.status.startsWith("ok") ? "ok" : "err")}>${s.status.startsWith("ok") ? "ok" : "erreur"}</span></div>`)}</div>`
+        : html`<${Empty}>Aucun serveur branché.<//>`}
+    <//>
+    <${Row} title="Configuration" hint="JSON des serveurs MCP.">
       <p class="desc">Format : <code>{"nom": {"command": "npx", "args": ["-y", "paquet-mcp"], "env": {}}}</code> ou <code>{"nom": {"url": "https://…/mcp"}}</code></p>
-      <textarea class="input" rows="12" style="font-family:var(--mono);font-size:13px" value=${value} onInput=${(e) => setText(e.target.value)}></textarea>
+      <textarea class="input mono" rows="12" value=${value} onInput=${(e) => setText(e.target.value)}></textarea>
       <div><button class="btn primary" disabled=${busy} onClick=${save}>${busy ? "Connexion…" : "Enregistrer et recharger"}</button></div>
-    </div>`;
+    <//>`;
 }
 
 // ---------------------------------------------------------------- conteneur
-export function Settings({ me, onMe, tab, onTab, onClose, pwa, openConversation }) {
-  const tabs = [["profil", "👤", "Profil"], ["memoire", "🧠", "Mémoire"], ["connexions", "🔗", "Connexions"], ["identifiants", "🔑", "Identifiants"],
-    ["taches", "⏰", "Tâches planifiées"], ["fichiers", "🗂️", "Fichiers"]];
-  const admin = [["modeles", "🤖", "Modèles"], ["utilisateurs", "👥", "Utilisateurs"], ["conso", "📈", "Consommation"], ["mcp", "🧩", "Extensions MCP"], ["auto", "🛠️", "Auto-amélioration"]];
-  const pane = {
-    profil: html`<${Profile} me=${me} onMe=${onMe} pwa=${pwa} />`, memoire: html`<${Memory} />`, connexions: html`<${Connections} />`,
+const PAGES = {
+  profil: ["Profil", "Ton compte et tes préférences d'utilisation."],
+  memoire: ["Mémoire", "Ce qu'Ely a appris sur toi au fil des échanges. Tout est modifiable."],
+  connexions: ["Connexions", "Donne à Ely l'accès à tes services pour qu'elle agisse à ta place. Sans connexion, elle utilise son navigateur."],
+  identifiants: ["Identifiants", "Les accès qu'Ely utilise pour se connecter à tes sites (Doctolib, Ameli, impots.gouv…). Elle y enregistre aussi ceux que tu lui donnes."],
+  taches: ["Tâches planifiées", "Rappels, veilles et routines qu'Ely exécute seule. Pour en créer : « tous les lundis à 8h, fais-moi un point sur… »."],
+  fichiers: ["Fichiers", "Documents reçus, créés ou téléchargés par Ely."],
+  modeles: ["Modèles", "Ely choisit automatiquement les meilleurs modèles disponibles ; tu peux imposer les tiens. En cas de panne, elle bascule sur le suivant."],
+  utilisateurs: ["Utilisateurs", "Chaque utilisateur a son propre Ely : mémoire, connexions, fichiers et navigateur séparés."],
+  conso: ["Consommation", "Tokens et coût estimé par utilisateur, modèle et usage (les modèles locaux sont gratuits)."],
+  mcp: ["Extensions MCP", "Branche des serveurs MCP : leurs outils deviennent ceux d'Ely (Home Assistant, Notion, GitHub, fichiers du Mac…). Tu peux aussi demander à Ely : « branche-toi sur tel serveur MCP »."],
+  auto: ["Auto-amélioration", "Ely mesure ses performances et s'améliore : leçons, compétences, nouveaux outils, et corrections de son propre code (testées, avec retour arrière automatique)."],
+};
+const USER_TABS = ["profil", "memoire", "connexions", "identifiants", "taches", "fichiers"];
+const ADMIN_TABS = ["modeles", "utilisateurs", "conso", "mcp", "auto"];
+
+export function Settings({ me, onMe, tab, onTab, onClose, pwa, prefs, openConversation }) {
+  const groups = [["Réglages", USER_TABS], ...(me.role === "admin" ? [["Administration", ADMIN_TABS]] : [])];
+  const all = groups.flatMap(([, keys]) => keys);
+  const key = all.includes(tab) ? tab : "profil";
+  const num = (k) => String(all.indexOf(k) + 1).padStart(2, "0");
+  const body = {
+    profil: html`<${Profile} me=${me} onMe=${onMe} pwa=${pwa} prefs=${prefs} />`, memoire: html`<${Memory} />`, connexions: html`<${Connections} />`,
     identifiants: html`<${Vault} />`, taches: html`<${Schedules} />`, fichiers: html`<${Files} />`, modeles: html`<${Models} />`,
-    utilisateurs: html`<${Users} />`, conso: html`<${Usage} />`, mcp: html`<${Extensions} />`, auto: html`<${SelfDev} openConversation=${(id) => { onClose(); openConversation(id); }} />`,
-  }[tab] || html`<${Profile} me=${me} onMe=${onMe} pwa=${pwa} />`;
+    utilisateurs: html`<${Users} />`, conso: html`<${Usage} />`, mcp: html`<${Extensions} />`,
+    auto: html`<${SelfDev} openConversation=${(id) => { onClose(); openConversation(id); }} />`,
+  }[key];
   useEffect(() => { const k = (e) => e.key === "Escape" && onClose(); addEventListener("keydown", k); return () => removeEventListener("keydown", k); }, []);
-  return html`<div class="sheet-scrim" onClick=${onClose}></div>
-    <div class="sheet" role="dialog" aria-label="Réglages">
-      <button class="icon-btn sheet-close" onClick=${onClose} title="Fermer"><${Icon} name="close" /></button>
-      <nav>
-        <div class="nav-title">Réglages</div>
-        ${tabs.map(([k, i, l]) => html`<button class=${tab === k ? "active" : ""} onClick=${() => onTab(k)}><span>${i}</span>${l}</button>`)}
-        ${me.role === "admin" ? html`<div class="nav-title">Administration</div>
-          ${admin.map(([k, i, l]) => html`<button class=${tab === k ? "active" : ""} onClick=${() => onTab(k)}><span>${i}</span>${l}</button>`)}` : null}
-      </nav>
-      <div class="pane">${pane}</div>
-    </div>`;
+  const [title, desc] = PAGES[key];
+  return html`<div class="sheet-scrim" onClick=${onClose}>
+    <div class="sheet" role="dialog" aria-label="Réglages" onClick=${(e) => e.stopPropagation()}>
+      <nav>${groups.map(([label, keys]) => html`<div class="nav-group">
+        <div class="label">${label}</div>
+        ${keys.map((k) => html`<button class=${key === k ? "active" : ""} onClick=${() => onTab(k)}>
+          <span class="num">${num(k)}</span><span class="lbl">${PAGES[k][0]}</span><span class="dot"></span></button>`)}
+      </div>`)}</nav>
+      <section class="pane" key=${key}>
+        <button class="sheet-close" onClick=${onClose} title="Fermer"><${Icon} name="close" size=${12} stroke=${1.6} /></button>
+        <div class="pane-in">
+          <div class="pane-count">${num(key)} / ${String(all.length).padStart(2, "0")}</div>
+          <h2>${title}</h2>
+          <p class="pane-desc">${desc}</p>
+          ${body}
+        </div>
+      </section>
+    </div>
+  </div>`;
 }

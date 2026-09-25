@@ -89,6 +89,24 @@ async def main() -> None:
         await page.click(".sheet nav button:has-text('Connexions')")
         await page.wait_for_selector("text=Boîte mail")
         await page.screenshot(path=OUT / "10-connexions.png")
+        # apparence : accent choisi dans le profil, gardé après rechargement
+        await page.click(".sheet nav button:has-text('Profil')")
+        await page.click(".seg button:has-text('Glacier')")
+        await page.reload()
+        await page.wait_for_selector(".conv")
+        assert await page.evaluate("document.documentElement.dataset.accent") == "glacier", "accent non conservé"
+        await page.click("button[title=Réglages]")
+        await page.click(".seg button:has-text('Lime')")
+        await page.keyboard.press("Escape")
+        assert await page.evaluate("document.documentElement.dataset.accent") is None
+        # bascule clair/sombre de l'en-tête, puis retour au thème du système
+        await page.click("button[title='Passer en sombre']")
+        assert await page.evaluate("document.documentElement.dataset.theme") == "dark"
+        await page.click("button[title='Passer en clair']")
+        await page.evaluate("localStorage.setItem('ely-theme', 'auto')")
+        # raccourci de recherche
+        await page.keyboard.press("Control+k")
+        assert await page.evaluate("document.activeElement.placeholder") == "Rechercher", "Ctrl+K ne donne pas le focus"
         await page.keyboard.press("Escape")
 
         # 5) sombre

@@ -15,32 +15,35 @@ export function md(text) {
   return DOMPurify.sanitize(marked.parse(text || ""));
 }
 
+// Icônes au trait fin (grille 16 px), comme dans la maquette
 const P = {
-  menu: "M4 6h16M4 12h16M4 18h16",
-  plus: "M12 5v14M5 12h14",
-  send: "M5 12h14M13 6l6 6-6 6",
-  stop: "M7 7h10v10H7z",
-  mic: "M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3",
-  clip: "M21 11.5l-8.6 8.6a5 5 0 0 1-7.1-7.1l8.6-8.6a3.3 3.3 0 0 1 4.7 4.7l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9",
-  search: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-3.5-3.5",
-  gear: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z",
-  globe: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18",
-  close: "M6 6l12 12M18 6L6 18",
-  chev: "M6 9l6 6 6-6",
-  dots: "M5 12h.01M12 12h.01M19 12h.01",
-  trash: "M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3",
-  pin: "M12 17v5M8 3h8l-1 7 3 3H6l3-3z",
-  edit: "M4 20h4L19 9l-4-4L4 16zM14 6l4 4",
-  refresh: "M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7",
-  back: "M15 18l-6-6 6-6",
-  hand: "M8 13V5a1.5 1.5 0 0 1 3 0v6m0-1V4a1.5 1.5 0 0 1 3 0v6m0-1V6a1.5 1.5 0 0 1 3 0v8a6 6 0 0 1-6 6h-1a6 6 0 0 1-5-2.7L3.5 14a1.5 1.5 0 0 1 2.4-1.8L8 14",
-  speaker: "M11 5L6 9H3v6h3l5 4zM16 9a4 4 0 0 1 0 6M19 6a8 8 0 0 1 0 12",
-  logout: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
-  download: "M12 3v12M7 10l5 5 5-5M5 21h14",
+  menu: "M2.5 4.5h11M2.5 8h11M2.5 11.5h11",
+  plus: "M8 2.5v11M2.5 8h11",
+  send: "M8 13V3M3.5 7.5L8 3l4.5 4.5",
+  stop: "M5 5h6v6H5z",
+  mic: "M6.5 1.5h3a1 1 0 0 1 1 1v5a2.5 2.5 0 0 1-5 0v-5a1 1 0 0 1 1-1zM3 7.5a5 5 0 0 0 10 0M8 12.5v2",
+  search: "M6.5 2.2a4.3 4.3 0 1 0 0 8.6 4.3 4.3 0 0 0 0-8.6zM9.8 9.8l3.7 3.7",
+  gear: "M8 5.8a2.2 2.2 0 1 0 0 4.4 2.2 2.2 0 0 0 0-4.4zM8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4",
+  globe: "M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zM1.5 8h13M8 1.5c1.8 1.8 2.7 4 2.7 6.5S9.8 12.7 8 14.5M8 1.5C6.2 3.3 5.3 5.5 5.3 8s.9 4.7 2.7 6.5",
+  close: "M3.5 3.5l9 9M12.5 3.5l-9 9",
+  chev: "M4 6.5l4 4 4-4",
+  dots: "M3.5 8h.01M8 8h.01M12.5 8h.01",
+  trash: "M2.5 4h11M6.5 4V2.5h3V4M4 4l.7 9.5h6.6L12 4",
+  pin: "M8 11v3.5M5.5 2h5l-.7 4.5 2.2 2.5H4l2.2-2.5z",
+  edit: "M2.5 13.5h3l7.5-7.5-3-3-7.5 7.5zM9 4l3 3",
+  refresh: "M13.5 7.5a5.5 5.5 0 1 0-1.6 4M13.5 2.5v5h-5",
+  back: "M10 3.5L5.5 8l4.5 4.5",
+  speaker: "M7.5 3.5L4.5 6H2v4h2.5l3 2.5zM10.5 6a2.8 2.8 0 0 1 0 4M12.5 4a5.6 5.6 0 0 1 0 8",
+  logout: "M6 13.5H3.5a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1H6M10.5 11l3-3-3-3M13.5 8H6",
+  download: "M8 2.5v8M4.5 7L8 10.5 11.5 7M3 13.5h10",
+  check: "M3 8.4l3.2 3.1L13 4.5",
+  sun: "M8 5a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM8 1v1.6M8 13.4V15M1 8h1.6M13.4 8H15M3 3l1.1 1.1M11.9 11.9L13 13M3 13l1.1-1.1M11.9 4.1L13 3",
+  moon: "M13.5 9.8A6 6 0 0 1 6.2 2.5a6 6 0 1 0 7.3 7.3z",
+  phone: "M5 1.5h6a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1zM7 12.5h2",
 };
 
-export const Icon = ({ name, size = 20 }) => html`
-  <svg viewBox="0 0 24 24" width=${size} height=${size} fill="none" stroke="currentColor" stroke-width="1.9"
+export const Icon = ({ name, size = 16, stroke = 1.5 }) => html`
+  <svg viewBox="0 0 16 16" width=${size} height=${size} fill="none" stroke="currentColor" stroke-width=${stroke}
        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d=${P[name] || ""} /></svg>`;
 
 export function timeAgo(ts) {
@@ -66,16 +69,19 @@ export function groupLabel(ts) {
   return "Plus ancien";
 }
 
-export function fileIcon(path) {
-  const ext = (path.split(".").pop() || "").toLowerCase();
-  if (["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext)) return "🖼️";
-  if (ext === "pdf") return "📕";
-  if (["doc", "docx", "odt"].includes(ext)) return "📘";
-  if (["xls", "xlsx", "csv", "ods"].includes(ext)) return "📗";
-  if (["ppt", "pptx"].includes(ext)) return "📙";
-  if (["mp3", "wav", "m4a", "ogg"].includes(ext)) return "🎵";
-  if (["zip", "gz", "tar"].includes(ext)) return "🗜️";
-  return "📄";
+// Étiquette d'extension (PDF, DOCX…) plutôt qu'un émoji
+export function fileExt(path) {
+  const name = (path || "").split("/").pop();
+  const ext = name.includes(".") ? name.split(".").pop().toLowerCase() : "";
+  return ext && ext.length <= 5 ? ext : "fichier";
+}
+
+export const FileTag = ({ path }) => html`<span class="ext">${fileExt(path)}</span>`;
+
+export function clock(ts) {
+  const d = new Date(ts * 1000), now = new Date();
+  if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
 }
 
 export function bytes(n) {
@@ -92,4 +98,35 @@ export function toast(text, ms = 3200) {
 export function onToast(fn) { toastListeners.add(fn); return () => toastListeners.delete(fn); }
 
 export const isMobile = () => matchMedia("(max-width: 860px)").matches;
+export const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 export const isImage = (p) => /\.(png|jpe?g|gif|webp)$/i.test(p || "");
+
+// ---------------------------------------------------------------- thème et accent (préférences de cet appareil)
+const THEME_BG = { light: "#f5f7fa", dark: "#2a2e32" };
+export const ACCENTS = [["lime", "Lime", "oklch(0.9 0.19 122)"], ["glacier", "Glacier", "oklch(0.86 0.1 250)"], ["signal", "Signal", "oklch(0.78 0.17 52)"]];
+
+function pref(key, fallback) {
+  try { return localStorage.getItem(key) || fallback; } catch { return fallback; }
+}
+function savePref(key, value) {
+  try { localStorage.setItem(key, value); } catch { /* navigation privée */ }
+}
+
+export const storedTheme = () => pref("ely-theme", "auto");
+export const storedAccent = () => pref("ely-accent", "lime");
+export const prefersDark = () => matchMedia("(prefers-color-scheme: dark)").matches;
+
+export function applyTheme(v, save = true) {
+  const root = document.documentElement;
+  if (v === "light" || v === "dark") root.setAttribute("data-theme", v); else root.removeAttribute("data-theme");
+  for (const m of document.querySelectorAll('meta[name="theme-color"]')) {
+    const own = m.media.includes("dark") ? "dark" : "light";
+    m.setAttribute("content", THEME_BG[v === "light" || v === "dark" ? v : own]);
+  }
+  if (save) savePref("ely-theme", v);
+}
+
+export function applyAccent(v, save = true) {
+  if (v && v !== "lime") document.documentElement.setAttribute("data-accent", v); else document.documentElement.removeAttribute("data-accent");
+  if (save) savePref("ely-accent", v);
+}

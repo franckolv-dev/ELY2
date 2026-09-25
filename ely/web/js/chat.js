@@ -1,16 +1,16 @@
-// Vue conversation : fil, étapes d'action, question de l'agent, saisie, navigateur en direct.
-import { html, useEffect, useRef, useState, useMemo, useCallback } from "/static/vendor/preact-htm.js";
-import { api, get, post, upload } from "/static/js/api.js";
-import { Icon, md, fileIcon, isImage, isMobile, toast } from "/static/js/util.js";
+// Vue conversation : fil, actions, question de l'agent, saisie, navigateur en direct.
+import { html, useEffect, useRef, useState, useMemo } from "/static/vendor/preact-htm.js";
+import { get, post, upload } from "/static/js/api.js";
+import { FileTag, Icon, clock, md, isImage, isMobile, toast } from "/static/js/util.js";
 import { listen, voiceSupported, stopSpeaking } from "/static/js/voice.js";
 
 export const SUGGESTIONS = [
-  ["📅 Prendre un rendez-vous", "Prends-moi un rendez-vous chez un médecin généraliste près de chez moi cette semaine, en fin de journée."],
-  ["✍️ Publier sur LinkedIn", "Rédige et publie sur LinkedIn un post engageant sur "],
-  ["✉️ Écrire un e-mail", "Écris un e-mail à "],
-  ["🗓️ Ma semaine", "Qu'est-ce que j'ai dans mon agenda cette semaine ? Signale-moi les conflits."],
-  ["🔎 Rechercher", "Fais une recherche approfondie et un résumé clair sur "],
-  ["⏰ Me rappeler", "Rappelle-moi demain à 9h de "],
+  ["Prendre un rendez-vous", "Prends-moi un rendez-vous chez un médecin généraliste près de chez moi cette semaine, en fin de journée."],
+  ["Publier sur LinkedIn", "Rédige et publie sur LinkedIn un post engageant sur "],
+  ["Écrire un e-mail", "Écris un e-mail à "],
+  ["Ma semaine", "Qu'est-ce que j'ai dans mon agenda cette semaine ? Signale-moi les conflits."],
+  ["Rechercher", "Fais une recherche approfondie et un résumé clair sur "],
+  ["Me rappeler", "Rappelle-moi demain à 9h de "],
 ];
 
 function contentText(m) {
@@ -20,7 +20,7 @@ function contentText(m) {
   return "";
 }
 
-// Regroupe les messages en éléments affichables (texte, étapes, notes…)
+// Regroupe les messages en éléments affichables (texte, actions, notes…)
 function buildItems(messages) {
   const results = {};
   for (const m of messages) if (m.role === "tool") results[m.tool_call_id] = m;
@@ -39,10 +39,27 @@ function buildItems(messages) {
       const calls = m.tool_calls.map((c) => ({ call: c, result: results[c.id] }));
       const last = items[items.length - 1];
       if (last && last.type === "steps" && last.run_id === m.run_id && !m.content) last.calls.push(...calls);
-      else items.push({ type: "steps", calls, run_id: m.run_id, id: m.id });
+      else items.push({ type: "steps", calls, run_id: m.run_id, id: m.id, msg: m });
     }
   }
   return items;
+}
+
+// Blocs du fil : messages de l'utilisateur, tâches planifiées, et « tours » d'Ely (en-tête « ely · 19:38 »)
+function buildBlocks(items) {
+  const blocks = [];
+  let turn = null;
+  for (const it of items) {
+    if (it.type === "user" || it.type === "scheduled") { blocks.push(it); turn = null; continue; }
+    if (it.type === "control") {
+      // le contrôleur d'objectif clôt le tour qu'il juge ; la suite ouvre un nouveau tour
+      if (turn) { turn.items.push(it); turn.closed = true; turn = null; } else blocks.push(it);
+      continue;
+    }
+    if (!turn) { turn = { type: "turn", items: [], ts: it.msg.created_at, key: "t" + it.msg.id }; blocks.push(turn); }
+    turn.items.push(it);
+  }
+  return blocks;
 }
 
 function argsPreview(args) {
@@ -57,44 +74,54 @@ function argsPreview(args) {
   return parts.join(" · ");
 }
 
-function Steps({ item, tools, running, onImage }) {
+// « web_search → huggingface.co » : cible courte d'un appel
+function target(args) {
+  if (!args) return "";
+  const url = args.url || (typeof args.text === "string" && /^https?:\/\//.test(args.text) ? args.text : "");
+  if (url) { try { return new URL(url.startsWith("http") ? url : "https://" + url).hostname.replace(/^www\./, ""); } catch { /* adresse partielle */ } }
+  const v = args.query || args.action || args.to || args.path || args.location || args.name || "";
+  const t = String(v).trim();
+  return t.length > 42 ? t.slice(0, 41) + "…" : t;
+}
+
+function Steps({ item, running, onImage }) {
   const done = item.calls.filter((c) => c.result).length;
   const errors = item.calls.filter((c) => c.result?.is_error).length;
   const pending = item.calls.length - done;
   const [open, setOpen] = useState(null);
   const [expanded, setExpanded] = useState({});
-  const isOpen = open ?? (running && pending > 0);
+  const busy = running && pending > 0;
+  const isOpen = open ?? busy;
   const files = item.calls.flatMap((c) => c.result?.files || []);
-  const icons = [...new Set(item.calls.map((c) => tools[c.call.name]?.icon || "⚙️"))].slice(0, 6).join(" ");
-  const visible = isOpen ? item.calls : [];
+  const n = item.calls.length;
+  const names = [...new Set(item.calls.map((c) => c.call.name))];
+  const last = item.calls[item.calls.length - 1].call;
+  const sum = names.length === 1 ? [names[0], target(last.arguments)].filter(Boolean).join(" → ")
+    : names.slice(0, 3).join(", ") + (names.length > 3 ? "…" : "");
   return html`
     <div class=${"steps" + (isOpen ? " open" : "")}>
-      <div class="steps-head" onClick=${() => setOpen(!isOpen)}>
-        ${pending > 0 && running ? html`<div class="spinner"></div>` : html`<span class=${errors && !done ? "cross" : "check"}>${errors === item.calls.length ? "✗" : "✓"}</span>`}
-        <span>${pending > 0 && running ? `En cours · ${done}/${item.calls.length} action${item.calls.length > 1 ? "s" : ""}` :
-          `${item.calls.length} action${item.calls.length > 1 ? "s" : ""}${errors ? ` · ${errors} à revoir` : ""}`}</span>
-        <span class="faint">${icons}</span>
-        <span class="chev"><${Icon} name="chev" size=${16} /></span>
-      </div>
-      ${visible.map(({ call, result }) => {
-        const meta = tools[call.name] || {};
+      <button class="steps-head" onClick=${() => setOpen(!isOpen)} aria-expanded=${isOpen}>
+        ${busy ? html`<div class="spinner"></div>` : errors === n ? html`<span class="err">✗</span>` : html`<${Icon} name="check" size=${12} stroke=${1.6} />`}
+        <span class="cnt">${busy ? `En cours · ${done}/${n}` : `${n} action${n > 1 ? "s" : ""}`}${errors && !busy ? html` <span class="err">· ${errors} à revoir</span>` : null}</span>
+        <span class="sum">${sum}</span>
+        <span class="chev">${isOpen ? "−" : "+"}</span>
+      </button>
+      ${isOpen ? html`<div class="steps-list">${item.calls.map(({ call, result }) => {
         const st = result ? (result.is_error ? "error" : "ok") : (running ? "run" : "lost");
+        const args = argsPreview(call.arguments);
         return html`
-          <div class=${"step" + (st === "error" ? " error" : "")} key=${call.id}>
-            <span class="ic">${meta.icon || "⚙️"}</span>
-            <div class="what" onClick=${() => setExpanded({ ...expanded, [call.id]: !expanded[call.id] })} style="cursor:pointer">
-              <b>${meta.label || call.name}</b>
-              <div class="args">${argsPreview(call.arguments)}</div>
+          <div class="step" key=${call.id}>
+            <span class=${"st " + st}>${st === "run" ? html`<div class="spinner"></div>` : st === "ok" ? "✓" : st === "error" ? "✗" : "–"}</span>
+            <div class="what" onClick=${() => setExpanded({ ...expanded, [call.id]: !expanded[call.id] })}>
+              <div class="line"><span class="name">${call.name}</span>${args ? html`<span class="args">  ${args}</span>` : null}</div>
               ${expanded[call.id] && result ? html`<div class="res">${(result.content || "").slice(0, 4000)}</div>` : null}
             </div>
-            <span class="st">${st === "run" ? html`<div class="spinner"></div>` : st === "ok" ? html`<span class="check">✓</span>` :
-              st === "error" ? html`<span class="cross">✗</span>` : html`<span class="faint">–</span>`}</span>
           </div>`;
-      })}
+      })}</div>` : null}
     </div>
     ${files.length ? html`<div class="files">${files.map((f) => isImage(f)
-      ? html`<img class="shot" src=${"/files/" + encodeURI(f)} style="max-width:260px" onClick=${() => onImage("/files/" + encodeURI(f))} />`
-      : html`<a class="file-chip" href=${"/files/" + encodeURI(f) + "?download=1"} target="_blank">${fileIcon(f)} ${f.split("/").pop()}</a>`)}</div>` : null}`;
+      ? html`<img class="shot" src=${"/files/" + encodeURI(f)} style="max-width:280px" onClick=${() => onImage("/files/" + encodeURI(f))} />`
+      : html`<a class="file-chip" href=${"/files/" + encodeURI(f) + "?download=1"} target="_blank"><${FileTag} path=${f} /><span>${f.split("/").pop()}</span></a>`)}</div>` : null}`;
 }
 
 function UserMsg({ msg, onImage }) {
@@ -103,7 +130,7 @@ function UserMsg({ msg, onImage }) {
   const files = [...contentText(msg).matchAll(/\[Fichier joint : ([^\]]+)\]/g)].map((m) => m[1]).filter((f) => !isImage(f));
   return html`<div class="msg user"><div class="bubble">${text}
     ${images.map((p) => html`<img src=${p.src} onClick=${() => onImage(p.src)} />`)}
-    ${files.length ? html`<div class="files" style="margin-top:8px">${files.map((f) => html`<a class="file-chip" href=${"/files/" + encodeURI(f)} target="_blank">${fileIcon(f)} ${f.split("/").pop()}</a>`)}</div>` : null}
+    ${files.length ? html`<div class="files" style="margin-top:8px">${files.map((f) => html`<a class="file-chip" href=${"/files/" + encodeURI(f)} target="_blank"><${FileTag} path=${f} /><span>${f.split("/").pop()}</span></a>`)}</div>` : null}
   </div></div>`;
 }
 
@@ -111,44 +138,69 @@ function Markdown({ text, streaming }) {
   return html`<div class=${"md" + (streaming ? " cursor" : "")} dangerouslySetInnerHTML=${{ __html: md(text) }}></div>`;
 }
 
+const Trace = ({ tag, children }) => html`<div class="trace"><span class="tag">${tag}</span><span>${children}</span></div>`;
+
+function controlText(msg) {
+  return contentText(msg).replace(/^\[Contrôle automatique\]\s*/, "").replace(/^L'objectif n'est pas encore atteint\s*:\s*/, "").split("\n")[0];
+}
+
 function Elapsed({ since }) {
   const [, tick] = useState(0);
   useEffect(() => { const t = setInterval(() => tick((x) => x + 1), 1000); return () => clearInterval(t); }, []);
   const s = Math.max(0, Math.floor((Date.now() - since) / 1000));
-  return html`<span class="faint">${s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60 ? (s % 60) + " s" : ""}`}</span>`;
+  return html`<span>${s < 60 ? `${s} s` : `${Math.floor(s / 60)} min${s % 60 ? " " + (s % 60) + " s" : ""}`}</span>`;
 }
 
-export function Thread({ messages, live, tools, onSend, onImage, onCancel }) {
+const Meta = ({ ts }) => html`<div class="turn-meta"><span class="mk"></span><span>ely</span><span>·</span><span>${clock(ts)}</span></div>`;
+
+export function Thread({ messages, live, onSend, onImage, onCancel }) {
   const items = useMemo(() => buildItems(messages || []), [messages]);
+  const blocks = useMemo(() => buildBlocks(items), [items]);
   const running = live && live.status && live.status !== "idle";
   const sinceRef = useRef(Date.now());
   useEffect(() => { if (running) sinceRef.current = live.since || Date.now(); }, [running]);
-  const lastRun = items.length ? items[items.length - 1] : null;
-  const Mark = ({ i }) => (i > 0 && ["text", "steps"].includes(items[i - 1].type) ? html`<div class="logo-mark ghost"></div>` : html`<div class="logo-mark"></div>`);
-  return html`<div class="thread">
-    ${items.map((it, i) => {
-      if (it.type === "user") return html`<${UserMsg} key=${it.msg.id} msg=${it.msg} onImage=${onImage} />`;
-      if (it.type === "control") return html`<div class="note control" key=${it.msg.id}><span class="i">🔁</span><span>${contentText(it.msg).replace(/^\[Contrôle automatique\]\s*/, "").split("\n")[0]}</span></div>`;
-      if (it.type === "scheduled") return html`<div class="note" key=${it.msg.id}><span class="i">⏰</span><span>${contentText(it.msg).replace(/^\[Tâche planifiée #\d+\]\s*/, "Tâche planifiée : ")}</span></div>`;
-      if (it.type === "note") return html`<div class="note" key=${it.msg.id}><span>${contentText(it.msg)}</span></div>`;
-      if (it.type === "steps") return html`<div class="msg assistant tight" key=${"s" + it.id}><${Mark} i=${i} /><div class="body">
-        <${Steps} item=${it} tools=${tools} running=${running && i >= items.length - 2} onImage=${onImage} /></div></div>`;
-      return html`<div class="msg assistant" key=${it.msg.id}><${Mark} i=${i} /><div class="body"><${Markdown} text=${it.msg.content} /></div></div>`;
-    })}
-    ${running && live.thinking && !live.partial ? html`<div class="msg assistant"><div class="logo-mark"></div><div class="body"><div class="thinking">${live.thinking.slice(-600)}</div></div></div>` : null}
-    ${running && live.partial ? html`<div class="msg assistant"><div class="logo-mark"></div><div class="body"><${Markdown} text=${live.partial} streaming /></div></div>` : null}
-    ${live?.ask ? html`<div class="ask-card">
-        <div class="q">❓ ${live.ask.question}</div>
-        ${live.ask.options?.length ? html`<div class="opts">${live.ask.options.map((o) => html`<button class="btn small" onClick=${() => onSend(o)}>${o}</button>`)}</div>` : null}
-        <div class="small muted">Réponds ci-dessous, Ely reprendra aussitôt.</div>
-      </div>` : null}
-    ${running && !live.ask && !live.partial ? html`<div class="working">
-        <span class="dots"><i></i><i></i><i></i></span>
-        <span>${live.detail || (live.activity ? `Ely travaille · ${live.activity}` : "Ely réfléchit")}</span>
+  const lastSteps = items.map((it) => it.type).lastIndexOf("steps");
+
+  const renderItem = (it) => {
+    if (it.type === "control") return html`<${Trace} key=${it.msg.id} tag="Objectif non atteint">${controlText(it.msg)}<//>`;
+    if (it.type === "note") return html`<div class="note" key=${it.msg.id}>${contentText(it.msg)}</div>`;
+    if (it.type === "steps") return html`<${Steps} key=${"s" + it.id} item=${it} running=${running && items.indexOf(it) >= lastSteps - 1} onImage=${onImage} />`;
+    return html`<${Markdown} key=${it.msg.id} text=${it.msg.content} />`;
+  };
+
+  // ce qui se passe en direct (réflexion, texte en cours, question, travail)
+  const liveEls = [
+    running && live.thinking && !live.partial ? html`<div class="thinking" key="th">${live.thinking.slice(-600)}</div>` : null,
+    running && live.partial ? html`<${Markdown} key="pa" text=${live.partial} streaming />` : null,
+    live?.ask ? html`<div class="ask-card" key="ask">
+        <span class="tag" style="align-self:flex-start">Question</span>
+        <div class="q">${live.ask.question}</div>
+        ${live.ask.options?.length ? html`<div class="chips">${live.ask.options.map((o) => html`<button class="chip" onClick=${() => onSend(o)}>${o}</button>`)}</div>` : null}
+        <div class="foot">Réponds ci-dessous, Ely reprendra aussitôt.</div>
+      </div>` : null,
+    running && !live.ask && !live.partial ? html`<div class="working" key="wk">
+        <span class="pulse"></span>
+        <span class="what">${live.detail || (live.activity ? `Ely travaille · ${live.activity}` : "Ely réfléchit")}</span>
         <${Elapsed} since=${sinceRef.current} />
-        <button class="btn small ghost" onClick=${onCancel}>Arrêter</button>
-      </div>` : null}
-    ${live?.notice ? html`<div class="note"><span class="i">↪</span><span>${live.notice}</span></div>` : null}
+        <button class="link-btn" onClick=${onCancel}>Arrêter</button>
+      </div>` : null,
+    live?.notice ? html`<${Trace} key="no" tag="Modèle">${live.notice}<//>` : null,
+  ].filter(Boolean);
+  const lastBlock = blocks[blocks.length - 1];
+  const joinLast = liveEls.length && lastBlock?.type === "turn" && !lastBlock.closed;
+
+  return html`<div class="thread">
+    ${blocks.map((b, i) => {
+      if (b.type === "user") return html`<${UserMsg} key=${b.msg.id} msg=${b.msg} onImage=${onImage} />`;
+      if (b.type === "scheduled") return html`<${Trace} key=${b.msg.id} tag="Tâche planifiée">${contentText(b.msg).replace(/^\[Tâche planifiée #\d+\]\s*/, "")}<//>`;
+      if (b.type === "control") return renderItem(b);
+      return html`<div class="turn msg" key=${b.key}>
+        <${Meta} ts=${b.ts} />
+        ${b.items.map(renderItem)}
+        ${joinLast && i === blocks.length - 1 ? liveEls : null}
+      </div>`;
+    })}
+    ${liveEls.length && !joinLast ? html`<div class="turn msg" key="live"><${Meta} ts=${Date.now() / 1000} />${liveEls}</div>` : null}
   </div>`;
 }
 
@@ -156,7 +208,6 @@ export function Composer({ onSend, running, onCancel, prefill, autoVoice, disabl
   const [text, setText] = useState(prefill || "");
   const [atts, setAtts] = useState([]);
   const [busy, setBusy] = useState(0);
-  const [focus, setFocus] = useState(false);
   const [drag, setDrag] = useState(false);
   const [listening, setListening] = useState(false);
   const ta = useRef();
@@ -214,29 +265,27 @@ export function Composer({ onSend, running, onCancel, prefill, autoVoice, disabl
     if (files.length) { e.preventDefault(); addFiles(files); }
   };
 
-  return html`<div class="composer-wrap">
-    <div class=${"composer" + (focus ? " focus" : "") + (drag ? " drag" : "")}
+  return html`<div class="composer-wrap"><div class="composer-in">
+    <div class=${"composer" + (drag ? " drag" : "")}
          onDragOver=${(e) => { e.preventDefault(); setDrag(true); }} onDragLeave=${() => setDrag(false)}
          onDrop=${(e) => { e.preventDefault(); setDrag(false); addFiles([...e.dataTransfer.files]); }}>
       ${atts.length || busy ? html`<div class="attachments">
-        ${atts.map((a) => html`<span class="att">${fileIcon(a.name)} <span>${a.name}</span><button onClick=${() => setAtts(atts.filter((x) => x !== a))}>✕</button></span>`)}
+        ${atts.map((a) => html`<span class="att"><${FileTag} path=${a.name} /><span>${a.name}</span><button title="Retirer" onClick=${() => setAtts(atts.filter((x) => x !== a))}><${Icon} name="close" size=${10} stroke=${1.8} /></button></span>`)}
         ${busy ? html`<span class="att"><div class="spinner"></div><span>Envoi…</span></span>` : null}
       </div>` : null}
-      <textarea ref=${ta} rows="1" value=${text} disabled=${disabled}
-        placeholder=${listening ? "Je t'écoute…" : running ? "Ajoute une précision, Ely en tiendra compte…" : "Demande n'importe quoi à Ely…"}
-        onInput=${(e) => setText(e.target.value)} onKeyDown=${onKey} onPaste=${onPaste}
-        onFocus=${() => setFocus(true)} onBlur=${() => setFocus(false)}></textarea>
-      <div class="bar">
+      <div class="composer-row">
         <input type="file" multiple ref=${fileRef} style="display:none" onChange=${(e) => { addFiles([...e.target.files]); e.target.value = ""; }} />
-        <button class="icon-btn" title="Joindre un fichier ou une photo" onClick=${() => fileRef.current.click()}><${Icon} name="clip" /></button>
-        <div class="spacer"></div>
-        ${running ? html`<button class="send stop" title="Arrêter la tâche" onClick=${onCancel}><${Icon} name="stop" /></button>` : null}
-        ${text.trim() || atts.length ? html`<button class="send" title="Envoyer" onClick=${() => send()} disabled=${busy > 0}><${Icon} name="send" /></button>`
-          : html`<button class=${"send mic" + (listening ? " on" : "")} title="Parler à Ely" onClick=${startVoice}><${Icon} name="mic" /></button>`}
+        <button class="c-btn" title="Joindre un fichier ou une photo" onClick=${() => fileRef.current.click()}><${Icon} name="plus" /></button>
+        <textarea ref=${ta} rows="1" value=${text} disabled=${disabled}
+          placeholder=${listening ? "Je t'écoute…" : running ? "Ajoute une précision, Ely en tiendra compte…" : "Demande n'importe quoi à Ely…"}
+          onInput=${(e) => setText(e.target.value)} onKeyDown=${onKey} onPaste=${onPaste}></textarea>
+        ${running ? html`<button class="c-btn stop" title="Arrêter la tâche" onClick=${onCancel}><${Icon} name="stop" size=${14} /></button>` : null}
+        ${text.trim() || atts.length ? html`<button class="c-btn send" title="Envoyer" onClick=${() => send()} disabled=${busy > 0}><${Icon} name="send" stroke=${1.7} /></button>`
+          : html`<button class=${"c-btn send mic" + (listening ? " on" : "")} title="Parler à Ely" onClick=${startVoice}><${Icon} name="mic" /></button>`}
       </div>
     </div>
     <div class="hint">Entrée pour envoyer · Maj+Entrée pour aller à la ligne · glisse un fichier pour le joindre</div>
-  </div>`;
+  </div></div>`;
 }
 
 export function LiveBrowser({ frame, conversationId, onClose, mobile }) {
@@ -260,10 +309,10 @@ export function LiveBrowser({ frame, conversationId, onClose, mobile }) {
   }
   return html`<aside class="live">
     <div class="live-head">
-      <span>🌐</span>
-      <span class="url">${img?.url || "Navigateur d'Ely"}</span>
-      <button class="icon-btn" title="Actualiser" onClick=${refresh}><${Icon} name="refresh" size=${18} /></button>
-      <button class="icon-btn" title="Fermer" onClick=${onClose}><${Icon} name="close" size=${18} /></button>
+      <span class="label">Navigateur</span>
+      <span class="url">${img?.url || "—"}</span>
+      <button class="icon-btn soft" title="Actualiser" onClick=${refresh}><${Icon} name="refresh" /></button>
+      <button class="icon-btn soft" title="Fermer" onClick=${onClose}><${Icon} name="close" /></button>
     </div>
     <div class=${"live-view" + (control ? " control" : "")}>
       ${img?.image ? html`<img src=${"data:image/jpeg;base64," + img.image} onClick=${click} />`
@@ -271,27 +320,24 @@ export function LiveBrowser({ frame, conversationId, onClose, mobile }) {
             Tu peux aussi l'ouvrir toi-même pour te connecter une fois à tes sites (Doctolib, LinkedIn…).</div>`}
     </div>
     <div class="live-foot">
-      <div class="row">
-        <label class="row small" style="gap:8px"><span class="switch"><input type="checkbox" checked=${control} onChange=${(e) => setControl(e.target.checked)} /><span></span></span>
-          Prendre la main</label>
-        <span class="faint small">${control ? "Touche l'image pour cliquer" : "Pour te connecter, résoudre un captcha…"}</span>
-      </div>
+      <label class="toggle small"><span class="switch"><input type="checkbox" checked=${control} onChange=${(e) => setControl(e.target.checked)} /><span></span></span>
+        <span>Prendre la main</span><span class="meta-text">${control ? "touche l'image pour cliquer" : "connexion, captcha…"}</span></label>
       ${control ? html`
-        <div class="row" style="flex-wrap:nowrap">
+        <div class="row nowrap">
           <input class="input" placeholder="Texte à taper" value=${typed} onInput=${(e) => setTyped(e.target.value)}
                  onKeyDown=${(e) => { if (e.key === "Enter") { act("type", { text: typed }); setTyped(""); } }} />
-          <button class="btn small" onClick=${() => { act("type", { text: typed }); setTyped(""); }}>Taper</button>
+          <button class="btn" onClick=${() => { act("type", { text: typed }); setTyped(""); }}>Taper</button>
         </div>
         <div class="row">
-          ${[["Entrée", "Enter"], ["Tab", "Tab"], ["⌫", "Backspace"], ["Échap", "Escape"]].map(([l, k]) => html`<button class="btn small" onClick=${() => act("key", { text: k })}>${l}</button>`)}
-          <button class="btn small" onClick=${() => act("scroll", { y: -1 })}>↑</button>
-          <button class="btn small" onClick=${() => act("scroll", { y: 1 })}>↓</button>
-          <button class="btn small" onClick=${() => act("back")}>← Retour</button>
+          ${[["Entrée", "Enter"], ["Tab", "Tab"], ["⌫", "Backspace"], ["Échap", "Escape"]].map(([l, k]) => html`<button class="btn" onClick=${() => act("key", { text: k })}>${l}</button>`)}
+          <button class="btn" onClick=${() => act("scroll", { y: -1 })}>↑</button>
+          <button class="btn" onClick=${() => act("scroll", { y: 1 })}>↓</button>
+          <button class="btn" onClick=${() => act("back")}>Retour</button>
         </div>
-        <div class="row" style="flex-wrap:nowrap">
+        <div class="row nowrap">
           <input class="input" placeholder="Aller à… (ex. doctolib.fr)" value=${goto} onInput=${(e) => setGoto(e.target.value)}
                  onKeyDown=${(e) => { if (e.key === "Enter" && goto) act("goto", { text: goto }); }} />
-          <button class="btn small" onClick=${() => goto && act("goto", { text: goto })}>Ouvrir</button>
+          <button class="btn" onClick=${() => goto && act("goto", { text: goto })}>Ouvrir</button>
         </div>` : null}
     </div>
   </aside>`;

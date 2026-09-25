@@ -7,7 +7,7 @@ téléphone Android. Et **il ne s'arrête pas tant que l'objectif n'est pas atte
 ![Ely réserve un rendez-vous dans son navigateur](docs/images/rdv.png)
 
 Trois mots d'ordre : **efficacité, autonomie, performance.** Ely 2 est une réécriture complète : ~6 800 lignes de
-Python et ~1 700 lignes d'interface, au lieu des 240 000 lignes et 9 services Docker de la version précédente.
+Python et ~2 000 lignes d'interface, au lieu des 240 000 lignes et 9 services Docker de la version précédente.
 Un seul processus, une seule base SQLite, zéro service à maintenir.
 
 ---

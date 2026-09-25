@@ -3,11 +3,15 @@ import { html, render, useEffect, useRef, useState, useMemo } from "/static/vend
 import { ApiError, connectEvents, del, get, patch, post } from "/static/js/api.js";
 import { Composer, LiveBrowser, SUGGESTIONS, Thread } from "/static/js/chat.js";
 import { Settings } from "/static/js/settings.js";
-import { Icon, groupLabel, isMobile, onToast, toast } from "/static/js/util.js";
+import { Icon, applyAccent, applyTheme, clock, groupLabel, isMac, isMobile, onToast, prefersDark, storedAccent, storedTheme, toast } from "/static/js/util.js";
 import { speak, stopSpeaking } from "/static/js/voice.js";
 
-const theme = localStorage.getItem("ely-theme");
-if (theme && theme !== "auto") document.documentElement.setAttribute("data-theme", theme);
+applyTheme(storedTheme(), false);
+applyAccent(storedAccent(), false);
+const KBD_SEARCH = isMac ? "⌘K" : "Ctrl K";
+const KBD_NEW = isMac ? "⇧⌘O" : "Ctrl ⇧O";
+const LOCAL = new Set(["lmstudio", "ollama"]);
+const shortModel = (ref) => (ref || "").replace(/^[^:]+:/, "").split("/").pop();
 const params = new URLSearchParams(location.search);
 
 // ---------------------------------------------------------------- connexion
@@ -30,8 +34,8 @@ function Login({ setup, onLogged }) {
   }
   const first = setup?.needs_setup;
   return html`<div class="auth"><div class="auth-card">
-    <div><div class="logo-mark big" style="margin:0 auto"></div><h1>${first ? "Bienvenue dans Ely" : "Ely"}</h1>
-      <p class="muted">${first ? "Crée le compte administrateur pour commencer." : "Ton agent personnel. Tu demandes, il agit."}</p></div>
+    <div><div class="logo-mark big"></div><h1>${first ? "Bienvenue dans Ely" : "Ely"}</h1>
+      <p>${first ? "Crée le compte administrateur pour commencer." : "Ton agent personnel. Tu demandes, il agit."}</p></div>
     <form onSubmit=${submit}>
       ${mode === "register" ? html`<label class="field">Prénom<input class="input" required value=${f.name} onInput=${(e) => setF({ ...f, name: e.target.value })} autocomplete="given-name" /></label>` : null}
       <label class="field">E-mail<input class="input" type="email" required value=${f.email} onInput=${(e) => setF({ ...f, email: e.target.value })} autocomplete="email" /></label>
@@ -47,7 +51,7 @@ function Login({ setup, onLogged }) {
 }
 
 // ---------------------------------------------------------------- barre latérale
-function Sidebar({ me, convs, cur, live, open, onPick, onNew, onSettings, onSearch, onChanged, pwa }) {
+function Sidebar({ me, convs, cur, live, open, badge, onPick, onNew, onSettings, onSearch, onChanged, pwa }) {
   const [q, setQ] = useState("");
   const [menu, setMenu] = useState(null);
   const timer = useRef();
@@ -62,37 +66,51 @@ function Sidebar({ me, convs, cur, live, open, onPick, onNew, onSettings, onSear
     }
     return out;
   }, [convs]);
+  useEffect(() => {
+    if (menu === null) return;
+    const close = () => setMenu(null);
+    addEventListener("click", close);
+    return () => removeEventListener("click", close);
+  }, [menu]);
   async function rename(c) {
     const t = prompt("Nouveau titre", c.title);
     if (t) { await patch(`/api/conversations/${c.id}`, { title: t }); onChanged(); }
   }
   return html`<aside class=${"sidebar" + (open ? " open" : "")}>
-    <div class="sidebar-head"><div class="brand"><div class="logo-mark"></div>Ely</div></div>
-    <button class="btn new-chat" onClick=${onNew}><${Icon} name="plus" size=${18} /> Nouvelle demande</button>
-    <div class="search"><${Icon} name="search" /><input class="input" placeholder="Rechercher" value=${q}
-      onInput=${(e) => { setQ(e.target.value); clearTimeout(timer.current); timer.current = setTimeout(() => onSearch(e.target.value), 250); }} /></div>
+    <div class="brand"><div class="logo-mark"></div><span class="brand-name">ely</span>
+      ${badge ? html`<span class="badge" title=${badge.title}>${badge.text}</span>` : null}</div>
+    <div class="side-actions">
+      <button class="new-chat" onClick=${onNew}><${Icon} name="plus" size=${14} stroke=${1.6} /><span>Nouvelle demande</span><span class="kbd">${KBD_NEW}</span></button>
+      <label class="search"><${Icon} name="search" size=${14} /><input placeholder="Rechercher" value=${q}
+        onInput=${(e) => { setQ(e.target.value); clearTimeout(timer.current); timer.current = setTimeout(() => onSearch(e.target.value), 250); }} />
+        <span class="kbd">${KBD_SEARCH}</span></label>
+    </div>
     <div class="conv-list">
-      ${groups.map(([label, list]) => html`<div class="conv-group">${label}</div>
+      ${groups.map(([label, list]) => html`<div class="conv-group label">${label}</div>
         ${list.map((c) => {
           const st = live[c.id]?.status || c.status;
-          return html`<div class=${"conv" + (c.id === cur ? " active" : "")} key=${c.id} role="button" onClick=${() => onPick(c.id)}>
+          const active = c.id === cur;
+          const dot = st === "running" ? "conv-dot run" : st === "waiting_user" ? "conv-dot wait" : active ? "conv-dot" : "";
+          return html`<div class=${"conv" + (active ? " active" : "") + (menu === c.id ? " menu-open" : "")} key=${c.id} role="button" onClick=${() => onPick(c.id)}
+              title=${st === "running" ? "En cours" : st === "waiting_user" ? "Attend ta réponse" : ""}>
+            ${dot ? html`<span class=${dot}></span>` : null}
             <span class="t">${c.title}</span>
-            ${st === "running" ? html`<span class="dot" title="En cours"></span>` : st === "waiting_user" ? html`<span class="dot wait" title="Attend ta réponse"></span>` : null}
-            <button class="icon-btn more" style="width:28px;height:28px" onClick=${(e) => { e.stopPropagation(); setMenu(menu === c.id ? null : c.id); }}><${Icon} name="dots" size=${16} /></button>
-            ${menu === c.id ? html`<div class="card" style="position:absolute;right:6px;top:34px;z-index:5;padding:6px;gap:2px;min-width:160px;box-shadow:var(--shadow)" onClick=${(e) => e.stopPropagation()}>
-              <button class="btn ghost small" style="justify-content:flex-start" onClick=${() => { setMenu(null); rename(c); }}><${Icon} name="edit" size=${15} /> Renommer</button>
-              <button class="btn ghost small" style="justify-content:flex-start" onClick=${async () => { setMenu(null); await patch(`/api/conversations/${c.id}`, { pinned: !c.pinned }); onChanged(); }}><${Icon} name="pin" size=${15} /> ${c.pinned ? "Désépingler" : "Épingler"}</button>
-              <button class="btn ghost small danger" style="justify-content:flex-start" onClick=${async () => { setMenu(null); if (confirm("Supprimer cette conversation ?")) { await del(`/api/conversations/${c.id}`); onChanged(c.id); } }}><${Icon} name="trash" size=${15} /> Supprimer</button>
+            <span class="when">${clock(c.updated_at)}</span>
+            <button class="icon-btn more" title="Options" onClick=${(e) => { e.stopPropagation(); setMenu(menu === c.id ? null : c.id); }}><${Icon} name="dots" size=${16} stroke=${2.2} /></button>
+            ${menu === c.id ? html`<div class="popover" onClick=${(e) => e.stopPropagation()}>
+              <button onClick=${() => { setMenu(null); rename(c); }}><${Icon} name="edit" size=${14} /> Renommer</button>
+              <button onClick=${async () => { setMenu(null); await patch(`/api/conversations/${c.id}`, { pinned: !c.pinned }); onChanged(); }}><${Icon} name="pin" size=${14} /> ${c.pinned ? "Désépingler" : "Épingler"}</button>
+              <button class="danger" onClick=${async () => { setMenu(null); if (confirm("Supprimer cette conversation ?")) { await del(`/api/conversations/${c.id}`); onChanged(c.id); } }}><${Icon} name="trash" size=${14} /> Supprimer</button>
             </div>` : null}
           </div>`;
         })}`)}
-      ${!convs.length ? html`<div class="faint small" style="padding:16px 10px">Tes conversations apparaîtront ici.</div>` : null}
+      ${!convs.length ? html`<div class="side-empty">${q ? "Aucun résultat." : "Tes conversations apparaîtront ici."}</div>` : null}
     </div>
     <div class="sidebar-foot">
       <div class="avatar">${(me.name || "?")[0].toUpperCase()}</div>
-      <div class="who"><b>${me.name}</b><span class="faint small">${me.role === "admin" ? "Administrateur" : me.email}</span></div>
-      ${pwa ? html`<button class="icon-btn" title="Installer l'application" onClick=${pwa}>📲</button>` : null}
-      <button class="icon-btn" title="Réglages" onClick=${() => onSettings("profil")}><${Icon} name="gear" /></button>
+      <div class="who"><b>${me.name}</b><span>${me.role === "admin" ? "Administrateur" : me.email}</span></div>
+      ${pwa ? html`<button class="icon-btn" title="Installer l'application" onClick=${pwa}><${Icon} name="phone" /></button>` : null}
+      <button class="icon-btn" title="Réglages" onClick=${() => onSettings("profil")}><${Icon} name="gear" size=${16} stroke=${1.4} /></button>
     </div>
   </aside>`;
 }
@@ -114,7 +132,7 @@ window.elyEnablePush = async () => {
   const { key } = await get("/api/push/key");
   const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(key) });
   await post("/api/push/subscribe", { subscription: sub.toJSON() });
-  toast("Notifications activées 🔔");
+  toast("Notifications activées");
   return true;
 };
 
@@ -132,7 +150,6 @@ function App() {
   const [cur, setCur] = useState(params.get("c") ? parseInt(params.get("c")) : null);
   const [msgs, setMsgs] = useState({});
   const [live, setLive] = useState({});
-  const [tools, setTools] = useState({});
   const [models, setModels] = useState([]);
   const [newModel, setNewModel] = useState("");
   const [settingsTab, setSettingsTab] = useState(null);
@@ -145,7 +162,10 @@ function App() {
   const [pwa, setPwa] = useState(null);
   const [pushBanner, setPushBanner] = useState(false);
   const [noModel, setNoModel] = useState(false);
-  const [scrolled, setScrolled] = useState(false);
+  const [mainRef, setMainRef] = useState("");
+  const [theme, setTheme] = useState(storedTheme());
+  const [accent, setAccent] = useState(storedAccent());
+  const [, setSystemDark] = useState(prefersDark());
   const scrollRef = useRef();
   const stick = useRef(true);
   const curRef = useRef(cur);
@@ -170,8 +190,7 @@ function App() {
   useEffect(() => {
     if (!me) return;
     loadConvs();
-    get("/api/tools").then((l) => setTools(Object.fromEntries(l.map((t) => [t.name, t]))));
-    get("/api/models").then((d) => { setModels(d.models.filter((m) => m.reachable)); setNoModel(!d.roles.main?.effective); }).catch(() => {});
+    get("/api/models").then((d) => { setModels(d.models.filter((m) => m.reachable)); setMainRef(d.roles.main?.effective || ""); setNoModel(!d.roles.main?.effective); }).catch(() => {});
     const stop = connectEvents(onEvent);
     if (location.pathname === "/share") {
       const text = [params.get("title"), params.get("text"), params.get("url")].filter(Boolean).join("\n");
@@ -187,6 +206,24 @@ function App() {
     if ("Notification" in window && Notification.permission === "default" && isSecureContext && !localStorage.getItem("ely-push-dismissed")) setPushBanner(true);
     return stop;
   }, [me]);
+
+  // raccourcis clavier : ⌘K recherche, ⇧⌘O nouvelle demande ; suivi du thème du système
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      const k = e.key.toLowerCase();
+      if (k === "k" && !e.shiftKey) { e.preventDefault(); setSideOpen(true); document.querySelector(".search input")?.focus(); }
+      else if (k === "o" && e.shiftKey) { e.preventDefault(); pick(null); }
+    };
+    const mq = matchMedia("(prefers-color-scheme: dark)");
+    const onMq = () => setSystemDark(mq.matches);
+    addEventListener("keydown", onKey);
+    mq.addEventListener("change", onMq);
+    return () => { removeEventListener("keydown", onKey); mq.removeEventListener("change", onMq); };
+  }, []);
+
+  function chooseTheme(v) { applyTheme(v); setTheme(v); }
+  function chooseAccent(v) { applyAccent(v); setAccent(v); }
 
   // chargement d'une conversation
   useEffect(() => {
@@ -338,43 +375,56 @@ function App() {
   const frame = state.frame;
   const hour = new Date().getHours();
   const hello = hour < 5 ? "Bonne nuit" : hour < 18 ? "Bonjour" : "Bonsoir";
+  const dark = theme === "dark" || (theme === "auto" && prefersDark());
+  const chosen = cur ? conv?.model || "" : newModel;
+  const mainProvider = mainRef.split(":")[0];
+  const badge = mainRef ? { text: LOCAL.has(mainProvider) ? "local" : mainProvider, title: `Modèle principal : ${mainRef}` } : null;
 
   return html`<div class="layout">
-    <${Sidebar} me=${me} convs=${convs} cur=${cur} live=${live} open=${sideOpen} pwa=${pwa}
+    <${Sidebar} me=${me} convs=${convs} cur=${cur} live=${live} open=${sideOpen} pwa=${pwa} badge=${badge}
       onPick=${pick} onNew=${() => pick(null)} onSettings=${(t) => { setSettingsTab(t); setSideOpen(false); }}
       onSearch=${loadConvs} onChanged=${(deleted) => { if (deleted === cur) setCur(null); loadConvs(); }} />
     <div class=${"scrim" + (sideOpen ? " open" : "")} onClick=${() => setSideOpen(false)}></div>
     <main class="main">
-      <header class=${"topbar" + (scrolled ? " scrolled" : "")}>
-        <button class="icon-btn menu-btn" onClick=${() => setSideOpen(true)} title="Conversations"><${Icon} name="menu" /></button>
-        <div class="title">${conv ? conv.title : "Nouvelle demande"}</div>
-        <select class="model-select" title="Modèle" value=${cur ? conv?.model || "" : newModel} onChange=${(e) => setModel(e.target.value)}>
-          <option value="">✨ Auto</option>
-          ${models.map((m) => html`<option value=${m.ref}>${m.ref.replace(/^[^:]+:/, "")} · ${m.provider}</option>`)}
-        </select>
-        <button class=${"icon-btn" + (handsFree ? " mic on" : "")} title="Mode mains libres (conversation vocale)"
-          onClick=${() => { const v = !handsFree; setHandsFree(v); if (v) { toast("Mode mains libres : parle, Ely répond à voix haute"); setVoiceTick((t) => t + 1); } else stopSpeaking(); }}>
-          <${Icon} name="speaker" /></button>
-        <button class="icon-btn" title="Navigateur d'Ely" onClick=${() => { const v = !liveOpen; setLiveOpen(v); liveClosedByUser.current = !v; }}><${Icon} name="globe" /></button>
+      <header class="topbar">
+        <button class="icon-btn menu-btn" onClick=${() => setSideOpen(true)} title="Conversations"><${Icon} name="menu" size=${18} /></button>
+        <h1>${conv ? conv.title : "Nouvelle demande"}</h1>
+        <div class="top-actions">
+          <label class="model-pill" title=${chosen ? `Modèle imposé : ${chosen}` : mainRef ? `Choix automatique (${mainRef})` : "Choix automatique du modèle"}>
+            <span class="dot"></span><span class="name">${chosen ? shortModel(chosen) : mainRef ? shortModel(mainRef) : "auto"}</span>
+            <span class="chev"><${Icon} name="chev" size=${10} stroke=${1.4} /></span>
+            <select value=${chosen} onChange=${(e) => setModel(e.target.value)} aria-label="Modèle">
+              <option value="">Automatique${mainRef ? ` (${shortModel(mainRef)})` : ""}</option>
+              ${models.map((m) => html`<option value=${m.ref}>${shortModel(m.ref)} · ${m.provider}</option>`)}
+            </select>
+          </label>
+          <button class=${"round-btn" + (handsFree ? " on" : "")} title="Mode mains libres (conversation vocale)"
+            onClick=${() => { const v = !handsFree; setHandsFree(v); if (v) { toast("Mode mains libres : parle, Ely répond à voix haute"); setVoiceTick((t) => t + 1); } else stopSpeaking(); }}>
+            <${Icon} name="speaker" size=${15} stroke=${1.4} /></button>
+          <button class=${"round-btn" + (liveOpen ? " on" : "")} title="Navigateur d'Ely" onClick=${() => { const v = !liveOpen; setLiveOpen(v); liveClosedByUser.current = !v; }}>
+            <${Icon} name="globe" size=${15} stroke=${1.3} /></button>
+          <button class="round-btn" title=${dark ? "Passer en clair" : "Passer en sombre"} onClick=${() => chooseTheme(dark ? "light" : "dark")}>
+            <${Icon} name=${dark ? "sun" : "moon"} size=${15} stroke=${1.4} /></button>
+        </div>
       </header>
       <div class="content">
         <section class="chat">
           <div class="scroll" ref=${scrollRef} onScroll=${(e) => {
-            const el = e.target; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 140; setScrolled(el.scrollTop > 4);
+            const el = e.target; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 140;
           }}>
-            ${pushBanner ? html`<div class="banner" style="margin-top:10px"><span>🔔</span><span class="grow">Active les notifications pour être prévenu quand Ely a fini ou a besoin de toi.</span>
-              <button class="btn small primary" onClick=${async () => { await window.elyEnablePush(); setPushBanner(false); }}>Activer</button>
-              <button class="icon-btn" onClick=${() => { localStorage.setItem("ely-push-dismissed", "1"); setPushBanner(false); }}><${Icon} name="close" size=${16} /></button></div>` : null}
-            ${noModel ? html`<div class="banner" style="margin-top:10px;background:color-mix(in srgb, var(--err) 12%, transparent)"><span>⚠️</span>
-              <span class="grow">Aucun modèle disponible : ajoute une clé d'API dans le fichier <code>.env</code> ou lance LM Studio.</span>
+            ${pushBanner ? html`<div class="banner"><span class="grow">Active les notifications pour être prévenu quand Ely a fini ou a besoin de toi.</span>
+              <button class="btn small accent" onClick=${async () => { await window.elyEnablePush(); setPushBanner(false); }}>Activer</button>
+              <button class="icon-btn soft" title="Plus tard" onClick=${() => { localStorage.setItem("ely-push-dismissed", "1"); setPushBanner(false); }}><${Icon} name="close" size=${14} /></button></div>` : null}
+            ${noModel ? html`<div class="banner warn"><span class="tag">Aucun modèle</span>
+              <span class="grow">Ajoute une clé d'API dans le fichier <code>.env</code> ou lance LM Studio.</span>
               ${me.role === "admin" ? html`<button class="btn small" onClick=${() => setSettingsTab("modeles")}>Modèles</button>` : null}</div>` : null}
             ${!cur ? html`<div class="welcome">
-                <div><h1>${hello} <span>${me.name}</span>,<br/>que puis-je faire pour toi ?</h1></div>
-                <p>Demande-moi une information ou une vraie action : je m'en occupe jusqu'au bout, même quand l'application est fermée.</p>
-                <div class="suggestions">${SUGGESTIONS.map(([t, p]) => html`<button class="suggestion" onClick=${() => setPrefill(p + " ")}><b>${t}</b><span>${p}</span></button>`)}</div>
+                <h1>${hello} ${me.name},<br/><em>que puis-je faire pour toi ?</em></h1>
+                <p>Demande une information ou une vraie action : Ely s'en occupe jusqu'au bout, même quand l'application est fermée.</p>
+                <div class="chips">${SUGGESTIONS.map(([t, p]) => html`<button class="chip" title=${p} onClick=${() => setPrefill(p + " ")}>${t}</button>`)}</div>
               </div>`
-              : messages ? html`<${Thread} messages=${messages} live=${state} tools=${tools} onSend=${send} onImage=${setLightbox} onCancel=${cancel} />`
-              : html`<div class="boot" style="height:50vh"><div class="spinner"></div></div>`}
+              : messages ? html`<${Thread} messages=${messages} live=${state} onSend=${send} onImage=${setLightbox} onCancel=${cancel} />`
+              : html`<div class="boot" style="height:50vh"><div class="spinner big"></div></div>`}
           </div>
           ${frame && !liveOpen ? html`<div class="live-mini" onClick=${() => { setLiveOpen(true); liveClosedByUser.current = false; }}>
             <img src=${"data:image/jpeg;base64," + frame.image} /><span>EN DIRECT</span></div>` : null}
@@ -385,6 +435,7 @@ function App() {
       </div>
     </main>
     ${settingsTab ? html`<${Settings} me=${me} onMe=${setMe} tab=${settingsTab} onTab=${setSettingsTab} onClose=${() => setSettingsTab(null)} pwa=${pwa}
+      prefs=${{ theme, accent, setTheme: chooseTheme, setAccent: chooseAccent }}
       openConversation=${(id) => { loadConvs(); pick(id); }} />` : null}
     ${lightbox ? html`<div class="lightbox" onClick=${() => setLightbox(null)}><img src=${lightbox} /></div>` : null}
     <${Toasts} />
