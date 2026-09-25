@@ -226,6 +226,7 @@ class AgentLoop:
         if res.files:
             msg["files"] = res.files
         mid = self.persist(msg)
+        await self.publish_message(mid)
         await self.emit("tool_end", {"id": tc["id"], "name": tc["name"], "ok": not res.is_error, "message_id": mid,
                                      "preview": content[:300], "files": res.files})
         return msg

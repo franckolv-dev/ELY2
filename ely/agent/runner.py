@@ -59,6 +59,8 @@ def public_message(row: dict) -> dict:
     data.pop("thinking", None)
     if data.get("images"):
         data["images"] = len(data["images"])
+    if data.get("role") == "tool" and len(data.get("content") or "") > 4000:
+        data["content"] = data["content"][:4000] + "…"
     c = data.get("content")
     if isinstance(c, list):
         data["content"] = [p if p.get("type") != "image" else {"type": "image", "media_type": p.get("media_type"),
