@@ -7,12 +7,13 @@ from __future__ import annotations
 
 import os
 import secrets
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 
 ROOT = Path(__file__).resolve().parent.parent
+_BOOT_ENV = set(os.environ)  # variables fixées hors .env : elles gardent la priorité
 load_dotenv(ROOT / ".env")
 
 
@@ -141,3 +142,13 @@ class Settings:
 
 
 settings = Settings()
+
+
+def reload_env() -> None:
+    """Relit le .env sans redémarrer (nouvelles clés d'API, modèles…) et met à jour les réglages en place."""
+    for key, value in dotenv_values(ROOT / ".env").items():
+        if key not in _BOOT_ENV and value is not None:
+            os.environ[key] = value
+    fresh = Settings()
+    for f in fields(Settings):
+        setattr(settings, f.name, getattr(fresh, f.name))

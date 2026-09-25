@@ -25,6 +25,9 @@ async def models(user=Depends(auth.current_user)):
 
 @router.post("/api/admin/models/refresh")
 async def refresh_models(user=Depends(auth.admin_user)):
+    from ..config import reload_env
+
+    reload_env()  # nouvelles clés du .env prises en compte sans redémarrer
     registry.build_providers()
     await registry.refresh()
     return {"providers": registry.status, "roles": registry.roles_view()}
@@ -226,3 +229,40 @@ async def mcp_save(body: McpIn, user=Depends(auth.admin_user)):
     save_config(body.servers)
     await manager.start_all()
     return {"status": manager.status()}
+
+
+# ---------------------------------------------------------------------- abonnement ChatGPT
+@router.get("/api/admin/chatgpt")
+def chatgpt_state(user=Depends(auth.admin_user)):
+    from ..llm import chatgpt_provider
+
+    return chatgpt_provider.status()
+
+
+class ChatGPTIn(BaseModel):
+    auth_json: str = ""
+
+
+@router.post("/api/admin/chatgpt")
+async def chatgpt_import(body: ChatGPTIn, user=Depends(auth.admin_user)):
+    from ..llm import LLMError, chatgpt_provider
+
+    try:
+        st = await chatgpt_provider.import_auth(body.auth_json.strip() or None)
+    except LLMError as e:
+        raise HTTPException(400, str(e))
+    except ValueError as e:
+        raise HTTPException(400, f"Contenu illisible : {e}")
+    registry.build_providers()
+    await registry.refresh()
+    return {**st, "roles": registry.roles_view()}
+
+
+@router.delete("/api/admin/chatgpt")
+async def chatgpt_disconnect(user=Depends(auth.admin_user)):
+    from ..llm import chatgpt_provider
+
+    chatgpt_provider.disconnect()
+    registry.build_providers()
+    await registry.refresh()
+    return {"ok": True}

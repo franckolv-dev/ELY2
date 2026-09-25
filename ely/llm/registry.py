@@ -21,6 +21,7 @@ from typing import Awaitable, Callable
 from ..config import settings
 from ..db import db, now
 from .anthropic_provider import AnthropicProvider
+from .chatgpt_provider import ChatGPTProvider
 from .base import DeltaCallback, LLMError, LLMResponse, ModelInfo
 from .openai_compat import OpenAICompatProvider
 
@@ -32,6 +33,7 @@ ROLES = ("main", "strong", "fast", "local", "embed")
 PREFS: dict[str, list[tuple[str, list[str]]]] = {
     "main": [
         ("anthropic", [r"^claude-opus-5$", r"^claude-opus-4-8$", r"^claude-sonnet-5$"]),
+        ("chatgpt", [r"^gpt-5\.\d+$", r"gpt"]),
         ("openai", [r"^gpt-5\.\d+$", r"^gpt-5$", r"^gpt-4\.1$", r"^gpt-4o$"]),
         ("gemini", [r"^gemini-3(\.\d+)?-pro", r"^gemini-2\.5-pro$"]),
         ("openrouter", [r"^anthropic/claude-opus-5$", r"^anthropic/claude-sonnet", r"^openai/gpt-5"]),
@@ -99,6 +101,8 @@ class Registry:
         p: dict = {}
         if settings.anthropic_api_key:
             p["anthropic"] = AnthropicProvider(settings.anthropic_api_key)
+        if db.get_setting("chatgpt_auth"):  # abonnement ChatGPT importé depuis le CLI Codex
+            p["chatgpt"] = ChatGPTProvider()
         for name, (url, key) in settings.openai_compat_keys().items():
             p[name] = OpenAICompatProvider(name, url, key)
         if settings.lmstudio_url:

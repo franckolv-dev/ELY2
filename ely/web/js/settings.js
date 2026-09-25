@@ -232,6 +232,38 @@ const ROLE_INFO = {
   embed: ["Vecteurs mémoire", "Recherche sémantique des souvenirs (LM Studio nomic-embed…)."],
 };
 
+function ChatGPTCard({ onChange }) {
+  const [st, reload] = useLoad(() => get("/api/admin/chatgpt"));
+  const [paste, setPaste] = useState("");
+  const [busy, setBusy] = useState(false);
+  if (!st) return null;
+  async function doImport(text) {
+    setBusy(true);
+    try { await post("/api/admin/chatgpt", { auth_json: text || "" }); setPaste(""); toast("Abonnement ChatGPT connecté ✓"); await reload(); onChange(); }
+    catch (e) { toast(e.message, 7000); }
+    setBusy(false);
+  }
+  return html`<div class="card">
+    <h3>💬 Abonnement ChatGPT ${st.connected ? html`<span class="pill ok">connecté</span>` : st.reconnect_required ? html`<span class="pill err">à reconnecter</span>` : null}</h3>
+    <p class="desc">Utilise GPT avec ton forfait ChatGPT, sans payer au token (même mécanisme que l'ancienne version : jetons du CLI Codex).
+      Les modèles apparaissent ensuite sous le fournisseur <code>chatgpt</code>. Mécanisme non officiel, soumis aux limites de ton forfait.</p>
+    ${st.connected ? html`<div class="row"><span class="faint small">Compte ${st.account_id || "ChatGPT"}</span>
+        <button class="btn small danger" onClick=${async () => { await del("/api/admin/chatgpt"); reload(); onChange(); }}>Déconnecter</button></div>`
+      : html`
+        <ol class="small muted" style="margin:0;padding-left:18px">
+          <li>Sur ce Mac, dans un terminal : <code>brew install codex</code> (ou <code>npm i -g @openai/codex</code>)</li>
+          <li><code>codex login</code> puis choisis « Sign in with ChatGPT »</li>
+          <li>Reviens ici et clique « Importer ».</li>
+        </ol>
+        <div class="row"><button class="btn primary" disabled=${busy} onClick=${() => doImport("")}>${busy ? "Vérification…" : st.codex_file ? "Importer depuis ce Mac (~/.codex/auth.json)" : "Importer depuis ~/.codex/auth.json"}</button></div>
+        <details><summary class="small muted" style="cursor:pointer">Ely tourne sur une autre machine ? Colle le contenu de auth.json</summary>
+          <textarea class="input" rows="4" style="margin-top:8px;font-family:var(--mono);font-size:12px" value=${paste} onInput=${(e) => setPaste(e.target.value)}></textarea>
+          <button class="btn small" style="margin-top:8px" disabled=${!paste || busy} onClick=${() => doImport(paste)}>Importer ce contenu</button>
+        </details>
+        <p class="desc">Après l'import, Ely renouvelle elle-même les jetons ; le CLI Codex pourra te redemander « codex login ».</p>`}
+  </div>`;
+}
+
 function Models() {
   const [data, reload] = useLoad(() => Promise.all([get("/api/models"), get("/api/admin/models/all")]).then(([a, b]) => ({ ...a, all: b })));
   const [busy, setBusy] = useState(false);
@@ -250,11 +282,13 @@ function Models() {
           ${data.roles[role]?.configured !== "auto" && !data.all.some((m) => m.ref === data.roles[role]?.configured) ? html`<option value=${data.roles[role]?.configured}>${data.roles[role]?.configured}</option>` : null}
         </select></div>`)}
     </div>
+    <${ChatGPTCard} onChange=${reload} />
     <div class="card">
       <h3>Fournisseurs</h3>
       <div class="list">${Object.entries(data.providers).map(([p, s]) => html`<div class="list-item"><div class="grow"><b>${p}</b><div class="sub">${s}</div></div>
         <span class=${"pill " + (s.startsWith("ok") ? "ok" : "err")}>${s.startsWith("ok") ? "OK" : "hors ligne"}</span></div>`)}</div>
-      <p class="desc">Ajoute des clés dans le fichier .env (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, MISTRAL_API_KEY, DEEPSEEK_API_KEY, OPENROUTER_API_KEY…) puis actualise.</p>
+      <p class="desc">Ajoute des clés dans le fichier .env (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, MISTRAL_API_KEY, DEEPSEEK_API_KEY, OPENROUTER_API_KEY…)
+        puis clique « Actualiser » : pas besoin de redémarrer Ely.</p>
       <div><button class="btn" disabled=${busy} onClick=${async () => { setBusy(true); await post("/api/admin/models/refresh"); await reload(); setBusy(false); }}>${busy ? "Interrogation…" : "Actualiser les modèles"}</button></div>
     </div>`;
 }

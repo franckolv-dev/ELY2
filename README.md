@@ -36,6 +36,7 @@ cd ELY2
 ```
 
 1. Ouvre le fichier `.env` créé et mets **au moins une clé d'API** (par exemple `ANTHROPIC_API_KEY`), ou lance simplement LM Studio.
+   Plus tard, après toute modification du `.env`, Réglages → Modèles → « Actualiser » suffit : pas besoin de redémarrer.
 2. Relance `./ely.sh`, ouvre **http://localhost:8000** : le premier compte créé devient administrateur.
 3. Pour qu'Ely démarre toute seule avec le Mac : `./ely.sh service`.
 
@@ -157,6 +158,8 @@ la main (Réglages → Auto-amélioration), ou simplement demander dans le chat 
 - **Fournisseurs** : Anthropic (API native : cache de prompt, réflexion adaptative, repli serveur en cas de refus),
   et tous les services compatibles OpenAI : OpenAI, Gemini, Mistral, DeepSeek, OpenRouter, Groq, xAI, Moonshot, Qwen,
   Zhipu, Cerebras, Together, LM Studio, Ollama, ou toute adresse personnalisée.
+- **Abonnement ChatGPT** : GPT avec ton forfait, sans payer au token. Sur le Mac : `codex login` (CLI Codex
+  d'OpenAI), puis Réglages → Modèles → « Importer ». Mécanisme non officiel, soumis aux limites du forfait.
 - **Rôles** : agent principal, escalade, contrôleur rapide, tâches de fond locales, vecteurs. Tout est choisi
   automatiquement, et modifiable dans Réglages → Modèles avec effet immédiat. Chaque conversation peut imposer son
   modèle (menu en haut).
@@ -175,7 +178,7 @@ la main (Réglages → Auto-amélioration), ou simplement demander dans le chat 
 | **Facebook** | page : jeton de page ; profil personnel : navigateur d'Ely |
 | **Telegram** | `TELEGRAM_BOT_TOKEN`, puis Réglages → Connexions |
 | **Serveurs MCP** | Réglages → Extensions MCP, ou demande à Ely de se brancher dessus |
-| **Recherche web** | gratuite par défaut ; SearXNG, Tavily ou Brave si tu les as |
+| **Recherche web** | gratuite par défaut (DuckDuckGo & co) ; SearXNG, Serper, Exa, SearchCans, Google, Tavily ou Brave si tu les as |
 | **Voix** | dictée du navigateur (Chrome Android) ; sinon transcription par Groq ou OpenAI si une clé existe |
 
 ## Architecture
@@ -191,7 +194,7 @@ ely/
   integrations/ google.py, mail.py, social.py        channels/ telegram.py        mcp_client.py
   api/        app.py, chat.py, settings_routes.py, admin.py
   web/        interface PWA (Preact + htm, sans étape de compilation)
-tests/        62 tests : boucle, outils, navigateur réel, adaptateurs (faux serveurs OpenAI/Anthropic), API, MCP, auto-modification
+tests/        68 tests : boucle, outils, navigateur réel, adaptateurs (faux serveurs OpenAI/Anthropic), API, MCP, auto-modification
 scripts/      mock_llm.py (faux modèle pour essayer sans tokens), e2e_ui.py (parcours complet de l'interface)
 ```
 
