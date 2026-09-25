@@ -135,7 +135,14 @@ async def browser(ctx: ToolContext, action: str, url: str = "", ref: int | None 
             await page.close()
             page = await ub.page(page_key)
         elif action == "eval":
-            val = await page.evaluate(js if js.strip().startswith(("(", "function", "async")) else f"() => {{ {js} }}")
+            code = js.strip()
+            if code.startswith(("(", "function", "async")):
+                expr = code  # fonction complète
+            elif "return" in code or ";" in code or "\n" in code:
+                expr = f"() => {{ {code} }}"  # corps d'instructions
+            else:
+                expr = code  # simple expression, ex. document.title
+            val = await page.evaluate(expr)
             return ToolResult(f"Résultat : {val!r}"[:20000])
         elif action == "upload":
             path = ctx.resolve_path(text)

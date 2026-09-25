@@ -19,6 +19,7 @@ log = logging.getLogger("ely.plugins")
 
 PLUGIN_DIR = settings.data_dir / "plugins"
 LOADED: dict[str, list[str]] = {}  # plugin -> noms d'outils
+SHADOWED: dict[str, dict] = {}  # plugin -> outils de base qu'il remplace (restaurés au déchargement)
 
 TEMPLATE = '''"""Plugin Ely : {description}"""
 from ely.tools import ToolContext, ToolResult, tool
@@ -49,6 +50,7 @@ def _unload(name: str) -> None:
 
     for tname in LOADED.pop(name, []):
         TOOLS.pop(tname, None)
+    TOOLS.update(SHADOWED.pop(name, {}))
     sys.modules.pop(f"ely_plugin_{name}", None)
 
 
@@ -58,21 +60,23 @@ def load_one(name: str) -> list[str]:
 
     path = PLUGIN_DIR / f"{name}.py"
     _unload(name)
-    before = set(TOOLS)
+    before = dict(TOOLS)
     spec = importlib.util.spec_from_file_location(f"ely_plugin_{name}", path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     try:
         spec.loader.exec_module(module)
     except Exception:
-        for t in set(TOOLS) - before:
+        for t in [t for t in TOOLS if TOOLS[t] is not before.get(t)]:
             TOOLS.pop(t, None)
+        TOOLS.update({t: v for t, v in before.items() if t not in TOOLS})
         sys.modules.pop(spec.name, None)
         raise
-    new = sorted(set(TOOLS) - before)
+    new = sorted(t for t in TOOLS if TOOLS[t] is not before.get(t))
     for t in new:
         TOOLS[t].source = f"plugin:{name}"
     LOADED[name] = new
+    SHADOWED[name] = {t: before[t] for t in new if t in before}
     return new
 
 

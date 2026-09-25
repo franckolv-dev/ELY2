@@ -203,6 +203,8 @@ class OpenAICompatProvider:
             body["max_tokens"] = min(max_tokens, 8192 if self.name in ("deepseek", "groq") else max_tokens)
         if self.name not in NO_STREAM_OPTIONS:
             body["stream_options"] = {"include_usage": True}
+        if (self.name == "openai" and re.match(r"(gpt-5|o\d)", model)) or (self.name == "gemini" and re.search(r"gemini-(2\.5|[3-9])", model)):
+            body["reasoning_effort"] = effort if effort in ("low", "medium", "high") else "medium"
 
         text_parts: list[str] = []
         calls: dict[int, dict] = {}

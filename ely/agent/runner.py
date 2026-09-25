@@ -88,8 +88,12 @@ class Runner:
         for q in list(self.subscribers.get(user_id, ())):
             try:
                 q.put_nowait(event)
-            except asyncio.QueueFull:
-                pass
+            except asyncio.QueueFull:  # client lent : on jette le plus ancien, jamais les fins de tâche
+                try:
+                    q.get_nowait()
+                    q.put_nowait(event)
+                except (asyncio.QueueEmpty, asyncio.QueueFull):
+                    pass
         for fn in self.listeners:
             if event["type"] in ("message", "ask_user", "tool_start"):
                 asyncio.ensure_future(fn(user_id, event))
@@ -134,7 +138,7 @@ class Runner:
         row = db.one("SELECT * FROM messages WHERE id = ?", (mid,))
         await self.emit(st, "message", {"message": public_message(row)})
         text = message_text(msg)
-        if st.ask_future and not st.ask_future.done():
+        if st.ask_future and not st.ask_future.done() and not kind:
             st.ask_future.set_result(text or "(réponse vide)")
             return {"message_id": mid, "run_id": st.run_id, "mode": "answer"}
         if st.task and not st.task.done():

@@ -187,7 +187,7 @@ ely/
   integrations/ google.py, mail.py, social.py        channels/ telegram.py        mcp_client.py
   api/        app.py, chat.py, settings_routes.py, admin.py
   web/        interface PWA (Preact + htm, sans étape de compilation)
-tests/        44 tests : boucle, outils, navigateur réel, adaptateurs (faux serveurs OpenAI/Anthropic), API, MCP, auto-modification
+tests/        58 tests : boucle, outils, navigateur réel, adaptateurs (faux serveurs OpenAI/Anthropic), API, MCP, auto-modification
 scripts/      mock_llm.py (faux modèle pour essayer sans tokens), e2e_ui.py (parcours complet de l'interface)
 ```
 

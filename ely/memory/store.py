@@ -66,7 +66,7 @@ async def add_memory(user_id: int, content: str, category: str = "fait", source:
         return dup, False
     mid = db.insert("memories", user_id=user_id, content=content, category=category, source=source,
                     embedding=emb[1] if emb else None, embed_model=emb[0] if emb else "", created_at=now(), updated_at=now())
-    db.run("INSERT INTO memories_fts(rowid, content) VALUES(?, ?)", (mid, content))
+    db.run("INSERT OR REPLACE INTO memories_fts(rowid, content) VALUES(?, ?)", (mid, content))
     return mid, True
 
 
@@ -156,7 +156,7 @@ async def backfill_embeddings(limit: int = 200) -> int:
 # ---------------------------------------------------------------------- historique
 def index_message(message_id: int, conversation_id: int, user_id: int, text: str) -> None:
     if text and text.strip():
-        db.run("INSERT INTO messages_fts(rowid, text, conversation_id, user_id) VALUES(?,?,?,?)",
+        db.run("INSERT OR REPLACE INTO messages_fts(rowid, text, conversation_id, user_id) VALUES(?,?,?,?)",
                (message_id, text[:20000], conversation_id, user_id))
 
 
@@ -186,7 +186,7 @@ def save_skill(user_id: int | None, name: str, description: str, content: str) -
         sid = db.insert("skills", user_id=user_id, name=name, description=description, content=content,
                         created_at=now(), updated_at=now())
         created = True
-    db.run("INSERT INTO skills_fts(rowid, name, description, content) VALUES(?,?,?,?)", (sid, name, description, content))
+    db.run("INSERT OR REPLACE INTO skills_fts(rowid, name, description, content) VALUES(?,?,?,?)", (sid, name, description, content))
     return sid, created
 
 
@@ -226,3 +226,11 @@ def _ensure_loop_task(coro) -> None:
         asyncio.get_running_loop().create_task(coro)
     except RuntimeError:
         pass
+
+
+def purge_user_index(user_id: int) -> None:
+    """Retire les entrées plein texte d'un utilisateur (à appeler avant de le supprimer)."""
+    db.run("DELETE FROM messages_fts WHERE user_id = ?", (user_id,))
+    db.run("DELETE FROM memories_fts WHERE rowid IN (SELECT id FROM memories WHERE user_id = ?)", (user_id,))
+    db.run("DELETE FROM skills_fts WHERE rowid IN (SELECT id FROM skills WHERE user_id = ?)", (user_id,))
+    db.run("DELETE FROM skills WHERE user_id = ?", (user_id,))

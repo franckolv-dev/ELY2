@@ -104,6 +104,8 @@ class AnthropicProvider:
                 push("user", [block])
         if out and out[0]["role"] != "user":
             out.insert(0, {"role": "user", "content": [{"type": "text", "text": "(suite de la conversation)"}]})
+        if out and out[-1]["role"] == "assistant":
+            out.append({"role": "user", "content": [{"type": "text", "text": "(continue)"}]})
         return out
 
     @staticmethod

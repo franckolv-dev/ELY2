@@ -228,9 +228,20 @@ function App() {
   function onEvent(ev) {
     const cid = ev.conversation_id;
     switch (ev.type) {
-      case "hello":
-        setLive((l) => { const n = { ...l }; for (const s of ev.states) n[s.conversation_id] = { ...s, since: Date.now() }; return n; });
+      case "hello": {
+        // (re)connexion : l'état du serveur fait foi ; ce qui n'y figure plus est terminé
+        const active = new Set(ev.states.map((s) => s.conversation_id));
+        setLive((l) => {
+          const n = {};
+          for (const [k, v] of Object.entries(l)) n[k] = { ...v, status: "idle", partial: "", thinking: "", ask: null, detail: "", activity: "", notice: "" };
+          for (const s of ev.states) n[s.conversation_id] = { ...(n[s.conversation_id] || {}), ...s, since: l[s.conversation_id]?.since || Date.now() };
+          return n;
+        });
+        setConvs((list) => list.map((c) => (active.has(c.id) ? c : { ...c, status: "idle" })));
+        const c = curRef.current;
+        if (c) get(`/api/conversations/${c}/messages`).then((d) => setMsgs((m) => ({ ...m, [c]: d.messages }))).catch(() => {});
         break;
+      }
       case "delta": {
         const b = deltaBuf.current;
         if (!Object.keys(b).length) requestAnimationFrame(flushDeltas);
@@ -264,7 +275,8 @@ function App() {
       }
       case "stream_reset": upd(cid, (s) => ({ ...s, partial: "" })); break;
       case "status":
-        upd(cid, (s) => ({ ...s, status: ev.status === "retrying" ? "running" : ev.status, detail: ev.detail || "", since: s.since || Date.now() }));
+        upd(cid, (s) => ({ ...s, status: ev.status === "retrying" ? "running" : ev.status, detail: ev.detail || "", since: s.since || Date.now(),
+          ask: ev.status === "waiting_user" ? s.ask : null }));
         setConvs((l) => l.map((c) => (c.id === cid ? { ...c, status: "running" } : c)));
         break;
       case "tool_start": upd(cid, (s) => ({ ...s, activity: ev.sub ? `sous-agent ${ev.sub} · ${ev.label}` : ev.label, detail: "" })); break;

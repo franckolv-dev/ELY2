@@ -13,7 +13,7 @@ cd "$(dirname "$0")"
 ROOT="$(pwd)"
 PY="$ROOT/.venv/bin/python"
 
-env_value() { grep -E "^$1=" .env 2>/dev/null | tail -1 | cut -d= -f2- | sed 's/[[:space:]]*#.*//' | tr -d '"' | tr -d "'" ; }
+env_value() { grep -E "^(export[[:space:]]+)?$1=" .env 2>/dev/null | tail -1 | cut -d= -f2- | sed 's/[[:space:]]*#.*//' | tr -d '"' | tr -d "'" ; }
 
 install() {
   if ! command -v uv >/dev/null 2>&1; then
@@ -59,8 +59,10 @@ start() {
   deps_changed && install
   export ELY_SUPERVISED=1
   local data port
-  data="$(env_value ELY_DATA_DIR)"; data="${data:-$ROOT/data}"
-  port="$(env_value ELY_PORT)"; port="${port:-8000}"
+  # l'environnement a priorité sur .env (comme côté Python)
+  data="${ELY_DATA_DIR:-$(env_value ELY_DATA_DIR)}"; data="${data:-$ROOT/data}"
+  port="${ELY_PORT:-$(env_value ELY_PORT)}"; port="${port:-8000}"
+  case "$data" in /*) ;; *) data="$ROOT/$data" ;; esac
   mkdir -p "$data/selfdev"
   trap 'kill "$CHILD" 2>/dev/null; wait "$CHILD" 2>/dev/null; exit 0' INT TERM
   echo "→ Ely démarre sur http://localhost:${port}"

@@ -97,6 +97,9 @@ def patch_user(uid: int, body: UserPatch, user=Depends(auth.admin_user)):
 def delete_user(uid: int, user=Depends(auth.admin_user)):
     if uid == user["id"]:
         raise HTTPException(400, "Impossible de supprimer ton propre compte")
+    from ..memory.store import purge_user_index
+
+    purge_user_index(uid)
     db.run("DELETE FROM users WHERE id = ?", (uid,))
     return {"ok": True}
 

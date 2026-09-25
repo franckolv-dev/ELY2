@@ -71,7 +71,8 @@ def put_skill(sid: int, body: SkillIn, user=Depends(auth.current_user)):
 @router.delete("/api/skills/{sid}")
 def del_skill(sid: int, user=Depends(auth.current_user)):
     ok = store.delete_skill(user["id"], sid, admin=user["role"] == "admin")
-    db.run("DELETE FROM skills_fts WHERE rowid = ?", (sid,))
+    if ok:
+        db.run("DELETE FROM skills_fts WHERE rowid = ?", (sid,))
     return {"ok": ok}
 
 

@@ -30,20 +30,25 @@ export async function upload(file) {
 }
 
 export function connectEvents(onEvent, onState) {
-  let es, retry = 1000, closed = false;
+  let es = null, timer = null, retry = 1000, closed = false;
   const open = () => {
-    es = new EventSource("/api/events");
-    es.onopen = () => { retry = 1000; onState?.("open"); };
-    es.onmessage = (e) => { try { onEvent(JSON.parse(e.data)); } catch (err) { console.error(err); } };
-    es.onerror = () => {
+    clearTimeout(timer);
+    if (es) es.close();
+    const src = new EventSource("/api/events");
+    es = src;
+    src.onopen = () => { retry = 1000; onState?.("open"); };
+    src.onmessage = (e) => { if (es !== src) return; try { onEvent(JSON.parse(e.data)); } catch (err) { console.error(err); } };
+    src.onerror = () => {
+      src.close();
+      if (es !== src || closed) return;  // instance déjà remplacée
       onState?.("closed");
-      es.close();
-      if (!closed) setTimeout(open, retry = Math.min(retry * 2, 15000));
+      timer = setTimeout(open, retry = Math.min(retry * 2, 15000));
     };
   };
   open();
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && es.readyState === EventSource.CLOSED && !closed) open();
-  });
-  return () => { closed = true; es.close(); };
+  const onVisible = () => {
+    if (document.visibilityState === "visible" && !closed && (!es || es.readyState === EventSource.CLOSED)) open();
+  };
+  document.addEventListener("visibilitychange", onVisible);
+  return () => { closed = true; clearTimeout(timer); es?.close(); document.removeEventListener("visibilitychange", onVisible); };
 }

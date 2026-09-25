@@ -61,8 +61,15 @@ async def prepare() -> str:
 
 
 async def ensure_session() -> None:
-    """Crée la copie si besoin, sans écraser un travail en cours."""
+    """Crée la copie si besoin, sans écraser un travail en cours.
+
+    Si la copie contient des commits absents de la version active (retour arrière effectué par le
+    lanceur, fusion refusée), elle est remise à niveau : on ne redéploie jamais une version rejetée."""
     if not (WORKTREE / ".git").exists():
+        await prepare()
+        return
+    code, out = await git("rev-list", "--count", f"{await head()}..{BRANCH}")
+    if code or out.strip() != "0":
         await prepare()
 
 

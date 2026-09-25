@@ -184,6 +184,7 @@ async def ely_plugin(ctx: ToolContext, action: str, name: str = "", code: str = 
                 path.write_text(old)
                 plugins.load_one(name)
             else:
+                plugins._unload(name)
                 path.unlink(missing_ok=True)
             return ToolResult(f"Plugin refusé (ancienne version conservée) : {e.__class__.__name__}: {e}", is_error=True)
         plugins.set_disabled(name, False)
