@@ -357,3 +357,7 @@ pre.diff { font-family: var(--mono); font-size: 12px; background: var(--code-bg)
 }
 @media (max-width: 380px) { .suggestions { grid-template-columns: 1fr; } }
 .msg.assistant.tight { margin-top: -6px; }
+.card code, .desc code, .sub code { word-break: break-all; }
+@media (max-width: 860px) {
+  .sheet-close { background: var(--sidebar); box-shadow: -12px 0 12px var(--sidebar); border-radius: 10px; }
+}

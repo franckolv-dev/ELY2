@@ -216,3 +216,32 @@ async def test_cancel(fake, user):
     assert await runner.cancel(cid)
     await wait_idle(cid)
     assert db.val("SELECT status FROM runs WHERE id = ?", (res["run_id"],)) == "cancelled"
+
+
+async def test_delegate_runs_subagents_in_parallel(fake, user):
+    """delegate lance des sous-agents en parallèle ; chacun agit avec les outils et rend un rapport."""
+    started = []
+
+    async def agent(messages, tools):
+        first = last_user_text(messages[:1])
+        if "Ta sous-tâche" in first:
+            started.append(first)
+            await asyncio.sleep(0.2)  # si les sous-agents étaient séquentiels, le test serait lent
+            if not tool_results(messages):
+                name = "Alpha" if "Alpha" in first else "Beta"
+                return call("contacts_save", name=name)
+            return f"Rapport : contact ajouté ({'Alpha' if 'Alpha' in first else 'Beta'})."
+        if not tool_results(messages):
+            return call("delegate", tasks=["Ajoute le contact Alpha", "Ajoute le contact Beta"])
+        return "Les deux sous-agents ont terminé : " + tool_results(messages)[-1]["content"][:200]
+
+    fake.script = script(agent)
+    cid = new_conversation(user)
+    t0 = asyncio.get_running_loop().time()
+    await runner.submit(user, cid, "Ajoute Alpha et Beta à mes contacts en parallèle")
+    await wait_idle(cid)
+    names = {r["name"] for r in db.all("SELECT name FROM contacts WHERE user_id = ?", (user["id"],))}
+    assert {"Alpha", "Beta"} <= names and len(started) == 4
+    assert asyncio.get_running_loop().time() - t0 < 2.0
+    last = json.loads(db.one("SELECT data FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT 1", (cid,))["data"])
+    assert "Rapport" in last["content"]
