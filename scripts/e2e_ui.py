@@ -27,8 +27,15 @@ async def main() -> None:
         page.on("console", lambda m: errors.append(f"console {m.type}: {m.text}") if m.type == "error" else None)
         page.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
 
+        async def slow_setup(route):  # /api/setup répond après /api/me (cas réel observé sur Mac)
+            await asyncio.sleep(1.0)
+            await route.continue_()
+
+        await page.route("**/api/setup", slow_setup)
         await page.goto(BASE)
         await page.wait_for_selector("text=Bienvenue dans Ely")
+        await page.wait_for_selector("input[autocomplete=given-name]", timeout=5000)
+        await page.unroute("**/api/setup")
         await page.screenshot(path=OUT / "01-creation-compte.png")
         await page.fill("input[autocomplete=given-name]", "Franck")
         await page.fill("input[type=email]", "franck@exemple.fr")

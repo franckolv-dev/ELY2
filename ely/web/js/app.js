@@ -14,6 +14,7 @@ const params = new URLSearchParams(location.search);
 function Login({ setup, onLogged }) {
   const invite = params.get("invite") || "";
   const [mode, setMode] = useState(setup?.needs_setup || invite ? "register" : "login");
+  useEffect(() => { if (setup?.needs_setup) setMode("register"); }, [setup?.needs_setup]);
   const [f, setF] = useState({ email: "", password: "", name: "", invite });
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -326,7 +327,8 @@ function App() {
     toast(value ? `Modèle : ${value}` : "Choix automatique du modèle");
   }
 
-  if (me === undefined) return html`<div class="boot"><div class="logo-mark big"></div></div>`;
+  // attendre les deux réponses : sinon l'écran de connexion s'afficherait avant de savoir s'il faut créer le premier compte
+  if (me === undefined || (me === null && !setup)) return html`<div class="boot"><div class="logo-mark big"></div></div>`;
   if (me === null) return html`<${Login} setup=${setup} onLogged=${setMe} /><${Toasts} />`;
 
   const conv = convs.find((c) => c.id === cur);
