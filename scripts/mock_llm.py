@@ -74,7 +74,7 @@ def decide(messages: list[dict]) -> tuple[str, list[dict]]:
         last = tools_done[-1]["content"]
         if n == 2:
             ref = re.search(r"\[(\d+)\] champ\(text\) \"Nom", last)
-            return "", [{"name": "browser", "arguments": {"action": "type", "ref": int(ref.group(1)) if ref else 1, "text": "Franck Olivier"}}]
+            return "", [{"name": "browser", "arguments": {"action": "type", "ref": int(ref.group(1)) if ref else 1, "text": "Franck Ollivier"}}]
         if n == 3:
             ref = re.search(r"\[(\d+)\] bouton \"Confirmer", last)
             return "", [{"name": "browser", "arguments": {"action": "click", "ref": int(ref.group(1)) if ref else 1}}]
