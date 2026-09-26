@@ -1,5 +1,6 @@
 // Voix : dictée (reconnaissance du navigateur, sinon transcription côté serveur) et lecture à voix haute.
 import { api } from "/static/js/api.js";
+import { getLang, speechLang, t } from "/static/js/i18n.js";
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -8,7 +9,7 @@ export function voiceSupported() {
 }
 
 // Démarre une dictée. Renvoie une fonction stop(). onText(texte, final).
-export function listen({ onText, onEnd, onError, lang = "fr-FR" }) {
+export function listen({ onText, onEnd, onError, lang = speechLang() }) {
   if (SR) {
     const rec = new SR();
     rec.lang = lang;
@@ -54,33 +55,35 @@ export function listen({ onText, onEnd, onError, lang = "fr-FR" }) {
 
 function plain(text) {
   return (text || "")
-    .replace(/```[\s\S]*?```/g, " (bloc de code) ")
+    .replace(/```[\s\S]*?```/g, t("voice.code"))
     .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
     .replace(/[*_`#>|]/g, "")
-    .replace(/https?:\/\/\S+/g, "le lien")
+    .replace(/https?:\/\/\S+/g, t("voice.link"))
     .replace(/\n{2,}/g, ". ");
 }
 
-let frenchVoice = null;
+// voix choisie pour la langue de l'interface (ou celle retenue dans le profil)
 function pickVoice() {
+  if (!("speechSynthesis" in window)) return null;
   const voices = speechSynthesis.getVoices();
+  const lang = getLang();
   const saved = localStorage.getItem("ely-voice");
-  frenchVoice = voices.find((v) => v.name === saved) ||
-    voices.find((v) => v.lang?.startsWith("fr") && /natural|neural|premium|enhanced|google/i.test(v.name)) ||
-    voices.find((v) => v.lang?.startsWith("fr")) || null;
+  return voices.find((v) => v.name === saved && v.lang?.startsWith(lang)) ||
+    voices.find((v) => v.lang?.startsWith(lang) && /natural|neural|premium|enhanced|google/i.test(v.name)) ||
+    voices.find((v) => v.lang?.startsWith(lang)) || null;
 }
-if ("speechSynthesis" in window) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
 
-export function frenchVoices() {
-  return "speechSynthesis" in window ? speechSynthesis.getVoices().filter((v) => v.lang?.startsWith("fr")) : [];
+export function voicesForLang() {
+  return "speechSynthesis" in window ? speechSynthesis.getVoices().filter((v) => v.lang?.startsWith(getLang())) : [];
 }
 
 export function speak(text, onEnd) {
   if (!("speechSynthesis" in window)) { onEnd?.(); return; }
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(plain(text).slice(0, 3000));
-  u.lang = "fr-FR";
-  if (frenchVoice) u.voice = frenchVoice;
+  u.lang = speechLang();
+  const voice = pickVoice();
+  if (voice) u.voice = voice;
   u.rate = parseFloat(localStorage.getItem("ely-rate") || "1.05");
   u.onend = () => onEnd?.();
   u.onerror = () => onEnd?.();

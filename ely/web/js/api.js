@@ -1,4 +1,6 @@
 // Client de l'API d'Ely + flux d'événements temps réel (SSE, reconnexion automatique).
+import { serverText } from "/static/js/i18n.js";
+
 export class ApiError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
@@ -12,7 +14,7 @@ export async function api(path, { method = "GET", body, form } = {}) {
   const data = type.includes("json") ? await res.json() : await res.text();
   if (!res.ok) {
     const msg = typeof data === "object" ? (data.detail?.[0]?.msg || data.detail || JSON.stringify(data)) : data;
-    throw new ApiError(res.status, msg);
+    throw new ApiError(res.status, serverText(msg));
   }
   return data;
 }

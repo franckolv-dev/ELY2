@@ -2,6 +2,7 @@
 import { html } from "/static/vendor/preact-htm.js";
 import { marked } from "/static/vendor/marked.js";
 import DOMPurify from "/static/vendor/purify.js";
+import { locale, t } from "/static/js/i18n.js";
 
 marked.setOptions({ gfm: true, breaks: true });
 DOMPurify.addHook("afterSanitizeAttributes", (node) => {
@@ -42,31 +43,50 @@ const P = {
   phone: "M5 1.5h6a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1zM7 12.5h2",
 };
 
-export const Icon = ({ name, size = 16, stroke = 1.5 }) => html`
-  <svg viewBox="0 0 16 16" width=${size} height=${size} fill="none" stroke="currentColor" stroke-width=${stroke}
-       stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d=${P[name] || ""} /></svg>`;
+// Icônes plus grandes (grille 24 px, dessin façon Feather) pour la barre latérale, l'accueil et l'en-tête
+const P24 = {
+  gear: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z",
+  calendar: "M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM16 2v4M8 2v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01",
+  mail: "M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zM22 7l-10 7L2 7",
+  doc: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8",
+  tasks: "M3 4h5v5H3zM3 16l2 2 4-4M12 6h9M12 11h9M12 17h9",
+  arrowRight: "M5 12h14M13 6l6 6-6 6",
+  arrowUp: "M12 19V5M5 12l7-7 7 7",
+  logout: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
+  mic: "M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3zM19 10v2a7 7 0 0 1-14 0v-2M12 19v3",
+  plus: "M12 5v14M5 12h14",
+  sun: "M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zM12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4",
+  moon: "M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z",
+  speaker: "M11 5L6 9H2v6h4l5 4zM15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14",
+  globe: "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z",
+  menu: "M3 6h18M3 12h18M3 18h18",
+  phone: "M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM11 18h2",
+};
+
+export const Icon = ({ name, size = 16, stroke }) => {
+  const big = name in P24;
+  return html`<svg viewBox=${big ? "0 0 24 24" : "0 0 16 16"} width=${size} height=${size} fill="none" stroke="currentColor"
+    stroke-width=${stroke ?? (big ? 1.7 : 1.5)} stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d=${big ? P24[name] : P[name] || ""} /></svg>`;
+};
+
+// Logo d'Ely : quatre pétales
+const PETALS = "M5.6 1H6.45A4.6 4.6 0 0 1 11.05 5.6V9.95A1.1 1.1 0 0 1 9.95 11.05H5.6A4.6 4.6 0 0 1 1 6.45V5.6A4.6 4.6 0 0 1 5.6 1ZM17.55 1H18.4A4.6 4.6 0 0 1 23 5.6V6.45A4.6 4.6 0 0 1 18.4 11.05H14.05A1.1 1.1 0 0 1 12.95 9.95V5.6A4.6 4.6 0 0 1 17.55 1ZM5.6 12.95H9.95A1.1 1.1 0 0 1 11.05 14.05V18.4A4.6 4.6 0 0 1 6.45 23H5.6A4.6 4.6 0 0 1 1 18.4V17.55A4.6 4.6 0 0 1 5.6 12.95ZM14.05 12.95H18.4A4.6 4.6 0 0 1 23 17.55V18.4A4.6 4.6 0 0 1 18.4 23H17.55A4.6 4.6 0 0 1 12.95 18.4V14.05A1.1 1.1 0 0 1 14.05 12.95Z";
+export const Logo = ({ size = 26, word = true }) => html`<span class="logo">
+  <svg class="logo-mark" viewBox="0 0 24 24" width=${size} height=${size} aria-hidden="true"><path d=${PETALS} fill="currentColor" /></svg>
+  ${word ? html`<span class="logo-word">ELY</span>` : null}</span>`;
 
 export function timeAgo(ts) {
   const d = new Date(ts * 1000), now = new Date();
   const diff = (now - d) / 1000;
-  if (diff < 60) return "à l'instant";
-  if (diff < 3600) return `il y a ${Math.floor(diff / 60)} min`;
-  if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-  return d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+  if (diff < 60) return t("date.now");
+  if (diff < 3600) return t("date.minAgo", { n: Math.floor(diff / 60) });
+  if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleDateString(locale(), { day: "numeric", month: "short" });
 }
 
 export function dateTime(ts) {
-  return new Date(ts * 1000).toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short" });
-}
-
-export function groupLabel(ts) {
-  const d = new Date(ts * 1000), now = new Date();
-  const days = Math.floor((new Date(now.toDateString()) - new Date(d.toDateString())) / 86400000);
-  if (days <= 0) return "Aujourd'hui";
-  if (days === 1) return "Hier";
-  if (days < 7) return "7 derniers jours";
-  if (days < 31) return "Ce mois-ci";
-  return "Plus ancien";
+  return new Date(ts * 1000).toLocaleString(locale(), { dateStyle: "medium", timeStyle: "short" });
 }
 
 // Étiquette d'extension (PDF, DOCX…) plutôt qu'un émoji
@@ -80,8 +100,8 @@ export const FileTag = ({ path }) => html`<span class="ext">${fileExt(path)}</sp
 
 export function clock(ts) {
   const d = new Date(ts * 1000), now = new Date();
-  if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-  return d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+  if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleDateString(locale(), { day: "numeric", month: "short" });
 }
 
 export function bytes(n) {
@@ -101,9 +121,8 @@ export const isMobile = () => matchMedia("(max-width: 860px)").matches;
 export const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 export const isImage = (p) => /\.(png|jpe?g|gif|webp)$/i.test(p || "");
 
-// ---------------------------------------------------------------- thème et accent (préférences de cet appareil)
-const THEME_BG = { light: "#f5f7fa", dark: "#2a2e32" };
-export const ACCENTS = [["lime", "Lime", "oklch(0.9 0.19 122)"], ["glacier", "Glacier", "oklch(0.86 0.1 250)"], ["signal", "Signal", "oklch(0.78 0.17 52)"]];
+// ---------------------------------------------------------------- thème (préférence de cet appareil)
+const THEME_BG = { light: "#ffffff", dark: "#14221d" };
 
 function pref(key, fallback) {
   try { return localStorage.getItem(key) || fallback; } catch { return fallback; }
@@ -113,7 +132,6 @@ function savePref(key, value) {
 }
 
 export const storedTheme = () => pref("ely-theme", "auto");
-export const storedAccent = () => pref("ely-accent", "lime");
 export const prefersDark = () => matchMedia("(prefers-color-scheme: dark)").matches;
 
 export function applyTheme(v, save = true) {
@@ -124,9 +142,4 @@ export function applyTheme(v, save = true) {
     m.setAttribute("content", THEME_BG[v === "light" || v === "dark" ? v : own]);
   }
   if (save) savePref("ely-theme", v);
-}
-
-export function applyAccent(v, save = true) {
-  if (v && v !== "lime") document.documentElement.setAttribute("data-accent", v); else document.documentElement.removeAttribute("data-accent");
-  if (save) savePref("ely-accent", v);
 }

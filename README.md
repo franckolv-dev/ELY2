@@ -7,7 +7,7 @@ téléphone Android. Et **il ne s'arrête pas tant que l'objectif n'est pas atte
 ![Ely réserve un rendez-vous dans son navigateur](docs/images/rdv.png)
 
 Trois mots d'ordre : **efficacité, autonomie, performance.** Ely 2 est une réécriture complète : ~6 800 lignes de
-Python et ~2 000 lignes d'interface, au lieu des 240 000 lignes et 9 services Docker de la version précédente.
+Python et ~2 600 lignes d'interface, au lieu des 240 000 lignes et 9 services Docker de la version précédente.
 Un seul processus, une seule base SQLite, zéro service à maintenir.
 
 ---
@@ -206,7 +206,7 @@ ely/
   browser.py  navigateur interne (Playwright)        chrome.py  pont vers l'extension Chrome
 extension/    « Ely pour Chrome » (MV3, sans compilation)
   api/        app.py, chat.py, settings_routes.py, admin.py
-  web/        interface PWA (Preact + htm, sans étape de compilation)
+  web/        interface PWA bilingue français/anglais (Preact + htm, sans étape de compilation)
 tests/        76 tests : boucle, outils, navigateur réel, extension Chrome réelle, adaptateurs (faux serveurs OpenAI/Anthropic), API, MCP, auto-modification
 scripts/      mock_llm.py (faux modèle pour essayer sans tokens), e2e_ui.py (parcours complet de l'interface)
 ```

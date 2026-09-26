@@ -41,7 +41,7 @@ async def main() -> None:
         await page.fill("input[type=email]", "franck@exemple.fr")
         await page.fill("input[type=password]", "motdepasse")
         await page.click("button:has-text('Créer mon compte')")
-        await page.wait_for_selector("text=que puis-je faire pour toi")
+        await page.wait_for_selector("text=Plus de temps pour vous")
         await page.screenshot(path=OUT / "02-accueil.png")
 
         # 1) une action simple
@@ -52,7 +52,7 @@ async def main() -> None:
         await page.screenshot(path=OUT / "03-contact.png")
 
         # 2) une vraie démarche dans le navigateur
-        await page.click("button:has-text('Nouvelle demande')")
+        await page.click("button:has-text('Nouvelle conversation')")
         await page.fill(".composer textarea", "Prends-moi rendez-vous chez mon médecin traitant cette semaine, en fin de journée")
         await page.keyboard.press("Enter")
         await page.wait_for_selector(".steps", timeout=20000)
@@ -65,7 +65,7 @@ async def main() -> None:
         await page.screenshot(path=OUT / "05-rdv-termine.png")
 
         # 3) une question de l'agent
-        await page.click("button:has-text('Nouvelle demande')")
+        await page.click("button:has-text('Nouvelle conversation')")
         await page.fill(".composer textarea", "Pose-moi une question de test")
         await page.keyboard.press("Enter")
         await page.wait_for_selector(".ask-card", timeout=20000)
@@ -75,9 +75,9 @@ async def main() -> None:
 
         # 4) réglages
         await page.wait_for_timeout(1500)
-        await page.click("button[title=Réglages]")
+        await page.click(".settings-btn")
         await page.click(".sheet nav button:has-text('Mémoire')")
-        await page.wait_for_selector("text=Ce qu'Ely sait de toi")
+        await page.wait_for_selector("text=Ce qu'Ely sait de vous")
         await page.wait_for_timeout(500)
         await page.screenshot(path=OUT / "07-memoire.png")
         await page.click(".sheet nav button:has-text('Modèles')")
@@ -89,16 +89,19 @@ async def main() -> None:
         await page.click(".sheet nav button:has-text('Connexions')")
         await page.wait_for_selector("text=Boîte mail")
         await page.screenshot(path=OUT / "10-connexions.png")
-        # apparence : accent choisi dans le profil, gardé après rechargement
-        await page.click(".sheet nav button:has-text('Profil')")
-        await page.click(".seg button:has-text('Glacier')")
-        await page.reload()
-        await page.wait_for_selector(".conv")
-        assert await page.evaluate("document.documentElement.dataset.accent") == "glacier", "accent non conservé"
-        await page.click("button[title=Réglages]")
-        await page.click(".seg button:has-text('Lime')")
         await page.keyboard.press("Escape")
-        assert await page.evaluate("document.documentElement.dataset.accent") is None
+        # langue : l'interface passe en anglais depuis l'en-tête, et le reste après rechargement
+        await page.select_option(".topbar .lang-select", "en")
+        await page.wait_for_selector("button:has-text('New conversation')")
+        await page.reload()
+        await page.wait_for_selector("button:has-text('New conversation')")
+        await page.click(".settings-btn")
+        await page.wait_for_selector("text=Appearance")
+        await page.wait_for_timeout(400)
+        await page.screenshot(path=OUT / "10b-anglais.png")
+        await page.keyboard.press("Escape")
+        await page.select_option(".topbar .lang-select", "fr")
+        await page.wait_for_selector("button:has-text('Nouvelle conversation')")
         # bascule clair/sombre de l'en-tête, puis retour au thème du système
         await page.click("button[title='Passer en sombre']")
         assert await page.evaluate("document.documentElement.dataset.theme") == "dark"
@@ -127,7 +130,7 @@ async def main() -> None:
         m = await phone.new_page()
         m.on("pageerror", lambda e: errors.append(f"mobile pageerror: {e}"))
         await m.goto(BASE)
-        await m.wait_for_selector("text=que puis-je faire pour toi")
+        await m.wait_for_selector("text=Plus de temps pour vous")
         await m.screenshot(path=OUT / "12-mobile-accueil.png")
         await m.click(".menu-btn")
         await m.wait_for_timeout(400)
@@ -147,7 +150,7 @@ async def main() -> None:
         await page.wait_for_timeout(300)
         await page.screenshot(path=OUT / "16-menu-compte.png")
         await page.click("[role=menu] button:has-text('Se déconnecter')")
-        await page.wait_for_selector("text=Se connecter")
+        await page.wait_for_selector("text=Heureux de vous retrouver")
         await browser.close()
 
     print("ERREURS :", *errors, sep="\n  ") if errors else print("Aucune erreur JavaScript.")

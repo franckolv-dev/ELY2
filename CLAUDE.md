@@ -1,6 +1,7 @@
 # Ely 2 — notes pour le développement
 
-Agent personnel autonome : FastAPI + SQLite + interface PWA sans compilation. Tout est en français (interface, commentaires, messages).
+Agent personnel autonome : FastAPI + SQLite + interface PWA sans compilation. Code, commentaires et messages du serveur en français ;
+l'interface est bilingue (français vouvoyé / anglais) : tout texte affiché passe par `t()` de `ely/web/js/i18n.js`, dans les deux langues.
 
 ## Commandes
 - Lancer : `./ely.sh` (superviseur : redémarrage + retour arrière après auto-mise à jour) ou `python -m ely`

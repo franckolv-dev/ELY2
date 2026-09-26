@@ -1,17 +1,9 @@
 // Vue conversation : fil, actions, question de l'agent, saisie, navigateur en direct.
 import { html, useEffect, useRef, useState, useMemo } from "/static/vendor/preact-htm.js";
 import { get, post, upload } from "/static/js/api.js";
-import { FileTag, Icon, clock, md, isImage, isMobile, toast } from "/static/js/util.js";
+import { t, tn } from "/static/js/i18n.js";
+import { FileTag, Icon, Logo, clock, md, isImage, isMobile, toast } from "/static/js/util.js";
 import { listen, voiceSupported, stopSpeaking } from "/static/js/voice.js";
-
-export const SUGGESTIONS = [
-  ["Prendre un rendez-vous", "Prends-moi un rendez-vous chez un médecin généraliste près de chez moi cette semaine, en fin de journée."],
-  ["Publier sur LinkedIn", "Rédige et publie sur LinkedIn un post engageant sur "],
-  ["Écrire un e-mail", "Écris un e-mail à "],
-  ["Ma semaine", "Qu'est-ce que j'ai dans mon agenda cette semaine ? Signale-moi les conflits."],
-  ["Rechercher", "Fais une recherche approfondie et un résumé clair sur "],
-  ["Me rappeler", "Rappelle-moi demain à 9h de "],
-];
 
 function contentText(m) {
   const c = m.content;
@@ -102,7 +94,7 @@ function Steps({ item, running, onImage }) {
     <div class=${"steps" + (isOpen ? " open" : "")}>
       <button class="steps-head" onClick=${() => setOpen(!isOpen)} aria-expanded=${isOpen}>
         ${busy ? html`<div class="spinner"></div>` : errors === n ? html`<span class="err">✗</span>` : html`<${Icon} name="check" size=${12} stroke=${1.6} />`}
-        <span class="cnt">${busy ? `En cours · ${done}/${n}` : `${n} action${n > 1 ? "s" : ""}`}${errors && !busy ? html` <span class="err">· ${errors} à revoir</span>` : null}</span>
+        <span class="cnt">${busy ? t("thread.running", { d: done, n }) : tn("thread.actions", n)}${errors && !busy ? html` <span class="err">${t("thread.toReview", { n: errors })}</span>` : null}</span>
         <span class="sum">${sum}</span>
         <span class="chev">${isOpen ? "−" : "+"}</span>
       </button>
@@ -148,10 +140,11 @@ function Elapsed({ since }) {
   const [, tick] = useState(0);
   useEffect(() => { const t = setInterval(() => tick((x) => x + 1), 1000); return () => clearInterval(t); }, []);
   const s = Math.max(0, Math.floor((Date.now() - since) / 1000));
-  return html`<span>${s < 60 ? `${s} s` : `${Math.floor(s / 60)} min${s % 60 ? " " + (s % 60) + " s" : ""}`}</span>`;
+  const m = Math.floor(s / 60);
+  return html`<span>${s < 60 ? t("thread.sec", { s }) : s % 60 ? t("thread.minSec", { m, s: s % 60 }) : t("thread.min", { m })}</span>`;
 }
 
-const Meta = ({ ts }) => html`<div class="turn-meta"><span class="mk"></span><span>ely</span><span>·</span><span>${clock(ts)}</span></div>`;
+const Meta = ({ ts }) => html`<div class="turn-meta"><${Logo} size=${14} word=${false} /><b>Ely</b><span>·</span><span>${clock(ts)}</span></div>`;
 
 export function Thread({ messages, live, onSend, onImage, onCancel }) {
   const items = useMemo(() => buildItems(messages || []), [messages]);
@@ -162,7 +155,7 @@ export function Thread({ messages, live, onSend, onImage, onCancel }) {
   const lastSteps = items.map((it) => it.type).lastIndexOf("steps");
 
   const renderItem = (it) => {
-    if (it.type === "control") return html`<${Trace} key=${it.msg.id} tag="Objectif non atteint">${controlText(it.msg)}<//>`;
+    if (it.type === "control") return html`<${Trace} key=${it.msg.id} tag=${t("thread.goalNotMet")}>${controlText(it.msg)}<//>`;
     if (it.type === "note") return html`<div class="note" key=${it.msg.id}>${contentText(it.msg)}</div>`;
     if (it.type === "steps") return html`<${Steps} key=${"s" + it.id} item=${it} running=${running && items.indexOf(it) >= lastSteps - 1} onImage=${onImage} />`;
     return html`<${Markdown} key=${it.msg.id} text=${it.msg.content} />`;
@@ -173,18 +166,18 @@ export function Thread({ messages, live, onSend, onImage, onCancel }) {
     running && live.thinking && !live.partial ? html`<div class="thinking" key="th">${live.thinking.slice(-600)}</div>` : null,
     running && live.partial ? html`<${Markdown} key="pa" text=${live.partial} streaming />` : null,
     live?.ask ? html`<div class="ask-card" key="ask">
-        <span class="tag" style="align-self:flex-start">Question</span>
+        <span class="tag" style="align-self:flex-start">${t("thread.question")}</span>
         <div class="q">${live.ask.question}</div>
         ${live.ask.options?.length ? html`<div class="chips">${live.ask.options.map((o) => html`<button class="chip" onClick=${() => onSend(o)}>${o}</button>`)}</div>` : null}
-        <div class="foot">Réponds ci-dessous, Ely reprendra aussitôt.</div>
+        <div class="foot">${t("thread.askFoot")}</div>
       </div>` : null,
     running && !live.ask && !live.partial ? html`<div class="working" key="wk">
         <span class="pulse"></span>
-        <span class="what">${live.detail || (live.activity ? `Ely travaille · ${live.activity}` : "Ely réfléchit")}</span>
+        <span class="what">${live.detail || (live.activity ? t("thread.working", { a: live.activity }) : t("thread.thinking"))}</span>
         <${Elapsed} since=${sinceRef.current} />
-        <button class="link-btn" onClick=${onCancel}>Arrêter</button>
+        <button class="link-btn" onClick=${onCancel}>${t("thread.stop")}</button>
       </div>` : null,
-    live?.notice ? html`<${Trace} key="no" tag="Modèle">${live.notice}<//>` : null,
+    live?.notice ? html`<${Trace} key="no" tag=${t("thread.model")}>${live.notice}<//>` : null,
   ].filter(Boolean);
   const lastBlock = blocks[blocks.length - 1];
   const joinLast = liveEls.length && lastBlock?.type === "turn" && !lastBlock.closed;
@@ -192,7 +185,7 @@ export function Thread({ messages, live, onSend, onImage, onCancel }) {
   return html`<div class="thread">
     ${blocks.map((b, i) => {
       if (b.type === "user") return html`<${UserMsg} key=${b.msg.id} msg=${b.msg} onImage=${onImage} />`;
-      if (b.type === "scheduled") return html`<${Trace} key=${b.msg.id} tag="Tâche planifiée">${contentText(b.msg).replace(/^\[Tâche planifiée #\d+\]\s*/, "")}<//>`;
+      if (b.type === "scheduled") return html`<${Trace} key=${b.msg.id} tag=${t("thread.scheduled")}>${contentText(b.msg).replace(/^\[Tâche planifiée #\d+\]\s*/, "")}<//>`;
       if (b.type === "control") return renderItem(b);
       return html`<div class="turn msg" key=${b.key}>
         <${Meta} ts=${b.ts} />
@@ -204,7 +197,7 @@ export function Thread({ messages, live, onSend, onImage, onCancel }) {
   </div>`;
 }
 
-export function Composer({ onSend, running, onCancel, prefill, autoVoice, disabled }) {
+export function Composer({ onSend, running, onCancel, prefill, autoVoice, disabled, hero, extra }) {
   const [text, setText] = useState(prefill || "");
   const [atts, setAtts] = useState([]);
   const [busy, setBusy] = useState(0);
@@ -231,7 +224,7 @@ export function Composer({ onSend, running, onCancel, prefill, autoVoice, disabl
       try {
         const res = await upload(f);
         setAtts((a) => [...a, { path: res.path, name: f.name }]);
-      } catch (e) { toast(`Envoi impossible : ${e.message}`); }
+      } catch (e) { toast(t("composer.uploadFailed", { e: e.message })); }
       setBusy((b) => b - 1);
     }
   }
@@ -246,14 +239,14 @@ export function Composer({ onSend, running, onCancel, prefill, autoVoice, disabl
 
   function startVoice() {
     if (listening) { stopRef.current?.(); return; }
-    if (!voiceSupported()) { toast("La dictée n'est pas disponible sur ce navigateur."); return; }
+    if (!voiceSupported()) { toast(t("composer.noDictation")); return; }
     stopSpeaking();
     setListening(true);
     let last = "";
     stopRef.current = listen({
       onText: (t, final) => { last = t; setText(t); if (final && t) { setListening(false); send(t); } },
       onEnd: () => setListening(false),
-      onError: (e) => { setListening(false); toast(e === "not-allowed" ? "Autorise le micro pour dicter (connexion HTTPS requise)." : `Micro : ${e}`); },
+      onError: (e) => { setListening(false); toast(e === "not-allowed" ? t("composer.micDenied") : t("composer.micError", { e })); },
     });
   }
 
@@ -265,27 +258,28 @@ export function Composer({ onSend, running, onCancel, prefill, autoVoice, disabl
     if (files.length) { e.preventDefault(); addFiles(files); }
   };
 
-  return html`<div class="composer-wrap"><div class="composer-in">
-    <div class=${"composer" + (drag ? " drag" : "")}
-         onDragOver=${(e) => { e.preventDefault(); setDrag(true); }} onDragLeave=${() => setDrag(false)}
-         onDrop=${(e) => { e.preventDefault(); setDrag(false); addFiles([...e.dataTransfer.files]); }}>
-      ${atts.length || busy ? html`<div class="attachments">
-        ${atts.map((a) => html`<span class="att"><${FileTag} path=${a.name} /><span>${a.name}</span><button title="Retirer" onClick=${() => setAtts(atts.filter((x) => x !== a))}><${Icon} name="close" size=${10} stroke=${1.8} /></button></span>`)}
-        ${busy ? html`<span class="att"><div class="spinner"></div><span>Envoi…</span></span>` : null}
-      </div>` : null}
-      <div class="composer-row">
-        <input type="file" multiple ref=${fileRef} style="display:none" onChange=${(e) => { addFiles([...e.target.files]); e.target.value = ""; }} />
-        <button class="c-btn" title="Joindre un fichier ou une photo" onClick=${() => fileRef.current.click()}><${Icon} name="plus" /></button>
-        <textarea ref=${ta} rows="1" value=${text} disabled=${disabled}
-          placeholder=${listening ? "Je t'écoute…" : running ? "Ajoute une précision, Ely en tiendra compte…" : "Demande n'importe quoi à Ely…"}
-          onInput=${(e) => setText(e.target.value)} onKeyDown=${onKey} onPaste=${onPaste}></textarea>
-        ${running ? html`<button class="c-btn stop" title="Arrêter la tâche" onClick=${onCancel}><${Icon} name="stop" size=${14} /></button>` : null}
-        ${text.trim() || atts.length ? html`<button class="c-btn send" title="Envoyer" onClick=${() => send()} disabled=${busy > 0}><${Icon} name="send" stroke=${1.7} /></button>`
-          : html`<button class=${"c-btn send mic" + (listening ? " on" : "")} title="Parler à Ely" onClick=${startVoice}><${Icon} name="mic" /></button>`}
-      </div>
+  const box = html`<div class=${"composer" + (hero ? " hero" : "") + (drag ? " drag" : "")}
+       onDragOver=${(e) => { e.preventDefault(); setDrag(true); }} onDragLeave=${() => setDrag(false)}
+       onDrop=${(e) => { e.preventDefault(); setDrag(false); addFiles([...e.dataTransfer.files]); }}>
+    ${atts.length || busy ? html`<div class="attachments">
+      ${atts.map((a) => html`<span class="att"><${FileTag} path=${a.name} /><span>${a.name}</span><button title=${t("composer.remove")} onClick=${() => setAtts(atts.filter((x) => x !== a))}><${Icon} name="close" size=${10} stroke=${1.8} /></button></span>`)}
+      ${busy ? html`<span class="att"><div class="spinner"></div><span>${t("composer.uploading")}</span></span>` : null}
+    </div>` : null}
+    <textarea ref=${ta} rows=${hero ? 3 : 1} value=${text} disabled=${disabled}
+      placeholder=${listening ? t("composer.listening") : running ? t("composer.running") : t("composer.placeholder")}
+      onInput=${(e) => setText(e.target.value)} onKeyDown=${onKey} onPaste=${onPaste}></textarea>
+    <div class="composer-bar">
+      <input type="file" multiple ref=${fileRef} style="display:none" onChange=${(e) => { addFiles([...e.target.files]); e.target.value = ""; }} />
+      ${extra}
+      <button class="c-btn plain" title=${t("composer.attach")} onClick=${() => fileRef.current.click()}><${Icon} name="plus" size=${18} /></button>
+      <div class="spacer"></div>
+      ${running ? html`<button class="c-btn stop" title=${t("composer.stop")} onClick=${onCancel}><${Icon} name="stop" size=${14} /></button>` : null}
+      <button class=${"c-btn mic" + (listening ? " on" : "")} title=${t("composer.talk")} onClick=${startVoice}><${Icon} name="mic" size=${18} /></button>
+      <button class="c-btn send" title=${t("composer.send")} onClick=${() => send()} disabled=${busy > 0 || (!text.trim() && !atts.length)}><${Icon} name="arrowUp" size=${19} stroke=${1.9} /></button>
     </div>
-    <div class="hint">Entrée pour envoyer · Maj+Entrée pour aller à la ligne · glisse un fichier pour le joindre</div>
-  </div></div>`;
+  </div>`;
+  if (hero) return box;
+  return html`<div class="composer-wrap"><div class="composer-in">${box}<div class="hint">${t("composer.hint")}</div></div></div>`;
 }
 
 export function LiveBrowser({ frame, conversationId, onClose, mobile }) {
@@ -309,35 +303,34 @@ export function LiveBrowser({ frame, conversationId, onClose, mobile }) {
   }
   return html`<aside class="live">
     <div class="live-head">
-      <span class="label">Navigateur</span>
+      <span class="label">${t("live.label")}</span>
       <span class="url">${img?.url || "—"}</span>
-      <button class="icon-btn soft" title="Actualiser" onClick=${refresh}><${Icon} name="refresh" /></button>
-      <button class="icon-btn soft" title="Fermer" onClick=${onClose}><${Icon} name="close" /></button>
+      <button class="icon-btn" title=${t("live.refresh")} onClick=${refresh}><${Icon} name="refresh" /></button>
+      <button class="icon-btn" title=${t("common.close")} onClick=${onClose}><${Icon} name="close" /></button>
     </div>
     <div class=${"live-view" + (control ? " control" : "")}>
       ${img?.image ? html`<img src=${"data:image/jpeg;base64," + img.image} onClick=${click} />`
-        : html`<div class="live-empty">Le navigateur d'Ely s'affichera ici dès qu'elle l'utilisera.<br/><br/>
-            Tu peux aussi l'ouvrir toi-même pour te connecter une fois à tes sites (Doctolib, LinkedIn…).</div>`}
+        : html`<div class="live-empty">${t("live.empty1")}<br/><br/>${t("live.empty2")}</div>`}
     </div>
     <div class="live-foot">
       <label class="toggle small"><span class="switch"><input type="checkbox" checked=${control} onChange=${(e) => setControl(e.target.checked)} /><span></span></span>
-        <span>Prendre la main</span><span class="meta-text">${control ? "touche l'image pour cliquer" : "connexion, captcha…"}</span></label>
+        <span>${t("live.takeover")}</span><span class="meta-text">${control ? t("live.takeoverOn") : t("live.takeoverOff")}</span></label>
       ${control ? html`
         <div class="row nowrap">
-          <input class="input" placeholder="Texte à taper" value=${typed} onInput=${(e) => setTyped(e.target.value)}
+          <input class="input" placeholder=${t("live.typePh")} value=${typed} onInput=${(e) => setTyped(e.target.value)}
                  onKeyDown=${(e) => { if (e.key === "Enter") { act("type", { text: typed }); setTyped(""); } }} />
-          <button class="btn" onClick=${() => { act("type", { text: typed }); setTyped(""); }}>Taper</button>
+          <button class="btn" onClick=${() => { act("type", { text: typed }); setTyped(""); }}>${t("live.type")}</button>
         </div>
         <div class="row">
-          ${[["Entrée", "Enter"], ["Tab", "Tab"], ["⌫", "Backspace"], ["Échap", "Escape"]].map(([l, k]) => html`<button class="btn" onClick=${() => act("key", { text: k })}>${l}</button>`)}
+          ${[[t("live.enter"), "Enter"], ["Tab", "Tab"], ["⌫", "Backspace"], [t("live.esc"), "Escape"]].map(([l, k]) => html`<button class="btn" onClick=${() => act("key", { text: k })}>${l}</button>`)}
           <button class="btn" onClick=${() => act("scroll", { y: -1 })}>↑</button>
           <button class="btn" onClick=${() => act("scroll", { y: 1 })}>↓</button>
-          <button class="btn" onClick=${() => act("back")}>Retour</button>
+          <button class="btn" onClick=${() => act("back")}>${t("live.back")}</button>
         </div>
         <div class="row nowrap">
-          <input class="input" placeholder="Aller à… (ex. doctolib.fr)" value=${goto} onInput=${(e) => setGoto(e.target.value)}
+          <input class="input" placeholder=${t("live.gotoPh")} value=${goto} onInput=${(e) => setGoto(e.target.value)}
                  onKeyDown=${(e) => { if (e.key === "Enter" && goto) act("goto", { text: goto }); }} />
-          <button class="btn" onClick=${() => goto && act("goto", { text: goto })}>Ouvrir</button>
+          <button class="btn" onClick=${() => goto && act("goto", { text: goto })}>${t("common.open")}</button>
         </div>` : null}
     </div>
   </aside>`;

@@ -1,9 +1,9 @@
 // Service worker d'Ely : démarrage instantané (coquille en cache) et notifications push.
-const CACHE = "ely-v3";
+const CACHE = "ely-v4";
 const SHELL = ["/", "/static/style.css", "/static/js/app.js", "/static/js/api.js", "/static/js/chat.js",
-  "/static/js/settings.js", "/static/js/util.js", "/static/js/voice.js", "/static/vendor/preact-htm.js",
+  "/static/js/settings.js", "/static/js/util.js", "/static/js/voice.js", "/static/js/i18n.js", "/static/vendor/preact-htm.js",
   "/static/vendor/marked.js", "/static/vendor/purify.js", "/static/icons/icon.svg", "/static/icons/icon-192.png",
-  "/static/fonts/geist.woff2", "/static/fonts/geist-mono.woff2", "/static/fonts/instrument-serif.woff2"];
+  "/static/fonts/dm-sans.woff2", "/static/fonts/newsreader.woff2"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
