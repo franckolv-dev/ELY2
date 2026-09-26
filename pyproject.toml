@@ -5,6 +5,7 @@ description = "Ely — agent IA personnel autonome, multi-modèles, multi-utilis
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
+authors = [{ name = "Franck Ollivier" }]
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
