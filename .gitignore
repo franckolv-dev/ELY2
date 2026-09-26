@@ -9,3 +9,7 @@ build/
 dist/
 .DS_Store
 node_modules/
+
+# « Empaqueter l'extension » de Chrome : paquet et clé privée, à ne jamais publier
+*.crx
+*.pem

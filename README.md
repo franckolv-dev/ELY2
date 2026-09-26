@@ -200,7 +200,7 @@ la main (Réglages → Auto-amélioration), ou simplement demander dans le chat 
 | **Telegram** | `TELEGRAM_BOT_TOKEN`, puis Réglages → Connexions |
 | **Serveurs MCP** | Réglages → Extensions MCP, ou demandez à Ely de se brancher dessus |
 | **Recherche web** | gratuite par défaut (DuckDuckGo & co) ; SearXNG, Serper, Exa, SearchCans, Google, Tavily ou Brave si vous les avez |
-| **Voix** | dictée du navigateur (Chrome Android) ; sinon transcription par Groq ou OpenAI si une clé existe |
+| **Voix** | dictée du navigateur (Chrome Android) ; sinon transcription par Groq ou OpenAI si une clé existe. Lecture : voix Google de Chrome, ou voix Premium de macOS (Réglages Système → Accessibilité → Contenu énoncé → Voix du système → Gérer les voix), à écouter dans Réglages → Profil → Voix |
 
 ## Architecture
 
@@ -217,7 +217,7 @@ ely/
   api/        app.py, chat.py, settings_routes.py, admin.py
   web/        interface PWA bilingue français/anglais (Preact + htm, sans étape de compilation)
 extension/    « Ely pour Chrome » (MV3, sans compilation)
-tests/        90 tests : boucle, outils, navigateur réel, extension Chrome réelle, adaptateurs (faux serveurs OpenAI/Anthropic), API, MCP, auto-modification
+tests/        91 tests : boucle, outils, navigateur réel, extension Chrome réelle, adaptateurs (faux serveurs OpenAI/Anthropic), API, MCP, auto-modification
 scripts/      mock_llm.py (faux modèle pour essayer sans tokens), e2e_ui.py (parcours complet de l'interface)
 ```
 

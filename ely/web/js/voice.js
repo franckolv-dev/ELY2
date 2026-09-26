@@ -62,19 +62,25 @@ function plain(text) {
     .replace(/\n{2,}/g, ". ");
 }
 
-// voix choisie pour la langue de l'interface (ou celle retenue dans le profil)
-function pickVoice() {
-  if (!("speechSynthesis" in window)) return null;
-  const voices = speechSynthesis.getVoices();
+// Voix « fantaisie » de macOS (synthèse Eloquence et effets sonores), déclinées en français de France et du Canada :
+// robotiques, inutilisables pour lire des réponses. On ne les propose pas.
+const POOR = /^(Eddy|Flo|Grandma|Grandpa|Reed|Rocko|Sandy|Shelley|Albert|Bad News|Bahh|Bells|Boing|Bubbles|Cellos|Good News|Jester|Organ|Superstar|Trinoids|Whisper|Wobble|Zarvox)\b/i;
+// voix de bonne qualité : en ligne (Google) ou téléchargées dans macOS (Premium, Améliorée)
+const GOOD = /google|natural|neural|premium|enhanced|amélior|qualité supérieure/i;
+
+// voix utilisables dans la langue de l'interface, les meilleures d'abord
+export function voicesForLang() {
+  if (!("speechSynthesis" in window)) return [];
   const lang = getLang();
-  const saved = localStorage.getItem("ely-voice");
-  return voices.find((v) => v.name === saved && v.lang?.startsWith(lang)) ||
-    voices.find((v) => v.lang?.startsWith(lang) && /natural|neural|premium|enhanced|google/i.test(v.name)) ||
-    voices.find((v) => v.lang?.startsWith(lang)) || null;
+  return speechSynthesis.getVoices().filter((v) => v.lang?.startsWith(lang) && !POOR.test(v.name))
+    .sort((a, b) => GOOD.test(b.name) - GOOD.test(a.name) || a.name.localeCompare(b.name));
 }
 
-export function voicesForLang() {
-  return "speechSynthesis" in window ? speechSynthesis.getVoices().filter((v) => v.lang?.startsWith(getLang())) : [];
+// voix retenue dans le profil, sinon la meilleure disponible
+function pickVoice() {
+  const voices = voicesForLang();
+  const saved = localStorage.getItem("ely-voice");
+  return voices.find((v) => v.name === saved) || voices[0] || null;
 }
 
 export function speak(text, onEnd) {
