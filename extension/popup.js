@@ -33,7 +33,7 @@ function show(s) {
   }
 }
 
-chrome.runtime.sendMessage({ kind: "get" }, show);
+(async () => show(await chrome.runtime.sendMessage({ kind: "get" })))();
 chrome.runtime.onMessage.addListener((m) => { if (m.kind === "state") show(m); });
 
 $("save").addEventListener("click", async () => {

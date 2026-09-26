@@ -254,3 +254,36 @@ async def test_extension_downloaded_from_ely_connects_without_typing_the_address
         finally:
             await ctx.close()
             chrome.bridges.pop(user["id"], None)
+
+
+DEBUGGED = """async () => { const [t] = await chrome.tabs.query({ url: '*://*/test/aide' });
+  try { await chrome.debugger.sendCommand({ tabId: t.id }, 'Runtime.evaluate', { expression: '1' }); return true; }
+  catch { return false; } }"""
+
+
+async def test_extension_lets_go_of_the_tabs_when_ely_goes_quiet(ely_url, users_chrome, user):
+    """Sans commande d'Ely, l'extension détache ses onglets (la barre « débogue ce navigateur » disparaît), même
+    ceux attachés avant un redémarrage de son service worker : ni la minuterie ni la liste ne vivent en mémoire."""
+    ctx = ToolContext(user=user, conversation_id=new_conversation(user), run_id=0, emit=lambda *a: asyncio.sleep(0))
+    r = await execute(ctx, "browser", {"action": "open", "url": f"{ely_url}/test/aide"})
+    assert not r.is_error, r.content
+    sw = users_chrome.service_workers[0]
+    assert await sw.evaluate(DEBUGGED)
+    assert await sw.evaluate("async () => !!(await chrome.alarms.get('detach'))")
+    await sw.evaluate("attached.clear()")  # la mémoire du service worker, perdue à son redémarrage
+    await sw.evaluate("chrome.alarms.create('detach', { when: Date.now() })")  # le délai d'inactivité est écoulé
+    for _ in range(50):
+        if not await sw.evaluate(DEBUGGED):
+            break
+        await asyncio.sleep(0.1)
+    assert not await sw.evaluate(DEBUGGED)
+
+
+async def test_extension_window_shows_the_link_with_ely(ely_url, users_chrome, user):
+    """La fenêtre de l'icône dit que ce Chrome est relié à Ely, et à quelle adresse."""
+    ext_id = users_chrome.service_workers[0].url.split("/")[2]
+    page = await users_chrome.new_page()
+    await page.goto(f"chrome-extension://{ext_id}/popup.html")
+    await page.wait_for_selector("#dot.on")
+    assert await page.input_value("#url") == ely_url
+    await page.close()

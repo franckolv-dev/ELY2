@@ -5,7 +5,7 @@ l'interface est bilingue (français vouvoyé / anglais) : tout texte affiché pa
 
 ## Commandes
 - Lancer : `./ely.sh` (superviseur : redémarrage + retour arrière après auto-mise à jour) ou `python -m ely`
-- Tests : `.venv/bin/python -m pytest -q` (modèle simulé, aucun appel réseau réel ; Chromium requis pour le test navigateur)
+- Tests : `.venv/bin/python -m pytest -q` (modèle simulé, aucun appel réseau réel ; tests navigateur et extension ignorés sans `ELY_BROWSER_EXECUTABLE`, par exemple le Chromium de Playwright : `~/Library/Caches/ms-playwright/chromium-*/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`)
 - Interface sans tokens : `python scripts/mock_llm.py` + `CUSTOM_OPENAI_BASE_URL=http://127.0.0.1:9100/v1 ELY_MODEL_MAIN=custom:mock-agent`
 - Parcours UI complet : `python scripts/e2e_ui.py http://127.0.0.1:8000 captures/`
 
@@ -23,3 +23,4 @@ l'interface est bilingue (français vouvoyé / anglais) : tout texte affiché pa
 - Ne jamais rejouer automatiquement une action dont le résultat est incertain (voir `LOST` dans loop.py).
 - Vouvoiement de rigueur (interface, Ely, messages du serveur) ; tutoiement seulement si la personne le demande (`auth.tv`, réglage `address`).
 - Pas de configuration éclatée : secrets dans `.env`, choix de l'admin dans `app_settings`, rien en cache mémoire qui masquerait un réglage.
+- Extension `extension/` : suivre la compétence `chrome-extensions` de Modern Web Guidance (service worker éphémère : état dans `chrome.storage`, minuteries en `chrome.alarms`, `async/await`) et tenir à jour `extension/CHROMEWEBSTORE.md` (justification de chaque permission, données, historique des versions) à chaque modification.

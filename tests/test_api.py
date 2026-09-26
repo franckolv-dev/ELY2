@@ -158,3 +158,15 @@ async def test_recorded_voice_is_relayed_from_the_macs_voice_service(client, use
     monkeypatch.setattr(settings, "xtts_url", "http://127.0.0.1:9")
     assert (await client.get("/api/tts/voices", headers=h)).json()["voices"] == []
     assert (await client.post("/api/tts", headers=h, json={"text": "Bonjour."})).status_code == 502
+
+
+async def test_downloaded_extension_leaves_out_the_store_notes(client, user):
+    """Le zip de l'extension n'emporte que l'extension : ni CHROMEWEBSTORE.md ni fichiers cachés."""
+    import io
+    import zipfile
+
+    h = await login(client, user["email"], "motdepasse")
+    r = await client.get("/api/chrome/extension.zip", headers=h, params={"url": "http://ely.test"})
+    names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
+    assert "ely-chrome/manifest.json" in names and "ely-chrome/config.json" in names
+    assert not [n for n in names if n.endswith(".md") or "/." in n], names

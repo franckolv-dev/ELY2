@@ -2,7 +2,7 @@
 // Ely ouvre ses onglets dans une fenêtre à part et les pilote par le protocole DevTools
 // (chrome.debugger) : vrais clics, vraie frappe, lecture de la page, captures.
 const DEFAULT_URL = "http://localhost:8000";
-const IDLE_DETACH_MS = 90_000; // sans commande, on détache : la barre « Ely débogue ce navigateur » disparaît
+const IDLE_DETACH_MIN = 1.5; // sans commande, on détache : la barre « Ely débogue ce navigateur » disparaît
 const RETRY_MIN_MS = 2_000;
 const RETRY_MAX_MS = 20_000;
 
@@ -15,8 +15,7 @@ let retryDelay = RETRY_MIN_MS;
 // état affiché par la fenêtre de l'extension (codes traduits par popup.js)
 let state = { status: "offline", user: "" };
 let elyWindow = null;
-const attached = new Set();
-let idleTimer = null;
+const attached = new Set(); // simple cache : le service worker peut redémarrer, le débogueur reste attaché
 
 // adresse saisie dans la fenêtre de l'extension, sinon celle d'où l'extension a été téléchargée (config.json)
 async function elyUrl() {
@@ -99,13 +98,13 @@ function reconnect() {
 // le ping garde la connexion (et le service worker) en vie ; l'alarme le réveille s'il a été arrêté
 setInterval(() => { if (ws && ws.readyState === WebSocket.OPEN) ws.send('{"type":"ping"}'); else connect(); }, 20_000);
 chrome.alarms.create("ely", { periodInMinutes: 1 });
-chrome.alarms.onAlarm.addListener(() => connect());
+chrome.alarms.onAlarm.addListener(({ name }) => { if (name === "detach") detachAll(); else connect(); });
 chrome.runtime.onStartup.addListener(() => connect());
 chrome.runtime.onInstalled.addListener(() => connect());
 chrome.cookies.onChanged.addListener(({ cookie }) => { if (cookie.name === "ely_token") reconnect(); });
 chrome.storage.onChanged.addListener((changes) => { if (changes.url) reconnect(); });
 chrome.runtime.onMessage.addListener((m, _sender, reply) => {
-  if (m.kind === "get") { elyUrl().then((url) => reply({ ...state, url })); return true; }
+  if (m.kind === "get") { (async () => reply({ ...state, url: await elyUrl() }))(); return true; }
   if (m.kind === "reconnect") { reconnect(); reply(true); }
   return false;
 });
@@ -122,8 +121,7 @@ async function run(sock, msg) {
     out = { id: msg.id, ok: false, error: String((e && e.message) || e) };
   }
   if (sock.readyState === WebSocket.OPEN) sock.send(JSON.stringify(out));
-  clearTimeout(idleTimer);
-  idleTimer = setTimeout(detachAll, IDLE_DETACH_MS);
+  await chrome.alarms.create("detach", { delayInMinutes: IDLE_DETACH_MIN }); // remplace la précédente : le délai repart
 }
 
 async function windowExists(id) {
@@ -149,9 +147,13 @@ async function attach(tabId) {
   await chrome.debugger.sendCommand({ tabId }, "Emulation.setFocusEmulationEnabled", { enabled: true }).catch(() => {});
 }
 
-function detachAll() {
-  for (const tabId of attached) chrome.debugger.detach({ tabId }).catch(() => {});
+// tous les onglets attachés, y compris avant un redémarrage du service worker (cache vide) ;
+// ceux qu'un autre débogueur (DevTools) tient refusent le détachement, sans conséquence
+async function detachAll() {
   attached.clear();
+  for (const t of await chrome.debugger.getTargets()) {
+    if (t.attached && t.tabId !== undefined) chrome.debugger.detach({ tabId: t.tabId }).catch(() => {});
+  }
 }
 
 chrome.debugger.onDetach.addListener((src) => attached.delete(src.tabId));

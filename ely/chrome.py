@@ -146,7 +146,9 @@ def extension_zip(url: str = "", user=Depends(auth.current_user)):
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for p in sorted(EXTENSION_DIR.rglob("*")):
             rel = p.relative_to(EXTENSION_DIR)
-            if p.is_file() and not any(part.startswith(".") for part in rel.parts) and rel.name != "config.json":
+            # ni fichiers cachés, ni notes du Chrome Web Store (*.md), ni config.json (réécrit ci-dessous)
+            if p.is_file() and not any(part.startswith(".") for part in rel.parts) and p.suffix != ".md" \
+                    and rel.name != "config.json":
                 z.write(p, f"ely-chrome/{rel}")
         url = url.strip().rstrip("/")
         if re.fullmatch(r"https?://[^\s/?#]+", url):
