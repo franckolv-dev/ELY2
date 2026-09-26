@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Ely pour Chrome",
   "short_name": "Ely",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Permet à Ely d'agir dans votre Chrome, avec vos sessions (messagerie, Doctolib…), dans une fenêtre à part.",
   "minimum_chrome_version": "116",
   "permissions": ["debugger", "tabs", "cookies", "storage", "alarms"],

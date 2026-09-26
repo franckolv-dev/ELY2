@@ -11,13 +11,16 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import io
 import json
 import logging
+import mimetypes
 import re
 import time
+import zipfile
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Response, WebSocket, WebSocketDisconnect
 
 from . import auth
 from .browser import BaseUserBrowser
@@ -136,9 +139,26 @@ def chrome_status(user=Depends(auth.current_user)):
             "use": preference(user["id"]), "folder": str(EXTENSION_DIR)}
 
 
+@router.get("/api/chrome/extension.zip")
+def extension_zip(url: str = "", user=Depends(auth.current_user)):
+    """L'extension à installer, déjà réglée sur l'adresse d'Ely d'où on la télécharge."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for p in sorted(EXTENSION_DIR.rglob("*")):
+            rel = p.relative_to(EXTENSION_DIR)
+            if p.is_file() and not any(part.startswith(".") for part in rel.parts) and rel.name != "config.json":
+                z.write(p, f"ely-chrome/{rel}")
+        url = url.strip().rstrip("/")
+        if re.fullmatch(r"https?://[^\s/?#]+", url):
+            z.writestr("ely-chrome/config.json", json.dumps({"url": url}))
+    return Response(buf.getvalue(), media_type="application/zip",
+                    headers={"Content-Disposition": 'attachment; filename="ely-chrome.zip"'})
+
+
 # ---------------------------------------------------------------------- pilotage d'un onglet
 _FUNC = re.compile(r"^\s*(async\s+)?(function\b|\([^)]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)")
 _NO_ARG = object()
+UPLOAD_MAX = 25_000_000  # octets : au-delà, la liaison WebSocket de l'extension serait trop sollicitée
 
 FIND_JS = r"""(n) => {
   const q = '[data-ely-ref="' + n + '"]';
@@ -255,11 +275,32 @@ class ChromeLocator:
           e.value = o.value; e.dispatchEvent(new Event('input', {{bubbles: true}})); e.dispatchEvent(new Event('change', {{bubbles: true}}));""")
 
     async def set_input_files(self, path: str) -> None:
+        file = Path(path)
+        size = file.stat().st_size
         r = await self.page.cdp("Runtime.evaluate", expression=f"({FIND_JS})({json.dumps(self.ref)})")
         oid = r.get("result", {}).get("objectId")
         if not oid:
             raise ChromeError("champ de fichier introuvable")
-        await self.page.cdp("DOM.setFileInputFiles", files=[path], objectId=oid)
+        try:
+            await self.page.cdp("DOM.setFileInputFiles", files=[str(file)], objectId=oid)
+            got = await self._on_element("return e.files && e.files.length ? [e.files[0].name, e.files[0].size] : null;")
+            if got == [file.name, size]:
+                return
+        except ChromeError:
+            pass
+        # Chrome refuse le chemin (extension sans accès aux fichiers, ou Chrome sur une autre machine) :
+        # le fichier est transmis par la liaison et déposé dans le champ comme par un glisser-déposer
+        if size > UPLOAD_MAX:
+            raise ChromeError(f"fichier trop lourd pour l'envoi par l'extension ({size // 1_000_000} Mo, maximum {UPLOAD_MAX // 1_000_000})")
+        data = base64.b64encode(await asyncio.to_thread(file.read_bytes)).decode()
+        kind = mimetypes.guess_type(file.name)[0] or "application/octet-stream"
+        await self._on_element(f"""
+          const bin = atob({json.dumps(data)}), bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          const dt = new DataTransfer();
+          dt.items.add(new File([bytes], {json.dumps(file.name)}, {{type: {json.dumps(kind)}}}));
+          e.files = dt.files;
+          e.dispatchEvent(new Event('input', {{bubbles: true}})); e.dispatchEvent(new Event('change', {{bubbles: true}}));""")
 
 
 class ChromePage:

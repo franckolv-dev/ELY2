@@ -159,7 +159,7 @@ label.field { display: grid; gap: 7px; font-size: 13px; font-weight: 500; color:
 .conv-group { padding: 14px 14px 8px; font-size: 9.5px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
 .conv-group:first-child { padding-top: 6px; }
 .conv {
-  display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 8px 0 14px; border-radius: 7px; cursor: pointer;
+  display: flex; align-items: center; gap: 6px; min-height: 31px; padding: 0 6px 0 14px; border-radius: 7px; cursor: pointer;
   position: relative; color: var(--muted); font-size: 12px;
 }
 .conv:hover { background: var(--active); color: var(--ink); }
@@ -168,7 +168,8 @@ label.field { display: grid; gap: 7px; font-size: 13px; font-weight: 500; color:
 .conv-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--primary); flex: none; }
 .conv-dot.run { animation: pulse 1.4s infinite; }
 .conv-dot.wait { background: var(--warn); }
-.conv .more { width: 28px; height: 28px; display: none; color: var(--muted); }
+.conv .more { width: 24px; height: 24px; display: none; color: var(--muted); }
+.conv .more:hover { color: var(--ink); }
 .conv:hover .more, .conv.menu-open .more { display: inline-grid; }
 .popover {
   position: absolute; right: 4px; top: 36px; z-index: 5; min-width: 180px; padding: 6px; display: grid; gap: 2px;
@@ -421,6 +422,22 @@ label.field { display: grid; gap: 7px; font-size: 13px; font-weight: 500; color:
 .pane { overflow: auto; position: relative; min-width: 0; }
 .sheet-close { position: sticky; top: 16px; float: right; margin-right: 16px; width: 36px; height: 36px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); display: grid; place-items: center; cursor: pointer; z-index: 2; }
 .sheet-close:hover { background: var(--side); }
+.dialog {
+  position: relative; width: min(560px, 100%); max-height: calc(100vh - 48px); overflow: auto; padding: 30px 32px 26px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); animation: pop .18s;
+}
+.dialog .sheet-close { position: absolute; top: 18px; right: 18px; float: none; margin: 0; }
+.dialog h2 { margin: 0 48px 6px 0; font: 400 30px/1.15 var(--serif); color: var(--head); letter-spacing: -.01em; }
+.dialog .sub { margin: 0 0 18px; color: var(--muted); }
+.dialog .desc { margin: 12px 0 0; font-size: 13px; color: var(--muted); }
+.dialog-text { margin: 0; line-height: 1.6; }
+.dialog-text.warn { margin-bottom: 14px; color: var(--warn); }
+.install-steps { margin: 0; padding-left: 20px; display: grid; gap: 14px; line-height: 1.55; }
+.install-steps li::marker { color: var(--muted); }
+.install-steps .btn { vertical-align: middle; }
+.step-note { display: block; margin-top: 6px; font-size: 13px; color: var(--muted); }
+.ext-status { display: flex; align-items: center; gap: 8px; margin: 0 0 16px; padding: 10px 14px; border-radius: 8px; background: var(--soft); color: var(--muted); font-size: 13.5px; }
+.ext-status.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 11%, transparent); }
 .pane-in { padding: 40px 48px 48px; max-width: 780px; }
 .pane-count { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .pane h2 { margin: 6px 0 8px; font-family: var(--serif); font-weight: 500; font-size: 40px; line-height: 1.1; letter-spacing: -.01em; color: var(--head); }
@@ -432,6 +449,8 @@ label.field { display: grid; gap: 7px; font-size: 13px; font-weight: 500; color:
 .srow-body { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .srow-body .desc { margin: 0; font-size: 13px; color: var(--muted); }
 .srow-body ol { margin: 0; padding-left: 18px; font-size: 13px; color: var(--muted); display: grid; gap: 4px; }
+.srow-body ol.install-steps { gap: 12px; color: var(--ink); }
+.voice-test .input { flex: 1; min-width: 0; }
 .block { display: flex; flex-direction: column; gap: 12px; margin-bottom: 36px; }
 .block-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .block-head b { font-weight: 600; font-size: 15px; }
@@ -537,6 +556,8 @@ details[open] summary { margin-bottom: 10px; }
   .live { position: fixed; inset: 0; width: auto; z-index: 35; border: 0; padding-top: env(safe-area-inset-top); }
   .live-mini { bottom: 130px; right: 12px; width: 112px; }
   .sheet-scrim { padding: 0; }
+  .dialog { width: calc(100% - 32px); max-height: calc(100% - 32px); padding: 24px 20px 20px; }
+  .dialog h2 { font-size: 26px; }
   .sheet { height: 100%; max-width: none; border-radius: 0; border: 0; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); animation: rise .2s; }
   .sheet nav { flex-direction: row; gap: 4px; overflow-x: auto; padding: calc(10px + env(safe-area-inset-top)) 60px 10px 10px; scrollbar-width: none; border-bottom: 1px solid var(--line); }
   .sheet nav::-webkit-scrollbar { display: none; }

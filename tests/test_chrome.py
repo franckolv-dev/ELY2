@@ -3,10 +3,13 @@ reliée à un vrai serveur Ely, pilotée par l'outil `browser` comme le ferait l
 from __future__ import annotations
 
 import asyncio
+import io
 import os
 import socket
+import zipfile
 from pathlib import Path
 
+import httpx
 import pytest
 import uvicorn
 import websockets
@@ -32,6 +35,10 @@ DOCTOLIB = """<html><head><title>Doctolib</title></head><body>
 OUTLOOK = """<html><head><title>Outlook</title></head><body><h1>Boîte de réception</h1>
   <p>Doctolib — Votre code de vérification est 482913</p></body></html>"""
 AIDE = "<html><head><title>Aide Doctolib</title></head><body><h1>Centre d'aide</h1></body></html>"
+ENVOI = """<html><head><title>Envoi</title></head><body><h1>Joindre le dossier</h1>
+  <input type="file" id="f" aria-label="Pièce jointe" onchange="const f = this.files[0];
+    f.text().then(t => document.getElementById('r').textContent = 'reçu ' + f.name + ' (' + f.size + ' o) : ' + t)">
+  <p id="r">rien</p></body></html>"""
 
 
 def free_port() -> int:
@@ -44,7 +51,7 @@ def free_port() -> int:
 
 async def start_ely(port: int):
     app = create_app()
-    for path, body in (("/test/doctolib", DOCTOLIB), ("/test/outlook", OUTLOOK), ("/test/aide", AIDE)):
+    for path, body in (("/test/doctolib", DOCTOLIB), ("/test/outlook", OUTLOOK), ("/test/aide", AIDE), ("/test/envoi", ENVOI)):
         app.add_api_route(path, lambda body=body: HTMLResponse(body), methods=["GET"])
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, lifespan="off", log_level="error"))
     task = asyncio.create_task(server.serve())
@@ -62,14 +69,15 @@ async def ely_url():
     await task
 
 
-async def launch_chrome(p, profile, url: str, token: str):
+async def launch_chrome(p, profile, url: str, token: str, ext: Path = EXT, type_url: bool = True):
     """Chrome de l'utilisateur avec l'extension, connecté à Ely (cookie de session) et réglé sur l'adresse `url`."""
     ctx = await p.chromium.launch_persistent_context(
         str(profile), executable_path=os.environ["ELY_BROWSER_EXECUTABLE"], headless=True,
-        args=[f"--disable-extensions-except={EXT}", f"--load-extension={EXT}"])
+        args=[f"--disable-extensions-except={ext}", f"--load-extension={ext}"])
     await ctx.add_cookies([{"name": "ely_token", "value": token, "url": url}])
     sw = ctx.service_workers[0] if ctx.service_workers else await ctx.wait_for_event("serviceworker")
-    await sw.evaluate(f"chrome.storage.local.set({{url: '{url}'}})")  # adresse saisie dans la fenêtre de l'extension
+    if type_url:
+        await sw.evaluate(f"chrome.storage.local.set({{url: '{url}'}})")  # adresse saisie dans la fenêtre de l'extension
     return ctx
 
 
@@ -196,3 +204,53 @@ async def test_extension_waits_for_ely_before_opening_a_websocket(user, tmp_path
             stub.close()
     assert any(r.startswith("/api/setup") for r in requests), requests
     assert not any(r.startswith("/api/chrome/ws") for r in requests), requests
+
+
+async def test_ely_attaches_a_file_from_its_workspace_in_the_users_chrome(ely_url, users_chrome, user):
+    ctx = ToolContext(user=user, conversation_id=new_conversation(user), run_id=0, emit=lambda *a: asyncio.sleep(0))
+    await execute(ctx, "file_write", {"path": "Promotion du livre.md", "content": "# S'envoler\nClubs de lecture de Vienne"})
+    r = await execute(ctx, "browser", {"action": "open", "url": f"{ely_url}/test/envoi"})
+    field = int(next(line for line in r.content.splitlines() if "Pièce jointe" in line).split("]")[0][1:])
+    r = await execute(ctx, "browser", {"action": "upload", "ref": field, "text": "Promotion du livre.md"})
+    assert not r.is_error, r.content
+    assert "reçu Promotion du livre.md (" in r.content and "Clubs de lecture de Vienne" in r.content, r.content
+
+
+async def test_upload_still_works_when_chrome_refuses_local_paths(ely_url, users_chrome, user, monkeypatch):
+    """Chrome récent : une extension sans « accès aux URL de fichiers » ne peut pas donner un chemin local à un champ
+    de fichier (et un Chrome sur une autre machine ne verrait pas ce chemin). Le fichier passe alors par la liaison."""
+    real = chrome.ChromePage.cdp
+
+    async def refusing(self, method, timeout=30, **params):
+        if method == "DOM.setFileInputFiles":
+            raise chrome.ChromeError("Not allowed")
+        return await real(self, method, timeout, **params)
+
+    monkeypatch.setattr(chrome.ChromePage, "cdp", refusing)
+    ctx = ToolContext(user=user, conversation_id=new_conversation(user), run_id=0, emit=lambda *a: asyncio.sleep(0))
+    await execute(ctx, "file_write", {"path": "clubs.csv", "content": "club;ville\nLes Liseurs;Vienne"})
+    r = await execute(ctx, "browser", {"action": "open", "url": f"{ely_url}/test/envoi"})
+    field = int(next(line for line in r.content.splitlines() if "Pièce jointe" in line).split("]")[0][1:])
+    r = await execute(ctx, "browser", {"action": "upload", "ref": field, "text": "clubs.csv"})
+    assert not r.is_error, r.content
+    assert "reçu clubs.csv (" in r.content and "Les Liseurs;Vienne" in r.content, r.content
+
+
+async def test_extension_downloaded_from_ely_connects_without_typing_the_address(ely_url, user, tmp_path):
+    """Menu du compte → Extension Chrome → Télécharger : décompressée et chargée, elle se relie seule à cet Ely."""
+    from playwright.async_api import async_playwright
+
+    token = auth.create_session(user["id"])
+    async with httpx.AsyncClient(base_url=ely_url, cookies={"ely_token": token}) as c:
+        r = await c.get("/api/chrome/extension.zip", params={"url": ely_url})
+    assert r.status_code == 200 and r.headers["content-type"] == "application/zip"
+    zipfile.ZipFile(io.BytesIO(r.content)).extractall(tmp_path / "telechargements")
+    ext = tmp_path / "telechargements" / "ely-chrome"
+    assert (ext / "manifest.json").exists()
+    async with async_playwright() as p:
+        ctx = await launch_chrome(p, tmp_path / "profil", ely_url, token, ext=ext, type_url=False)
+        try:
+            assert await wait_bridge(user["id"], 10), "l'extension téléchargée ne s'est pas reliée à Ely"
+        finally:
+            await ctx.close()
+            chrome.bridges.pop(user["id"], None)

@@ -73,7 +73,8 @@ async def file_read(ctx: ToolContext, path: str, offset: int = 0, limit: int = 2
     return ToolResult(text, images=images)
 
 
-@tool("file_write", "Crée ou modifie un fichier texte dans l'espace de fichiers (l'utilisateur peut le télécharger).",
+@tool("file_write", "Crée ou modifie un fichier texte dans l'espace de fichiers (l'utilisateur le voit et peut le télécharger). "
+      "Fichiers intermédiaires (scripts, essais, brouillons) : dans .travail/, invisible pour lui.",
       {"path": {"type": "string"}, "content": {"type": "string"}, "append": {"type": "boolean"}},
       ["path", "content"], label="Écriture de fichier", icon="💾", timeout=30)
 async def file_write(ctx: ToolContext, path: str, content: str, append: bool = False) -> ToolResult:
@@ -81,7 +82,9 @@ async def file_write(ctx: ToolContext, path: str, content: str, append: bool = F
     p.parent.mkdir(parents=True, exist_ok=True)
     with open(p, "a" if append else "w", encoding="utf-8") as f:
         f.write(content)
-    return ToolResult(f"Fichier {'complété' if append else 'écrit'} : {ctx.rel(p)} ({p.stat().st_size} octets)", files=[ctx.rel(p)])
+    rel = ctx.rel(p)
+    shown = not any(part.startswith(".") for part in Path(rel).parts)  # .travail/ & co : pas montré à l'utilisateur
+    return ToolResult(f"Fichier {'complété' if append else 'écrit'} : {rel} ({p.stat().st_size} octets)", files=[rel] if shown else [])
 
 
 @tool("file_list", "Liste les fichiers de l'espace de fichiers de l'utilisateur (documents reçus, créés, téléchargés).",

@@ -18,8 +18,12 @@ let elyWindow = null;
 const attached = new Set();
 let idleTimer = null;
 
+// adresse saisie dans la fenêtre de l'extension, sinon celle d'où l'extension a été téléchargée (config.json)
 async function elyUrl() {
-  const { url } = await chrome.storage.local.get("url");
+  let { url } = await chrome.storage.local.get("url");
+  if (!url) {
+    try { url = (await (await fetch(chrome.runtime.getURL("config.json"))).json()).url; } catch { /* dossier du dépôt : pas de config */ }
+  }
   return (url || DEFAULT_URL).trim().replace(/\/+$/, "");
 }
 

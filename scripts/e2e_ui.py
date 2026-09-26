@@ -88,6 +88,7 @@ async def main() -> None:
         await page.screenshot(path=OUT / "09-auto-amelioration.png")
         await page.click(".sheet nav button:has-text('Connexions')")
         await page.wait_for_selector("text=Boîte mail")
+        await page.wait_for_selector(".srow-label b:text-is('Chrome')")
         await page.screenshot(path=OUT / "10-connexions.png")
         await page.keyboard.press("Escape")
         # langue : l'interface passe en anglais depuis l'en-tête, et le reste après rechargement
@@ -145,11 +146,41 @@ async def main() -> None:
         await m.wait_for_timeout(800)
         await m.screenshot(path=OUT / "15-mobile-reponse.png")
 
-        # 7) déconnexion depuis le menu du compte (en bas de la barre latérale)
+        # 7) menu du compte : installer l'application, installer l'extension Chrome
         await page.click(".who-btn")
         await page.wait_for_timeout(300)
         await page.screenshot(path=OUT / "16-menu-compte.png")
-        await page.click("[role=menu] button:has-text('Se déconnecter')")
+        await page.click("[role=menu] button:has-text('Extension Chrome')")
+        await page.wait_for_selector(".dialog >> text=Ely pour Chrome")
+        href = await page.get_attribute(".dialog a[download]", "href")
+        kind = await page.evaluate("(u) => fetch(u).then(r => r.headers.get('content-type'))", href)
+        assert kind == "application/zip", kind
+        await page.wait_for_timeout(300)
+        await page.screenshot(path=OUT / "17-extension.png")
+        await page.keyboard.press("Escape")
+        await page.click(".who-btn")
+        await page.click("[role=menu] button:has-text('Installer')")
+        await page.wait_for_selector(".dialog >> text=Installer Ely")
+        await page.wait_for_timeout(300)
+        await page.screenshot(path=OUT / "18-installer.png")
+        await page.click(".dialog .sheet-close")
+
+        # 8) voix : essai d'une voix sur une phrase choisie
+        await page.click(".settings-btn")
+        await page.fill(".voice-test input", "Ceci est un essai de voix.")
+        await page.click(".voice-test button")
+        await page.locator(".voice-test").scroll_into_view_if_needed()
+        await page.screenshot(path=OUT / "19-voix.png")
+        await page.keyboard.press("Escape")
+
+        # 9) suppression d'une conversation depuis l'historique, puis déconnexion
+        before = await page.locator(".conv").count()
+        page.once("dialog", lambda d: asyncio.ensure_future(d.accept()))
+        await page.hover(".conv >> nth=0")
+        await page.screenshot(path=OUT / "20-historique.png", clip={"x": 0, "y": 0, "width": 240, "height": 360})
+        await page.click(".conv >> nth=0 >> button[title='Supprimer']")
+        await page.wait_for_function(f"document.querySelectorAll('.conv').length === {before - 1}")
+        await page.click(".sidebar-foot button[title='Se déconnecter']")
         await page.wait_for_selector("text=Heureux de vous retrouver")
         await browser.close()
 

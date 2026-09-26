@@ -37,9 +37,9 @@ chrome.runtime.sendMessage({ kind: "get" }, show);
 chrome.runtime.onMessage.addListener((m) => { if (m.kind === "state") show(m); });
 
 $("save").addEventListener("click", async () => {
-  const url = $("url").value.trim() || "http://localhost:8000";
+  const url = $("url").value.trim(); // vide : adresse d'origine (celle du téléchargement, sinon localhost)
   const { url: old } = await chrome.storage.local.get("url");
-  if (url !== old) await chrome.storage.local.set({ url }); // le changement relance la connexion
+  if (url !== (old || "")) await (url ? chrome.storage.local.set({ url }) : chrome.storage.local.remove("url")); // relance la connexion
   else await chrome.runtime.sendMessage({ kind: "reconnect" });
-  $("open").href = url;
+  if (url) $("open").href = url;
 });

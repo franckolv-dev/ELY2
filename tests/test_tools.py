@@ -96,6 +96,33 @@ async def test_schedule_and_scheduler(fake, ctx):
     await asyncio.sleep(0.3)
 
 
+async def test_rephrased_schedule_updates_the_task_instead_of_duplicating_it(ctx):
+    """« Chaque matin à 9 h… » redemandé, précisé ou reformulé : une seule tâche, mise à jour."""
+    def active():
+        return db.all("SELECT * FROM schedules WHERE user_id = ? AND enabled = 1", (ctx.user_id,))
+
+    r = await execute(ctx, "schedule", {"action": "create", "instruction": "Résumé de mes e-mails et de l'agenda", "cron": "0 9 * * *"})
+    assert "planifiée" in r.content, r.content
+    sid = active()[0]["id"]
+    r = await execute(ctx, "schedule", {"action": "create", "cron": "0  9 * * *",
+                                        "instruction": "Chaque matin : e-mails, agenda, actualités, envoi sur Telegram"})
+    assert r.is_error and f"#{sid}" in r.content and "update" in r.content
+    assert len(active()) == 1
+    r = await execute(ctx, "schedule", {"action": "update", "id": sid,
+                                        "instruction": "Chaque matin : e-mails, agenda, actualités, envoi sur Telegram"})
+    assert not r.is_error, r.content
+    [row] = active()
+    assert "Telegram" in row["instruction"] and row["cron"] == "0 9 * * *"
+    # une vraie autre tâche au même horaire reste possible
+    r = await execute(ctx, "schedule", {"action": "create", "instruction": "Arroser les plantes", "cron": "0 9 * * *", "distinct": True})
+    assert not r.is_error and len(active()) == 2
+    # changer l'horaire d'une tâche existante
+    r = await execute(ctx, "schedule", {"action": "update", "id": sid, "cron": "30 8 * * 1-5"})
+    assert not r.is_error and db.one("SELECT cron FROM schedules WHERE id = ?", (sid,))["cron"] == "30 8 * * 1-5"
+    r = await execute(ctx, "schedule", {"action": "update", "id": 999999, "instruction": "x"})
+    assert r.is_error
+
+
 async def test_memory_tools(ctx):
     await execute(ctx, "remember", {"fact": "Le médecin traitant de Franck est le Dr Martin à Villeurbanne", "category": "santé"})
     r = await execute(ctx, "remember", {"fact": "Le médecin traitant de Franck est le Dr Martin à Villeurbanne (Doctolib)", "category": "santé"})

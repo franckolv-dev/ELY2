@@ -64,7 +64,8 @@ par défaut Ely prend **Claude Opus 5** si une clé Anthropic est présente, sin
 
 ## Depuis le téléphone Android
 
-Ely est une **application web installable** : sur Android, ouvrez-la dans Chrome puis menu ⋮ → **Installer l'application**.
+Ely est une **application web installable** : cliquez sur votre nom en bas à gauche → **Installer** (sur Android, dans
+Chrome : menu ⋮ → **Installer l'application**).
 Vous obtenez une icône, le plein écran, les **notifications**, la **dictée vocale**, et Ely apparaît dans le menu
 **Partager** d'Android (partagez une page, un texte ou une photo avec Ely : « résume », « réponds », « ajoute au calendrier »).
 
@@ -115,10 +116,15 @@ Avec l'extension **« Ely pour Chrome »** (dossier `extension/`), Ely agit **da
 (messagerie, Doctolib, LinkedIn…), dans une fenêtre à part qui ne touche pas à vos onglets. Un site envoie un code
 de vérification par e-mail ? Ely ouvre votre messagerie web dans un autre onglet, lit le code et le saisit.
 
-1. Chrome → `chrome://extensions` → activez le **Mode développeur** (en haut à droite).
-2. **Charger l'extension non empaquetée** → choisissez le dossier `extension` d'Ely.
-3. Ouvrez Ely dans ce Chrome et connectez-vous : l'extension se relie toute seule (icône Ely : état et adresse du serveur,
-   `http://localhost:8000` par défaut).
+1. Dans Ely, cliquez sur votre nom en bas à gauche → **Extension Chrome** → **Télécharger l'extension**, puis décompressez
+   `ely-chrome.zip` dans un dossier que vous garderez. Sur le Mac d'Ely, vous pouvez aussi utiliser directement le dossier
+   `extension/` du dépôt, qui se met à jour avec Ely.
+2. Chrome → `chrome://extensions` → activez le **Mode développeur** (en haut à droite).
+3. **Charger l'extension non empaquetée** → choisissez ce dossier.
+
+C'est tout : l'extension téléchargée connaît déjà l'adresse d'Ely (locale ou publique) et se relie seule dès que vous êtes
+connecté à Ely dans ce Chrome. L'icône Ely de la barre d'outils montre l'état de la liaison.
+Chrome n'installe en un clic que les extensions du Chrome Web Store, d'où ces trois étapes.
 
 Pendant qu'Ely travaille, Chrome affiche « Ely a commencé le débogage de ce navigateur » : c'est normal, la barre
 disparaît quand elle a fini. Réglages → Connexions → Chrome permet de revenir au navigateur interne.
@@ -207,7 +213,7 @@ ely/
   api/        app.py, chat.py, settings_routes.py, admin.py
   web/        interface PWA bilingue français/anglais (Preact + htm, sans étape de compilation)
 extension/    « Ely pour Chrome » (MV3, sans compilation)
-tests/        82 tests : boucle, outils, navigateur réel, extension Chrome réelle, adaptateurs (faux serveurs OpenAI/Anthropic), API, MCP, auto-modification
+tests/        87 tests : boucle, outils, navigateur réel, extension Chrome réelle, adaptateurs (faux serveurs OpenAI/Anthropic), API, MCP, auto-modification
 scripts/      mock_llm.py (faux modèle pour essayer sans tokens), e2e_ui.py (parcours complet de l'interface)
 ```
 

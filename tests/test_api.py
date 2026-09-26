@@ -76,6 +76,22 @@ async def test_files(client, user):
     assert (await client.get("/files/../../ely.db", headers=h)).status_code in (400, 404)
 
 
+async def test_elys_working_files_stay_out_of_the_users_files(client, user):
+    """Les scripts et essais intermédiaires d'Ely ne s'affichent pas parmi les documents de l'utilisateur."""
+    from conftest import new_conversation
+
+    from ely.tools import ToolContext, execute
+
+    h = await login(client, user["email"], "motdepasse")
+    ctx = ToolContext(user=user, conversation_id=new_conversation(user), run_id=0, emit=lambda *a: asyncio.sleep(0))
+    r = await execute(ctx, "file_write", {"path": ".travail/injection.js", "content": "document.title"})
+    assert not r.is_error and r.files == []
+    r = await execute(ctx, "file_write", {"path": "Promotion.md", "content": "# Promotion"})
+    assert r.files == ["Promotion.md"]
+    shown = [f["path"] for f in (await client.get("/api/files", headers=h)).json()]
+    assert "Promotion.md" in shown and not any("injection" in f for f in shown)
+
+
 async def test_memory_and_integrations(client, user):
     h = await login(client, user["email"], "motdepasse")
     await client.put("/api/memory/profile", headers=h, json={"content": "## Identité\n- Franck, développeur"})

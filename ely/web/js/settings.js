@@ -3,6 +3,7 @@ import { html, useEffect, useState } from "/static/vendor/preact-htm.js";
 import { del, get, patch, post, put, upload } from "/static/js/api.js";
 import { LANGS, t, tn } from "/static/js/i18n.js";
 import { FileTag, Icon, bytes, dateTime, md, timeAgo, toast } from "/static/js/util.js";
+import { ExtensionSteps } from "/static/js/install.js";
 import { speak, voicesForLang } from "/static/js/voice.js";
 
 function useLoad(fn, deps = []) {
@@ -38,7 +39,15 @@ function Profile({ me, onMe, pwa, prefs }) {
   const [pw, setPw] = useState({ current: "", next: "" });
   const [readAloud, setReadAloud] = useState(localStorage.getItem("ely-read") === "1");
   const [voice, setVoice] = useState(localStorage.getItem("ely-voice") || "");
+  const [sample, setSample] = useState("");
+  const [, setVoicesLoaded] = useState(0);
   const voices = voicesForLang();
+  useEffect(() => { // les voix du système arrivent parfois après le premier affichage
+    if (!("speechSynthesis" in window)) return;
+    const onVoices = () => setVoicesLoaded((n) => n + 1);
+    speechSynthesis.addEventListener("voiceschanged", onVoices);
+    return () => speechSynthesis.removeEventListener("voiceschanged", onVoices);
+  }, []);
   async function save() {
     const u = await patch("/api/me", { name, settings: { timezone: tz } });
     onMe(u); toast(t("common.saved"));
@@ -66,8 +75,13 @@ function Profile({ me, onMe, pwa, prefs }) {
     <${Row} title=${t("profil.voice")} hint=${t("profil.voiceHint")}>
       <label class="toggle"><${Switch} checked=${readAloud} onChange=${(v) => { setReadAloud(v); localStorage.setItem("ely-read", v ? "1" : "0"); }} />
         ${t("profil.readAloud")}</label>
-      <select class="input" aria-label=${t("profil.voiceLabel")} value=${voice} onChange=${(e) => { setVoice(e.target.value); localStorage.setItem("ely-voice", e.target.value); speak(t("voice.hello")); }}>
+      <select class="input" aria-label=${t("profil.voiceLabel")} value=${voice} onChange=${(e) => { setVoice(e.target.value); localStorage.setItem("ely-voice", e.target.value); }}>
         <option value="">${t("common.automatic")}</option>${voices.map((v) => html`<option value=${v.name}>${v.name}</option>`)}</select>
+      <div class="row voice-test">
+        <input class="input" aria-label=${t("profil.voiceSampleLabel")} placeholder=${t("voice.sample")} value=${sample}
+          onInput=${(e) => setSample(e.target.value)} onKeyDown=${(e) => { if (e.key === "Enter") speak(sample || t("voice.sample")); }} />
+        <button class="btn" onClick=${() => speak(sample || t("voice.sample"))}><${Icon} name="speaker" size=${18} /> ${t("profil.voiceTest")}</button>
+      </div>
     <//>
     <${Row} title=${t("profil.notif")} hint=${t("profil.notifHint")}>
       <div class="row">
@@ -139,7 +153,7 @@ function ChromeRow({ onMe }) {
         ${t("conn.useChrome")}</label>
       <p class="desc">${t("conn.chromeOn")}</p>`
     : html`
-      <ol><li>${t("conn.chromeStep1")}</li><li>${t("conn.chromeStep2", { folder: st.folder })}</li><li>${t("conn.chromeStep3")}</li></ol>
+      <${ExtensionSteps} folder=${st.folder} />
       <p class="desc">${t("conn.chromeMeanwhile")}</p>`}
   <//>`;
 }

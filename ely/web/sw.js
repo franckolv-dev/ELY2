@@ -1,7 +1,7 @@
 // Service worker d'Ely : démarrage instantané (coquille en cache) et notifications push.
-const CACHE = "ely-v5";
+const CACHE = "ely-v6";
 const SHELL = ["/", "/static/style.css", "/static/js/app.js", "/static/js/api.js", "/static/js/chat.js",
-  "/static/js/settings.js", "/static/js/util.js", "/static/js/voice.js", "/static/js/i18n.js", "/static/vendor/preact-htm.js",
+  "/static/js/settings.js", "/static/js/util.js", "/static/js/voice.js", "/static/js/i18n.js", "/static/js/install.js", "/static/vendor/preact-htm.js",
   "/static/vendor/marked.js", "/static/vendor/purify.js", "/static/icons/icon.svg?v=2", "/static/icons/icon-192.png?v=2",
   "/static/fonts/dm-sans.woff2", "/static/fonts/newsreader.woff2"];
 

@@ -3,6 +3,7 @@ import { html, render, useEffect, useRef, useState, useMemo } from "/static/vend
 import { ApiError, connectEvents, del, get, patch, post } from "/static/js/api.js";
 import { Composer, LiveBrowser, Thread } from "/static/js/chat.js";
 import { LANGS, getLang, setLang, t } from "/static/js/i18n.js";
+import { ExtensionDialog, InstallDialog, isStandalone, onPhone } from "/static/js/install.js";
 import { Settings } from "/static/js/settings.js";
 import { Icon, Logo, applyTheme, isMac, isMobile, onToast, prefersDark, storedTheme, toast } from "/static/js/util.js";
 import { speak, stopSpeaking } from "/static/js/voice.js";
@@ -92,7 +93,7 @@ function Login({ setup, onLogged, dark, onTheme, lang, onLang }) {
 }
 
 // ---------------------------------------------------------------- barre latérale
-function Sidebar({ me, convs, cur, live, open, onPick, onNew, onSettings, onSearch, onChanged, pwa }) {
+function Sidebar({ me, convs, cur, live, open, onPick, onNew, onSettings, onSearch, onChanged, onInstall, onExtension }) {
   const [q, setQ] = useState("");
   const [menu, setMenu] = useState(null);
   const [userMenu, setUserMenu] = useState(false);
@@ -112,6 +113,10 @@ function Sidebar({ me, convs, cur, live, open, onPick, onNew, onSettings, onSear
     const title = prompt(t("side.renamePrompt"), c.title);
     if (title) { await patch(`/api/conversations/${c.id}`, { title }); onChanged(); }
   }
+  async function remove(c) {
+    setMenu(null);
+    if (confirm(t("side.deleteConfirm"))) { await del(`/api/conversations/${c.id}`); onChanged(c.id); }
+  }
   const logout = async () => { await post("/api/auth/logout"); location.href = "/"; };
   return html`<aside class=${"sidebar" + (open ? " open" : "")}>
     <${Logo} />
@@ -128,13 +133,15 @@ function Sidebar({ me, convs, cur, live, open, onPick, onNew, onSettings, onSear
               onClick=${() => onPick(c.id)} title=${st === "running" ? t("side.running") : st === "waiting_user" ? t("side.waiting") : c.title}>
             <span class="t">${c.title}</span>
             ${dot ? html`<span class=${dot}></span>` : null}
+            <button class="icon-btn more" title=${t("common.delete")} onClick=${(e) => { e.stopPropagation(); remove(c); }}>
+              <${Icon} name="trash" size=${14} /></button>
             <button class="icon-btn more" title=${t("side.options")} onClick=${(e) => { e.stopPropagation(); setUserMenu(false); setMenu(menu === c.id ? null : c.id); }}>
               <${Icon} name="dots" size=${16} stroke=${2.2} /></button>
             ${menu === c.id ? html`<div class="popover" onClick=${(e) => e.stopPropagation()}>
               <button onClick=${() => { setMenu(null); rename(c); }}><${Icon} name="edit" size=${14} /> ${t("side.rename")}</button>
               <button onClick=${async () => { setMenu(null); await patch(`/api/conversations/${c.id}`, { pinned: !c.pinned }); onChanged(); }}>
                 <${Icon} name="pin" size=${14} /> ${c.pinned ? t("side.unpin") : t("side.pin")}</button>
-              <button class="danger" onClick=${async () => { setMenu(null); if (confirm(t("side.deleteConfirm"))) { await del(`/api/conversations/${c.id}`); onChanged(c.id); } }}>
+              <button class="danger" onClick=${() => remove(c)}>
                 <${Icon} name="trash" size=${14} /> ${t("common.delete")}</button>
             </div>` : null}
           </div>`;
@@ -149,12 +156,13 @@ function Sidebar({ me, convs, cur, live, open, onPick, onNew, onSettings, onSear
           <div class="avatar">${initials(me.name)}</div>
           <div class="who"><b>${me.name}</b><span>${t("side.personal")}</span></div>
         </button>
-        ${pwa ? html`<button class="icon-btn" title=${t("side.install")} onClick=${pwa}><${Icon} name="phone" size=${18} /></button>` : null}
         <button class="icon-btn" title=${t("side.logout")} onClick=${logout}><${Icon} name="logout" size=${18} /></button>
         ${userMenu ? html`<div class="popover up" role="menu" onClick=${(e) => e.stopPropagation()}>
           <div class="popover-head">${me.email}</div>
-          <button role="menuitem" onClick=${() => { setUserMenu(false); onSettings("profil"); }}><${Icon} name="gear" size=${16} /> ${t("side.settings")}</button>
-          <button role="menuitem" class="danger" onClick=${logout}><${Icon} name="logout" size=${16} /> ${t("side.logout")}</button>
+          ${!isStandalone() ? html`<button role="menuitem" title=${t("side.installTip")} onClick=${() => { setUserMenu(false); onInstall(); }}>
+            <${Icon} name="install" size=${16} /> ${t("side.install")}</button>` : null}
+          ${!onPhone() ? html`<button role="menuitem" title=${t("side.extensionTip")} onClick=${() => { setUserMenu(false); onExtension(); }}>
+            <${Icon} name="puzzle" size=${16} /> ${t("side.extension")}</button>` : null}
         </div>` : null}
       </div>
     </div>
@@ -222,6 +230,7 @@ function App() {
   const [handsFree, setHandsFree] = useState(false);
   const [voiceTick, setVoiceTick] = useState(params.get("voice") ? 1 : 0);
   const [pwa, setPwa] = useState(null);
+  const [dialog, setDialog] = useState(null);
   const [pushBanner, setPushBanner] = useState(false);
   const [noModel, setNoModel] = useState(false);
   const [mainRef, setMainRef] = useState("");
@@ -443,7 +452,8 @@ function App() {
     extra=${html`<${ModelSelect} variant="chip" ...${modelProps} />`} />`;
 
   return html`<div class="layout">
-    <${Sidebar} me=${me} convs=${convs} cur=${cur} live=${live} open=${sideOpen} pwa=${pwa}
+    <${Sidebar} me=${me} convs=${convs} cur=${cur} live=${live} open=${sideOpen}
+      onInstall=${() => (pwa ? pwa() : setDialog("install"))} onExtension=${() => { setDialog("extension"); setSideOpen(false); }}
       onPick=${pick} onNew=${() => pick(null)} onSettings=${(tab) => { setSettingsTab(tab); setSideOpen(false); }}
       onSearch=${loadConvs} onChanged=${(deleted) => { if (deleted === cur) setCur(null); loadConvs(); }} />
     <div class=${"scrim" + (sideOpen ? " open" : "")} onClick=${() => setSideOpen(false)}></div>
@@ -496,6 +506,8 @@ function App() {
     ${settingsTab ? html`<${Settings} me=${me} onMe=${setMe} tab=${settingsTab} onTab=${setSettingsTab} onClose=${() => setSettingsTab(null)} pwa=${pwa}
       prefs=${{ theme, lang, setTheme: chooseTheme, setLang: chooseLang }}
       openConversation=${(id) => { loadConvs(); pick(id); }} />` : null}
+    ${dialog === "install" ? html`<${InstallDialog} onClose=${() => setDialog(null)} />` : null}
+    ${dialog === "extension" ? html`<${ExtensionDialog} me=${me} onClose=${() => setDialog(null)} />` : null}
     ${lightbox ? html`<div class="lightbox" onClick=${() => setLightbox(null)}><img src=${lightbox} /></div>` : null}
     <${Toasts} />
   </div>`;
