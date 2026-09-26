@@ -229,3 +229,11 @@ qui fait avancer la tâche.
 - Sans l'extension Chrome, la première connexion à un site (Doctolib, LinkedIn…) se fait une fois dans le navigateur d'Ely ou via le coffre d'identifiants.
 - Un petit modèle local seul ne mène pas bien une longue démarche : gardez au moins une clé cloud pour l'agent principal.
 - Sécurité minimale par choix : Ely a un accès complet (code, shell, identifiants). Gardez-la derrière Tailscale, pas sur Internet ouvert.
+
+## Licence
+
+Ely est distribué sous **licence MIT** (voir [`LICENSE`](LICENSE)) : vous pouvez l'utiliser, le modifier et le
+redistribuer librement, y compris à des fins commerciales, en conservant la mention de copyright.
+
+Les polices DM Sans et Newsreader, incluses dans `ely/web/fonts/`, relèvent de la SIL Open Font License
+(voir [`ely/web/fonts/OFL.txt`](ely/web/fonts/OFL.txt)).
