@@ -4,7 +4,7 @@ import { del, get, patch, post, put, upload } from "/static/js/api.js";
 import { LANGS, t, tn } from "/static/js/i18n.js";
 import { FileTag, Icon, bytes, dateTime, md, timeAgo, toast } from "/static/js/util.js";
 import { ExtensionSteps } from "/static/js/install.js";
-import { speak, voicesForLang } from "/static/js/voice.js";
+import { RECORDED, loadRecordedVoices, speak, voicesForLang } from "/static/js/voice.js";
 
 function useLoad(fn, deps = []) {
   const [data, setData] = useState(null);
@@ -41,8 +41,10 @@ function Profile({ me, onMe, pwa, prefs }) {
   const [voice, setVoice] = useState(localStorage.getItem("ely-voice") || "");
   const [sample, setSample] = useState("");
   const [, setVoicesLoaded] = useState(0);
+  const [recorded, setRecorded] = useState([]);
   const voices = voicesForLang();
   useEffect(() => { // les voix du système arrivent parfois après le premier affichage
+    loadRecordedVoices().then(setRecorded);
     if (!("speechSynthesis" in window)) return;
     const onVoices = () => setVoicesLoaded((n) => n + 1);
     speechSynthesis.addEventListener("voiceschanged", onVoices);
@@ -76,7 +78,11 @@ function Profile({ me, onMe, pwa, prefs }) {
       <label class="toggle"><${Switch} checked=${readAloud} onChange=${(v) => { setReadAloud(v); localStorage.setItem("ely-read", v ? "1" : "0"); }} />
         ${t("profil.readAloud")}</label>
       <select class="input" aria-label=${t("profil.voiceLabel")} value=${voice} onChange=${(e) => { setVoice(e.target.value); localStorage.setItem("ely-voice", e.target.value); }}>
-        <option value="">${t("common.automatic")}</option>${voices.map((v) => html`<option value=${v.name}>${v.name}</option>`)}</select>
+        <option value="">${t("common.automatic")}</option>
+        ${recorded.length ? html`
+          <optgroup label=${t("profil.voiceRecorded")}>${recorded.map((n) => html`<option value=${RECORDED + n}>${n[0].toUpperCase() + n.slice(1)}</option>`)}</optgroup>
+          <optgroup label=${t("profil.voiceBrowser")}>${voices.map((v) => html`<option value=${v.name}>${v.name}</option>`)}</optgroup>`
+        : voices.map((v) => html`<option value=${v.name}>${v.name}</option>`)}</select>
       <div class="row voice-test">
         <input class="input" aria-label=${t("profil.voiceSampleLabel")} placeholder=${t("voice.sample")} value=${sample}
           onInput=${(e) => setSample(e.target.value)} onKeyDown=${(e) => { if (e.key === "Enter") speak(sample || t("voice.sample")); }} />

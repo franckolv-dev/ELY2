@@ -1,5 +1,5 @@
 // Voix : dictée (reconnaissance du navigateur, sinon transcription côté serveur) et lecture à voix haute.
-import { api } from "/static/js/api.js";
+import { api, get } from "/static/js/api.js";
 import { getLang, speechLang, t } from "/static/js/i18n.js";
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -76,19 +76,63 @@ export function voicesForLang() {
     .sort((a, b) => GOOD.test(b.name) - GOOD.test(a.name) || a.name.localeCompare(b.name));
 }
 
-// voix retenue dans le profil, sinon la meilleure disponible
-function pickVoice() {
-  const voices = voicesForLang();
-  const saved = localStorage.getItem("ely-voice");
-  return voices.find((v) => v.name === saved) || voices[0] || null;
+// Voix enregistrées (voix clonée) : service vocal XTTS du Mac, relayé par Ely. Choix gardé sous « xtts:<nom> ».
+export const RECORDED = "xtts:";
+let recorded = { voices: [], default: "" };
+
+export async function loadRecordedVoices() {
+  try { recorded = await get("/api/tts/voices"); } catch { recorded = { voices: [], default: "" }; }
+  return recorded.voices;
 }
 
-export function speak(text, onEnd) {
+// voix retenue dans le profil ; sinon la voix enregistrée, puis la meilleure voix du navigateur
+function pickVoice() {
+  const saved = localStorage.getItem("ely-voice") || "";
+  if (saved.startsWith(RECORDED) && recorded.voices.includes(saved.slice(RECORDED.length))) return saved;
+  const voices = voicesForLang();
+  return voices.find((v) => v.name === saved) || (!saved && recorded.voices.length ? RECORDED + (recorded.default || recorded.voices[0]) : null)
+    || voices[0] || null;
+}
+
+// phrases à synthétiser une à une : la première se fait entendre sans attendre la réponse entière
+function sentences(text) {
+  const out = [];
+  for (const part of text.replace(/\s+/g, " ").trim().split(/(?<=[.!?…:;])\s+/)) {
+    if (out.length && out[out.length - 1].length < 25) out[out.length - 1] += " " + part;
+    else if (part) out.push(part);
+  }
+  return out;
+}
+
+let session = 0; // chaque lecture a son numéro : stopSpeaking() ou une nouvelle lecture arrête la précédente
+let audio = null;
+
+async function speakRecorded(text, name, onEnd, fallback) {
+  const id = ++session;
+  const fetchOne = (s) => fetch("/api/tts", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text: s, voice: name, language: getLang() }) }).then((r) => (r.ok ? r.blob() : Promise.reject(r.status)));
+  const queue = sentences(text);
+  let next = queue.length ? fetchOne(queue.shift()) : null;
+  try {
+    while (next && id === session) {
+      const blob = await next;
+      next = queue.length ? fetchOne(queue.shift()) : null; // la phrase suivante se calcule pendant la lecture
+      if (id !== session) return;
+      const url = URL.createObjectURL(blob);
+      audio = new Audio(url);
+      await new Promise((resolve) => { audio.onended = resolve; audio.onerror = resolve; audio.play().catch(resolve); });
+      URL.revokeObjectURL(url);
+    }
+    if (id === session) onEnd?.();
+  } catch {
+    if (id === session) fallback(); // service arrêté : on continue avec la voix du navigateur
+  }
+}
+
+function speakBrowser(text, voice, onEnd) {
   if (!("speechSynthesis" in window)) { onEnd?.(); return; }
-  speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(plain(text).slice(0, 3000));
+  const u = new SpeechSynthesisUtterance(text);
   u.lang = speechLang();
-  const voice = pickVoice();
   if (voice) u.voice = voice;
   u.rate = parseFloat(localStorage.getItem("ely-rate") || "1.05");
   u.onend = () => onEnd?.();
@@ -96,6 +140,18 @@ export function speak(text, onEnd) {
   speechSynthesis.speak(u);
 }
 
+export function speak(text, onEnd) {
+  stopSpeaking();
+  const clean = plain(text).slice(0, 3000);
+  const voice = pickVoice();
+  if (typeof voice === "string") {
+    speakRecorded(clean, voice.slice(RECORDED.length), onEnd,
+      () => speakBrowser(clean, voicesForLang()[0] || null, onEnd));
+  } else speakBrowser(clean, voice, onEnd);
+}
+
 export function stopSpeaking() {
+  session++;
+  if (audio) { audio.pause(); audio = null; }
   if ("speechSynthesis" in window) speechSynthesis.cancel();
 }

@@ -128,3 +128,55 @@ async def wait_idle(conv_id: int, timeout: float = 10) -> None:
         await asyncio.sleep(0.05)
         t += 0.05
     raise TimeoutError("la tâche ne se termine pas")
+
+
+def _wav(seconds: float = 0.2) -> bytes:
+    import io
+    import wave
+
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(24_000)
+        w.writeframes(b"\x00\x00" * int(24_000 * seconds))
+    return buf.getvalue()
+
+
+@pytest.fixture
+async def xtts(monkeypatch):
+    """Faux service vocal XTTS du Mac (même contrat que voice/xtts de l'ancienne version) : note ce qu'on lui fait lire.
+    Un texte contenant « panne » le fait échouer."""
+    import socket
+
+    import uvicorn
+    from fastapi import FastAPI, HTTPException
+    from fastapi.responses import Response
+
+    from ely.config import settings
+
+    app, said = FastAPI(), []
+
+    @app.get("/voices")
+    def voices():
+        return {"voices": ["gert"], "default_voice": "gert"}
+
+    @app.post("/speak")
+    def speak(body: dict):
+        if "panne" in body["text"]:
+            raise HTTPException(500, "MPS indisponible")
+        said.append(body)
+        return Response(_wav(), media_type="audio/wav")
+
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, lifespan="off", log_level="error"))
+    task = asyncio.create_task(server.serve())
+    while not server.started:
+        await asyncio.sleep(0.05)
+    monkeypatch.setattr(settings, "xtts_url", f"http://127.0.0.1:{port}")
+    yield said
+    server.should_exit = True
+    await task

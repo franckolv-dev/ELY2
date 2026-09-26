@@ -143,3 +143,18 @@ async def test_after_an_update_the_browser_gets_the_new_interface(client):
     assert r2.status_code == 304  # inchangé : rien n'est retéléchargé
     version = (await client.get("/api/setup")).json()["version"]
     assert version and version == (await client.get("/api/health")).json()["code"]
+
+
+async def test_recorded_voice_is_relayed_from_the_macs_voice_service(client, user, xtts, monkeypatch):
+    """La voix clonée de l'ancienne version (service XTTS du Mac) : Ely la propose et relaie la synthèse."""
+    from ely.config import settings
+
+    h = await login(client, user["email"], "motdepasse")
+    assert (await client.get("/api/tts/voices", headers=h)).json() == {"voices": ["gert"], "default": "gert"}
+    r = await client.post("/api/tts", headers=h, json={"text": "Votre  train part\nà 8 h 12.", "voice": "gert"})
+    assert r.status_code == 200 and r.headers["content-type"] == "audio/wav" and r.content[:4] == b"RIFF"
+    assert xtts == [{"text": "Votre train part à 8 h 12.", "voice": "gert", "language": "fr"}]
+    # service arrêté : aucune voix enregistrée proposée, et la page se rabat sur les voix du navigateur
+    monkeypatch.setattr(settings, "xtts_url", "http://127.0.0.1:9")
+    assert (await client.get("/api/tts/voices", headers=h)).json()["voices"] == []
+    assert (await client.post("/api/tts", headers=h, json={"text": "Bonjour."})).status_code == 502

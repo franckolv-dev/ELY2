@@ -361,6 +361,41 @@ def serve_file(path: str, download: bool = False, user=Depends(auth.current_user
 
 
 # ---------------------------------------------------------------------- voix
+# Voix enregistrées : le service vocal XTTS du Mac (voix clonée), relayé par Ely pour que la page n'ait
+# qu'une adresse à connaître, en local comme par l'adresse publique.
+@router.get("/api/tts/voices")
+async def tts_voices(user=Depends(auth.current_user)):
+    try:
+        async with httpx.AsyncClient(timeout=3) as c:
+            r = await c.get(f"{settings.xtts_url}/voices")
+        r.raise_for_status()
+        data = r.json()
+        return {"voices": data.get("voices") or [], "default": data.get("default_voice") or ""}
+    except (httpx.HTTPError, ValueError):
+        return {"voices": [], "default": ""}  # service arrêté ou absent : on lit avec les voix du navigateur
+
+
+class SpeakRequest(BaseModel):
+    text: str
+    voice: str = ""
+    language: str = "fr"
+
+
+@router.post("/api/tts")
+async def tts(body: SpeakRequest, user=Depends(auth.current_user)):
+    text = " ".join(body.text.split())[:1000]
+    if not text:
+        raise HTTPException(400, "Texte vide")
+    try:
+        async with httpx.AsyncClient(timeout=120) as c:
+            r = await c.post(f"{settings.xtts_url}/speak", json={"text": text, "voice": body.voice or None,
+                                                                   "language": body.language[:5] or "fr"})
+        r.raise_for_status()
+    except httpx.HTTPError as e:
+        raise HTTPException(502, f"Service vocal injoignable ({settings.xtts_url}) : {e}") from e
+    return Response(r.content, media_type="audio/wav", headers={"Cache-Control": "no-store"})
+
+
 @router.post("/api/transcribe")
 async def transcribe(file: UploadFile = File(...), user=Depends(auth.current_user)):
     import os

@@ -84,6 +84,9 @@ class Settings:
     tavily_api_key: str = field(default_factory=lambda: _env("TAVILY_API_KEY"))
     brave_api_key: str = field(default_factory=lambda: _env("BRAVE_API_KEY"))
 
+    # Voix enregistrée (voix clonée) : service vocal XTTS qui tourne à part sur le Mac, port 8020 par défaut
+    xtts_url: str = field(default_factory=lambda: _env("XTTS_URL", "http://127.0.0.1:8020").rstrip("/"))
+
     # Navigateur
     browser_headless: bool = field(default_factory=lambda: _bool("ELY_BROWSER_HEADLESS", True))
     browser_channel: str = field(default_factory=lambda: _env("ELY_BROWSER_CHANNEL"))

@@ -6,7 +6,7 @@ import { LANGS, getLang, setLang, t } from "/static/js/i18n.js";
 import { ExtensionDialog, InstallDialog, isStandalone, onPhone } from "/static/js/install.js";
 import { Settings } from "/static/js/settings.js";
 import { Icon, Logo, applyTheme, isMac, isMobile, onToast, prefersDark, storedTheme, toast } from "/static/js/util.js";
-import { speak, stopSpeaking } from "/static/js/voice.js";
+import { loadRecordedVoices, speak, stopSpeaking } from "/static/js/voice.js";
 
 applyTheme(storedTheme(), false);
 const KBD_SEARCH = isMac ? "⌘K" : "Ctrl K";
@@ -261,6 +261,7 @@ function App() {
   useEffect(() => {
     if (!me) return;
     loadConvs();
+    loadRecordedVoices(); // voix clonée du Mac, si son service tourne
     get("/api/models").then((d) => { setModels(d.models.filter((m) => m.reachable)); setMainRef(d.roles.main?.effective || ""); setNoModel(!d.roles.main?.effective); }).catch(() => {});
     const stop = connectEvents(onEvent);
     if (location.pathname === "/share") {
