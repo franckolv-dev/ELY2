@@ -87,7 +87,7 @@ class UserPatch(BaseModel):
 def patch_user(uid: int, body: UserPatch, user=Depends(auth.admin_user)):
     if body.role in ("admin", "user"):
         if uid == user["id"] and body.role != "admin":
-            raise HTTPException(400, "Tu ne peux pas te retirer toi-même le rôle administrateur")
+            raise HTTPException(400, "Vous ne pouvez pas vous retirer vous-même le rôle administrateur")
         db.run("UPDATE users SET role = ? WHERE id = ?", (body.role, uid))
     if body.password:
         db.run("UPDATE users SET password_hash = ? WHERE id = ?", (auth.hash_password(body.password), uid))
@@ -99,7 +99,7 @@ def patch_user(uid: int, body: UserPatch, user=Depends(auth.admin_user)):
 @router.delete("/api/admin/users/{uid}")
 def delete_user(uid: int, user=Depends(auth.admin_user)):
     if uid == user["id"]:
-        raise HTTPException(400, "Impossible de supprimer ton propre compte")
+        raise HTTPException(400, "Impossible de supprimer votre propre compte")
     from ..memory.store import purge_user_index
 
     purge_user_index(uid)

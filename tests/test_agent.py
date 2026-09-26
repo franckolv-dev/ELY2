@@ -298,3 +298,38 @@ async def test_context_overflow_condenses_instead_of_switching_model(fake, user)
     last = json.loads(db.one("SELECT data FROM messages WHERE conversation_id = ? AND role = 'assistant' ORDER BY id DESC LIMIT 1", (cid,))["data"])
     assert state["overflowed"] and last["model"] == "lmstudio:google/gemma-4-26b-a4b"
     assert not provs["anthropic"].calls and not provs["chatgpt"].calls
+
+
+async def test_vouvoiement_by_default_and_tutoiement_on_request(fake, user):
+    from ely import auth
+
+    systems = []
+
+    def fn(model, system, messages, tools):
+        text = last_user_text(messages)
+        if "mémoire d'Ely" in text:  # apprentissage après l'échange
+            return json.dumps({"profile": None, "facts": [], "address": "tu" if "tutoie-moi" in text else None, "skill": None})
+        if "contrôleur qualité" in text:
+            return json.dumps({"done": True, "missing": ""})
+        if "Donne un titre" in text:
+            return "Titre de test"
+        systems.append("\n".join(system))
+        return "D'accord, je te tutoie." if "tutoie" in text else "Bonjour."
+
+    fake.script = fn
+    cid = new_conversation(user)
+    await runner.submit(user, cid, "Tu peux me tutoyer : tutoie-moi, s'il te plaît.")
+    await wait_idle(cid)
+    assert "s'adresser à elle : vouvoiement" in systems[0]  # par défaut, Ely vouvoie
+    await asyncio.sleep(0.3)  # apprentissage en arrière-plan
+    fresh = auth.get_user(user["id"])
+    assert fresh["settings"].get("address") == "tu"
+    cid2 = new_conversation(user)
+    await runner.submit(fresh, cid2, "Quel temps fera-t-il demain ?")
+    await wait_idle(cid2)
+    assert "s'adresser à elle : tutoiement" in systems[-1]
+    cid3 = new_conversation(user)
+    await runner.submit(fresh, cid3, "Finalement, ne me tutoie pas.")
+    await wait_idle(cid3)
+    await asyncio.sleep(0.3)
+    assert auth.get_user(user["id"])["settings"].get("address") == "vous"

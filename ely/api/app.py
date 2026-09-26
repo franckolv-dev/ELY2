@@ -75,6 +75,10 @@ def create_app() -> FastAPI:
     def sw():
         return page("sw.js", "application/javascript")
 
+    @app.get("/favicon.ico")
+    def favicon():  # demandé d'office par certains navigateurs et lecteurs de flux
+        return FileResponse(WEB / "icons" / "favicon-32.png", media_type="image/png", headers={"Cache-Control": "no-cache"})
+
     @app.get("/manifest.webmanifest")
     def manifest():
         return page("manifest.webmanifest", "application/manifest+json")

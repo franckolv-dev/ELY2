@@ -34,22 +34,51 @@ OUTLOOK = """<html><head><title>Outlook</title></head><body><h1>Boîte de récep
 AIDE = "<html><head><title>Aide Doctolib</title></head><body><h1>Centre d'aide</h1></body></html>"
 
 
-@pytest.fixture
-async def ely_url():
-    app = create_app()
-    for path, body in (("/test/doctolib", DOCTOLIB), ("/test/outlook", OUTLOOK), ("/test/aide", AIDE)):
-        app.add_api_route(path, lambda body=body: HTMLResponse(body), methods=["GET"])
+def free_port() -> int:
     s = socket.socket()
     s.bind(("127.0.0.1", 0))
     port = s.getsockname()[1]
     s.close()
+    return port
+
+
+async def start_ely(port: int):
+    app = create_app()
+    for path, body in (("/test/doctolib", DOCTOLIB), ("/test/outlook", OUTLOOK), ("/test/aide", AIDE)):
+        app.add_api_route(path, lambda body=body: HTMLResponse(body), methods=["GET"])
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, lifespan="off", log_level="error"))
     task = asyncio.create_task(server.serve())
     while not server.started:
         await asyncio.sleep(0.05)
+    return server, task
+
+
+@pytest.fixture
+async def ely_url():
+    port = free_port()
+    server, task = await start_ely(port)
     yield f"http://127.0.0.1:{port}"
     server.should_exit = True
     await task
+
+
+async def launch_chrome(p, profile, url: str, token: str):
+    """Chrome de l'utilisateur avec l'extension, connecté à Ely (cookie de session) et réglé sur l'adresse `url`."""
+    ctx = await p.chromium.launch_persistent_context(
+        str(profile), executable_path=os.environ["ELY_BROWSER_EXECUTABLE"], headless=True,
+        args=[f"--disable-extensions-except={EXT}", f"--load-extension={EXT}"])
+    await ctx.add_cookies([{"name": "ely_token", "value": token, "url": url}])
+    sw = ctx.service_workers[0] if ctx.service_workers else await ctx.wait_for_event("serviceworker")
+    await sw.evaluate(f"chrome.storage.local.set({{url: '{url}'}})")  # adresse saisie dans la fenêtre de l'extension
+    return ctx
+
+
+async def wait_bridge(user_id: int, seconds: float) -> bool:
+    for _ in range(int(seconds * 10)):
+        if chrome.bridges.get(user_id):
+            return True
+        await asyncio.sleep(0.1)
+    return False
 
 
 @pytest.fixture
@@ -57,19 +86,9 @@ async def users_chrome(ely_url, user, tmp_path):
     """Le Chrome de l'utilisateur, avec l'extension installée et connecté à Ely."""
     from playwright.async_api import async_playwright
 
-    token = auth.create_session(user["id"])
     async with async_playwright() as p:
-        ctx = await p.chromium.launch_persistent_context(
-            str(tmp_path / "profil"), executable_path=os.environ["ELY_BROWSER_EXECUTABLE"], headless=True,
-            args=[f"--disable-extensions-except={EXT}", f"--load-extension={EXT}"])
-        await ctx.add_cookies([{"name": "ely_token", "value": token, "url": ely_url}])  # connecté à Ely dans ce Chrome
-        sw = ctx.service_workers[0] if ctx.service_workers else await ctx.wait_for_event("serviceworker")
-        await sw.evaluate(f"chrome.storage.local.set({{url: '{ely_url}'}})")  # adresse saisie dans la fenêtre de l'extension
-        for _ in range(100):
-            if chrome.bridges.get(user["id"]):
-                break
-            await asyncio.sleep(0.1)
-        assert chrome.bridges.get(user["id"]), "l'extension ne s'est pas connectée à Ely"
+        ctx = await launch_chrome(p, tmp_path / "profil", ely_url, auth.create_session(user["id"]))
+        assert await wait_bridge(user["id"], 10), "l'extension ne s'est pas connectée à Ely"
         yield ctx
         await ctx.close()
 
@@ -130,3 +149,50 @@ async def test_extension_needs_a_valid_ely_session(ely_url):
     with pytest.raises(websockets.exceptions.WebSocketException):
         async with websockets.connect(ely_url.replace("http", "ws") + "/api/chrome/ws?token=faux") as ws:
             await ws.recv()
+
+
+async def test_extension_reconnects_when_ely_starts_after_chrome(user, tmp_path):
+    """Ely redémarre (mise à jour) pendant que Chrome reste ouvert : l'extension se relie seule, vite."""
+    from playwright.async_api import async_playwright
+
+    port = free_port()
+    async with async_playwright() as p:
+        ctx = await launch_chrome(p, tmp_path / "profil", f"http://127.0.0.1:{port}", auth.create_session(user["id"]))
+        try:
+            await asyncio.sleep(1.5)  # Ely est encore arrêté
+            server, task = await start_ely(port)
+            try:
+                assert await wait_bridge(user["id"], 12), "l'extension ne s'est pas reconnectée après le démarrage d'Ely"
+            finally:
+                server.should_exit = True
+                await task
+        finally:
+            await ctx.close()
+            chrome.bridges.pop(user["id"], None)
+
+
+async def test_extension_waits_for_ely_before_opening_a_websocket(user, tmp_path):
+    """Tant qu'Ely ne répond pas, l'extension se contente de sonder : aucune WebSocket vouée à l'échec
+    (chacune inscrirait une erreur dans chrome://extensions)."""
+    from playwright.async_api import async_playwright
+
+    requests: list[str] = []
+
+    async def unavailable(reader, writer):  # un serveur qui répond « indisponible » à tout
+        line = (await reader.readline()).decode(errors="replace")
+        requests.append(line.split(" ")[1] if " " in line else line)
+        writer.write(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+        await writer.drain()
+        writer.close()
+
+    stub = await asyncio.start_server(unavailable, "127.0.0.1", 0)
+    port = stub.sockets[0].getsockname()[1]
+    async with async_playwright() as p:
+        ctx = await launch_chrome(p, tmp_path / "profil", f"http://127.0.0.1:{port}", auth.create_session(user["id"]))
+        try:
+            await asyncio.sleep(4)
+        finally:
+            await ctx.close()
+            stub.close()
+    assert any(r.startswith("/api/setup") for r in requests), requests
+    assert not any(r.startswith("/api/chrome/ws") for r in requests), requests

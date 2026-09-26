@@ -47,7 +47,7 @@ async def main() -> None:
         # 1) une action simple
         await page.fill(".composer textarea", "Ajoute Jean Dupont à mes contacts, c'est mon plombier : 06 12 34 56 78")
         await page.keyboard.press("Enter")
-        await page.wait_for_selector("text=est dans tes contacts", timeout=20000)
+        await page.wait_for_selector("text=est dans vos contacts", timeout=20000)
         await page.wait_for_timeout(1200)
         await page.screenshot(path=OUT / "03-contact.png")
 
@@ -141,7 +141,7 @@ async def main() -> None:
         await m.screenshot(path=OUT / "14-mobile-rdv.png")
         await m.fill(".composer textarea", "Compare le train et la voiture pour Lyon–Paris")
         await m.click("button.send[title=Envoyer]")
-        await m.wait_for_selector("text=Je te conseille", timeout=20000)
+        await m.wait_for_selector("text=Je vous conseille", timeout=20000)
         await m.wait_for_timeout(800)
         await m.screenshot(path=OUT / "15-mobile-reponse.png")
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 import datetime as dt
 from zoneinfo import ZoneInfo
 
+from ..auth import addresses_informally
 from ..config import settings
 from ..db import db
 from ..integrations import connected, get
@@ -45,7 +46,9 @@ réels : web, navigateur avec ses sessions, e-mail, agenda, contacts, réseaux s
 
 # Réponse finale
 Dans la langue de la personne (français par défaut). Courte et claire, lisible sur téléphone : ce qui a été fait,
-les résultats, les liens ou fichiers utiles. Markdown léger. Pas de formule creuse."""
+les résultats, les liens ou fichiers utiles. Markdown léger. Pas de formule creuse.
+En français, vouvoie toujours la personne, par respect ; ne la tutoie que si elle l'a demandé (voir « Personne »).
+Si elle te demande de la tutoyer (ou de revenir au vouvoiement), fais-le aussitôt : ce sera retenu."""
 
 
 def integrations_status(user_id: int) -> str:
@@ -69,7 +72,8 @@ async def dynamic_block(user: dict, objective: str, channel: str = "web") -> str
     nowdt = dt.datetime.now(ZoneInfo(tz))
     jours = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
     mois = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
-    parts = [f"# Personne\nNom : {user['name']} · e-mail du compte : {user['email']} · fuseau : {tz}"]
+    address = "tutoiement (elle l'a demandé)" if addresses_informally(user) else "vouvoiement"
+    parts = [f"# Personne\nNom : {user['name']} · e-mail du compte : {user['email']} · fuseau : {tz} · s'adresser à elle : {address}"]
     profile = store.get_profile(user["id"])
     if profile:
         parts.append(f"# Ce que tu sais d'elle (profil)\n{profile}")

@@ -1,8 +1,8 @@
 // Service worker d'Ely : démarrage instantané (coquille en cache) et notifications push.
-const CACHE = "ely-v4";
+const CACHE = "ely-v5";
 const SHELL = ["/", "/static/style.css", "/static/js/app.js", "/static/js/api.js", "/static/js/chat.js",
   "/static/js/settings.js", "/static/js/util.js", "/static/js/voice.js", "/static/js/i18n.js", "/static/vendor/preact-htm.js",
-  "/static/vendor/marked.js", "/static/vendor/purify.js", "/static/icons/icon.svg", "/static/icons/icon-192.png",
+  "/static/vendor/marked.js", "/static/vendor/purify.js", "/static/icons/icon.svg?v=2", "/static/icons/icon-192.png?v=2",
   "/static/fonts/dm-sans.woff2", "/static/fonts/newsreader.woff2"];
 
 self.addEventListener("install", (e) => {
@@ -32,7 +32,7 @@ self.addEventListener("push", (e) => {
   try { data = e.data.json(); } catch { data = { title: "Ely", body: e.data ? e.data.text() : "" }; }
   e.waitUntil(self.registration.showNotification(data.title || "Ely", {
     body: data.body || "", tag: data.tag || undefined, renotify: !!data.tag, data: { url: data.url || "/" },
-    icon: "/static/icons/icon-192.png", badge: "/static/icons/badge-96.png", vibrate: [80, 40, 80],
+    icon: "/static/icons/icon-192.png?v=2", badge: "/static/icons/badge-96.png?v=2", vibrate: [80, 40, 80],
   }));
 });
 

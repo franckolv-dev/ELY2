@@ -93,6 +93,8 @@ const FR = {
   "profil.firstName": "Prénom", "profil.tz": "Fuseau horaire", "profil.admin": "administrateur", "profil.user": "utilisateur",
   "profil.look": "Apparence", "profil.lookHint": "Thème et langue sur cet appareil.",
   "profil.auto": "Automatique", "profil.light": "Clair", "profil.dark": "Sombre", "profil.install": "Installer l'application sur cet appareil",
+  "profil.address": "Vouvoiement", "profil.addressHint": "Ely vous vouvoie, sauf si vous lui demandez de vous tutoyer.",
+  "profil.vous": "Vouvoiement", "profil.tu": "Tutoiement",
   "profil.voice": "Voix", "profil.voiceHint": "Lecture des réponses.", "profil.readAloud": "Lire les réponses à voix haute",
   "profil.voiceLabel": "Voix", "profil.notif": "Notifications", "profil.notifHint": "Soyez prévenu sur votre téléphone quand Ely a terminé une tâche ou a besoin de vous.",
   "profil.enableDevice": "Activer sur cet appareil", "profil.test": "Tester", "profil.testSent": "Notification envoyée",
@@ -271,6 +273,8 @@ const EN = {
   "profil.firstName": "First name", "profil.tz": "Time zone", "profil.admin": "administrator", "profil.user": "user",
   "profil.look": "Appearance", "profil.lookHint": "Theme and language on this device.",
   "profil.auto": "Automatic", "profil.light": "Light", "profil.dark": "Dark", "profil.install": "Install the app on this device",
+  "profil.address": "Form of address", "profil.addressHint": "In French, Ely uses the formal “vous” unless you ask for “tu”.",
+  "profil.vous": "Formal (vous)", "profil.tu": "Informal (tu)",
   "profil.voice": "Voice", "profil.voiceHint": "Spoken replies.", "profil.readAloud": "Read replies aloud",
   "profil.voiceLabel": "Voice", "profil.notif": "Notifications", "profil.notifHint": "Get notified on your phone when Ely finishes a task or needs you.",
   "profil.enableDevice": "Turn on for this device", "profil.test": "Test", "profil.testSent": "Notification sent",
@@ -368,7 +372,9 @@ const SERVER_EN = {
   "E-mail ou mot de passe incorrect": "Wrong email or password",
   "Non connecté": "Not signed in",
   "Réservé à l'administrateur": "Administrators only",
-  "Inscription sur invitation : demande un code à l'administrateur": "Registration by invitation: ask the administrator for a code",
+  "Inscription sur invitation : demandez un code à l'administrateur": "Registration by invitation: ask the administrator for a code",
+  "Vous ne pouvez pas vous retirer vous-même le rôle administrateur": "You can't remove your own administrator role",
+  "Impossible de supprimer votre propre compte": "You can't delete your own account",
 };
 
 export const LANGS = [["fr", "Français"], ["en", "English"]];

@@ -50,7 +50,7 @@ def register(body: Credentials, request: Request, response: Response):
     if not first and not settings.open_registration:
         inv = db.one("SELECT code FROM invites WHERE code = ? AND used_by IS NULL", (body.invite.strip(),))
         if not inv:
-            raise HTTPException(403, "Inscription sur invitation : demande un code à l'administrateur")
+            raise HTTPException(403, "Inscription sur invitation : demandez un code à l'administrateur")
     user = auth.create_user(body.email, body.name, body.password)
     if not first and body.invite:
         db.run("UPDATE invites SET used_by = ? WHERE code = ?", (user["id"], body.invite.strip()))

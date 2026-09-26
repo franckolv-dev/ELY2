@@ -21,4 +21,5 @@ l'interface est bilingue (français vouvoyé / anglais) : tout texte affiché pa
 ## Règles
 - Toute correction s'accompagne d'un test de comportement (pas de test qui lit le code source).
 - Ne jamais rejouer automatiquement une action dont le résultat est incertain (voir `LOST` dans loop.py).
+- Vouvoiement de rigueur (interface, Ely, messages du serveur) ; tutoiement seulement si la personne le demande (`auth.tv`, réglage `address`).
 - Pas de configuration éclatée : secrets dans `.env`, choix de l'admin dans `app_settings`, rien en cache mémoire qui masquerait un réglage.

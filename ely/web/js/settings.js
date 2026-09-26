@@ -59,6 +59,10 @@ function Profile({ me, onMe, pwa, prefs }) {
       <${Seg} value=${prefs.lang} onChange=${prefs.setLang} options=${LANGS} />
       ${pwa ? html`<div><button class="btn" onClick=${pwa}><${Icon} name="phone" /> ${t("profil.install")}</button></div>` : null}
     <//>
+    <${Row} title=${t("profil.address")} hint=${t("profil.addressHint")}>
+      <${Seg} value=${me.settings.address === "tu" ? "tu" : "vous"} options=${[["vous", t("profil.vous")], ["tu", t("profil.tu")]]}
+        onChange=${async (v) => { onMe(await patch("/api/me", { settings: { address: v } })); toast(t("common.saved")); }} />
+    <//>
     <${Row} title=${t("profil.voice")} hint=${t("profil.voiceHint")}>
       <label class="toggle"><${Switch} checked=${readAloud} onChange=${(v) => { setReadAloud(v); localStorage.setItem("ely-read", v ? "1" : "0"); }} />
         ${t("profil.readAloud")}</label>

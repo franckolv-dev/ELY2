@@ -106,3 +106,13 @@ async def test_admin_models_and_selfdev(client, user, fake):
     assert "journal" in sd and "metrics" in sd
     health = (await client.get("/api/health")).json()
     assert health["ok"] and health["tools"] >= 25
+
+
+async def test_favicon_is_the_current_icon(client):
+    from pathlib import Path
+
+    r = await client.get("/favicon.ico")
+    assert r.status_code == 200 and r.headers["content-type"] == "image/png"
+    assert r.content == (Path(__file__).resolve().parent.parent / "ely/web/icons/favicon-32.png").read_bytes()
+    page = (await client.get("/")).text
+    assert 'href="/static/icons/favicon-32.png?v=' in page  # adresse versionnée : les navigateurs rechargent l'icône

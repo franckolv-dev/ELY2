@@ -16,6 +16,7 @@ import logging
 import re
 from dataclasses import replace
 
+from ..auth import tv
 from ..config import settings
 from ..db import db, now
 from ..llm import LLMError, parse_json_loose, registry
@@ -203,7 +204,7 @@ class AgentLoop:
         db.run("UPDATE runs SET status = 'waiting_user', updated_at = ? WHERE id = ?", (now(), self.run_id))
         self.save_state(pending_ask=self.st.ask)
         await self.emit("ask_user", self.st.ask)
-        asyncio.create_task(notify(self.user["id"], "Ely a besoin de toi", question, url=f"/?c={self.conv_id}", tag=f"ask-{self.conv_id}"))
+        asyncio.create_task(notify(self.user["id"], tv(self.user, "Ely a besoin de vous", "Ely a besoin de toi"), question, url=f"/?c={self.conv_id}", tag=f"ask-{self.conv_id}"))
         try:
             return await self.st.ask_future
         finally:

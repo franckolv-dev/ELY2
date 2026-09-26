@@ -65,10 +65,10 @@ def decide(messages: list[dict]) -> tuple[str, list[dict]]:
     if "contact" in request:
         if n == 0:
             return "", [{"name": "contacts_save", "arguments": {"name": "Jean Dupont", "phone": "06 12 34 56 78", "company": "Atelier Dupont"}}]
-        return "✅ C'est fait : **Jean Dupont** (Atelier Dupont, 06 12 34 56 78) est dans tes contacts.", []
+        return "✅ C'est fait : **Jean Dupont** (Atelier Dupont, 06 12 34 56 78) est dans vos contacts.", []
     if "rendez-vous" in request or "page" in request:
         if n == 0:
-            return "Je cherche un créneau en fin de journée chez ton médecin.", [
+            return "Je cherche un créneau en fin de journée chez votre médecin.", [
                 {"name": "recall", "arguments": {"query": "médecin traitant"}},
                 {"name": "browser", "arguments": {"action": "open", "url": f"http://127.0.0.1:{PORT}/demo"}}]
         last = tools_done[-1]["content"]
@@ -82,13 +82,13 @@ def decide(messages: list[dict]) -> tuple[str, list[dict]]:
             return "", [{"name": "calendar_add", "arguments": {"title": "Dr Claire Martin (généraliste)", "start": "2030-10-02T17:30",
                                                                "location": "12 rue de la République, 69002 Lyon", "reminder_minutes": 60}}]
         return ("✅ **Rendez-vous réservé** avec le Dr Claire Martin\n\n- 📅 **Jeudi 2 octobre à 17 h 30**\n"
-                "- 📍 12 rue de la République, 69002 Lyon\n- 🔔 Ajouté à ton agenda avec un rappel 1 h avant"), []
+                "- 📍 12 rue de la République, 69002 Lyon\n- 🔔 Ajouté à votre agenda avec un rappel 1 h avant"), []
     if "question" in request:
         if n == 0:
-            return "", [{"name": "ask_user", "arguments": {"question": "Quel code as-tu reçu par SMS ?", "options": ["123456", "Je n'ai rien reçu"]}}]
+            return "", [{"name": "ask_user", "arguments": {"question": "Quel code avez-vous reçu par SMS ?", "options": ["123456", "Je n'ai rien reçu"]}}]
         return f"Merci ! Code bien reçu : {tools_done[-1]['content'].split(':')[-1].strip()}.", []
     return ("Voici un résumé clair :\n\n| Option | Prix | Délai |\n|---|---|---|\n| Train | 45 € | 2 h |\n| Voiture | 60 € | 4 h |\n\n"
-            "Je te conseille **le train** : plus rapide et moins cher. Tu veux que je réserve ?"), []
+            "Je vous conseille **le train** : plus rapide et moins cher. Voulez-vous que je réserve ?"), []
 
 
 @app.get("/v1/models")

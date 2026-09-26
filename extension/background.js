@@ -1,11 +1,19 @@
-// Ely pour Chrome : relie ce Chrome à Ely pour qu'elle agisse avec tes sessions.
+// Ely pour Chrome : relie ce Chrome à Ely pour qu'elle agisse avec vos sessions.
 // Ely ouvre ses onglets dans une fenêtre à part et les pilote par le protocole DevTools
 // (chrome.debugger) : vrais clics, vraie frappe, lecture de la page, captures.
 const DEFAULT_URL = "http://localhost:8000";
 const IDLE_DETACH_MS = 90_000; // sans commande, on détache : la barre « Ely débogue ce navigateur » disparaît
+const RETRY_MIN_MS = 2_000;
+const RETRY_MAX_MS = 20_000;
 
 let ws = null;
-let state = { status: "déconnecté", detail: "", user: "" };
+let connecting = false;
+let again = false;   // une demande de connexion est arrivée pendant une tentative
+let generation = 0;  // change à chaque reconnexion : une tentative dépassée abandonne
+let retryTimer = null;
+let retryDelay = RETRY_MIN_MS;
+// état affiché par la fenêtre de l'extension (codes traduits par popup.js)
+let state = { status: "offline", user: "" };
 let elyWindow = null;
 const attached = new Set();
 let idleTimer = null;
@@ -15,56 +23,87 @@ async function elyUrl() {
   return (url || DEFAULT_URL).trim().replace(/\/+$/, "");
 }
 
-function setState(status, detail = "", user = state.user) {
-  state = { status, detail, user };
-  chrome.action.setBadgeText({ text: status === "connecté" ? "" : "!" });
-  chrome.action.setBadgeBackgroundColor({ color: "#c2410c" });
+function setState(status, extra = {}) {
+  state = { status, user: state.user, ...extra };
+  chrome.action.setBadgeText({ text: status === "connected" ? "" : "!" });
+  chrome.action.setBadgeBackgroundColor({ color: "#b3452c" });
   chrome.runtime.sendMessage({ kind: "state", ...state }).catch(() => {});
+}
+
+function scheduleRetry() {
+  clearTimeout(retryTimer);
+  retryTimer = setTimeout(connect, retryDelay);
+  retryDelay = Math.min(retryDelay * 2, RETRY_MAX_MS);
 }
 
 // ---------------------------------------------------------------- connexion à Ely
 async function connect() {
+  if (connecting) { again = true; return; }
   if (ws && ws.readyState <= WebSocket.OPEN) return;
-  const url = await elyUrl();
-  let cookie = null;
-  try { cookie = await chrome.cookies.get({ url, name: "ely_token" }); } catch (e) { setState("erreur", String(e)); return; }
-  if (!cookie) { setState("non connecté", `Ouvre ${url} dans ce Chrome et connecte-toi à Ely.`); return; }
-  const sock = new WebSocket(url.replace(/^http/, "ws") + "/api/chrome/ws?token=" + encodeURIComponent(cookie.value));
-  ws = sock;
-  sock.onopen = () => {
-    const m = chrome.runtime.getManifest();
-    sock.send(JSON.stringify({ type: "hello", version: m.version, ua: navigator.userAgent, platform: navigator.platform }));
-  };
-  sock.onmessage = (e) => {
-    const msg = JSON.parse(e.data);
-    if (msg.type === "welcome") setState("connecté", "", msg.user || "");
-    else if (msg.id) run(sock, msg);
-  };
-  sock.onclose = (e) => {
-    if (ws === sock) ws = null;
-    if (e.code === 4001) setState("non connecté", "Session Ely expirée : reconnecte-toi à Ely dans ce Chrome.");
-    else setState("déconnecté", `Ely injoignable à ${url}. Nouvel essai dans quelques secondes.`);
-  };
+  connecting = true;
+  const gen = generation;
+  try {
+    const url = await elyUrl();
+    let cookie = null;
+    try { cookie = await chrome.cookies.get({ url, name: "ely_token" }); } catch (e) { setState("error", { detail: String(e) }); return; }
+    if (!cookie) { setState("no_session", { url }); return; }  // le cookie apparaîtra à la connexion (voir onChanged)
+    // Ely répond-il ? Sans cette vérification, chaque essai pendant un redémarrage d'Ely
+    // inscrit une erreur « WebSocket … ERR_CONNECTION_REFUSED » dans chrome://extensions.
+    try {
+      const res = await fetch(url + "/api/setup", { cache: "no-store" });
+      if (!res.ok) throw new Error(String(res.status));
+    } catch {
+      if (gen === generation) { setState("offline", { url }); scheduleRetry(); }
+      return;
+    }
+    if (gen !== generation) return;  // adresse ou session changée entre-temps : la tentative suivante s'en charge
+    const sock = new WebSocket(url.replace(/^http/, "ws") + "/api/chrome/ws?token=" + encodeURIComponent(cookie.value));
+    ws = sock;
+    sock.onopen = () => {
+      retryDelay = RETRY_MIN_MS;
+      const m = chrome.runtime.getManifest();
+      sock.send(JSON.stringify({ type: "hello", version: m.version, ua: navigator.userAgent, platform: navigator.platform }));
+    };
+    sock.onmessage = (e) => {
+      const msg = JSON.parse(e.data);
+      if (msg.type === "welcome") { state.user = msg.user || ""; setState("connected"); }
+      else if (msg.id) run(sock, msg);
+    };
+    sock.onclose = (e) => {
+      if (ws !== sock) return;  // connexion déjà remplacée
+      ws = null;
+      if (e.code === 4001) { setState("expired", { url }); return; }
+      setState("offline", { url });
+      scheduleRetry();
+    };
+  } finally {
+    connecting = false;
+    if (again) { again = false; connect(); }
+  }
 }
 
 function reconnect() {
-  if (ws) { try { ws.close(); } catch { /* déjà fermée */ } }
+  generation++;
+  clearTimeout(retryTimer);
+  retryDelay = RETRY_MIN_MS;
+  const old = ws;
   ws = null;
+  if (old) { try { old.close(); } catch { /* déjà fermée */ } }
   connect();
 }
 
 // le ping garde la connexion (et le service worker) en vie ; l'alarme le réveille s'il a été arrêté
 setInterval(() => { if (ws && ws.readyState === WebSocket.OPEN) ws.send('{"type":"ping"}'); else connect(); }, 20_000);
 chrome.alarms.create("ely", { periodInMinutes: 1 });
-chrome.alarms.onAlarm.addListener(connect);
-chrome.runtime.onStartup.addListener(connect);
-chrome.runtime.onInstalled.addListener(connect);
+chrome.alarms.onAlarm.addListener(() => connect());
+chrome.runtime.onStartup.addListener(() => connect());
+chrome.runtime.onInstalled.addListener(() => connect());
 chrome.cookies.onChanged.addListener(({ cookie }) => { if (cookie.name === "ely_token") reconnect(); });
 chrome.storage.onChanged.addListener((changes) => { if (changes.url) reconnect(); });
 chrome.runtime.onMessage.addListener((m, _sender, reply) => {
-  if (m.kind === "get") elyUrl().then((url) => reply({ ...state, url }));
+  if (m.kind === "get") { elyUrl().then((url) => reply({ ...state, url })); return true; }
   if (m.kind === "reconnect") { reconnect(); reply(true); }
-  return true;
+  return false;
 });
 connect();
 

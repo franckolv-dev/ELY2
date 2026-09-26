@@ -10,7 +10,7 @@ import time
 
 import httpx
 
-from ..auth import get_user
+from ..auth import get_user, tv
 from ..config import settings
 from ..db import db, now
 from ..integrations import get, put, remove
@@ -79,9 +79,11 @@ async def handle(update: dict) -> None:
         if row:
             put(row["user_id"], "telegram", {"chat_id": chat_id, "username": msg["from"].get("username", "")})
             remove(row["user_id"], "telegram_pending")
-            await telegram_send(chat_id, "✅ Compte Ely relié. Parle-moi ici comme dans l'application.")
+            linked = get_user(row["user_id"])
+            await telegram_send(chat_id, tv(linked, "✅ Compte Ely relié. Parlez-moi ici comme dans l'application.",
+                                            "✅ Compte Ely relié. Parle-moi ici comme dans l'application."))
         else:
-            await telegram_send(chat_id, "Bonjour ! Pour me relier à ton compte Ely : Réglages → Connexions → Telegram.")
+            await telegram_send(chat_id, "Bonjour ! Pour me relier à votre compte Ely : Réglages → Connexions → Telegram.")
         return
     user = user_for_chat(chat_id)
     if not user:
