@@ -1,0 +1,398 @@
+/Users/franck/Documents/projets/ELY/PhysicalAgent-master/voice/xtts/.venv/lib/python3.11/site-packages/torch/jit/_script.py:1491: FutureWarning: `torch.jit.script` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+/Users/franck/Documents/projets/ELY/PhysicalAgent-master/voice/xtts/.venv/lib/python3.11/site-packages/torch/jit/_script.py:1491: FutureWarning: `torch.jit.script` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+2026-09-08 22:03:37,457 INFO TTS.utils.manage: tts_models/multilingual/multi-dataset/xtts_v2 is already downloaded.
+2026-09-08 22:03:39,107 INFO TTS.tts.models: Using model: xtts
+2026-09-08 22:04:00,412 INFO ely.voix: XTTS-v2 chargé en 23 s sur mps
+2026-09-08 22:04:04,453 INFO ely.voix: empreinte de la voix « gert » calculée en 4.0 s (1 fichier(s))
+INFO:     Started server process [97544]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8020 (Press CTRL+C to quit)
+INFO:     127.0.0.1:64721 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64722 - "GET /health HTTP/1.1" 200 OK
+2026-09-08 22:04:09,420 INFO ely.voix: « gert » : 2 phrase(s), 7.2 s d'audio en 3.1 s
+INFO:     127.0.0.1:64723 - "POST /speak HTTP/1.1" 200 OK
+2026-09-08 22:42:37,177 INFO ely.voix: « gert » : 1 phrase(s), 4.4 s d'audio en 12.0 s
+INFO:     127.0.0.1:65278 - "POST /speak HTTP/1.1" 200 OK
+2026-09-08 22:42:40,430 INFO ely.voix: « gert » : 1 phrase(s), 7.2 s d'audio en 15.2 s
+INFO:     127.0.0.1:65277 - "POST /speak HTTP/1.1" 200 OK
+2026-09-08 22:42:47,260 INFO ely.voix: « gert » : 1 phrase(s), 8.3 s d'audio en 3.3 s
+INFO:     127.0.0.1:65282 - "POST /speak HTTP/1.1" 200 OK
+2026-09-08 22:42:54,649 INFO ely.voix: « gert » : 1 phrase(s), 8.8 s d'audio en 3.4 s
+INFO:     127.0.0.1:65286 - "POST /speak HTTP/1.1" 200 OK
+2026-09-08 22:43:00,831 INFO ely.voix: « gert » : 1 phrase(s), 2.6 s d'audio en 1.3 s
+INFO:     127.0.0.1:65289 - "POST /speak HTTP/1.1" 200 OK
+2026-09-08 22:44:39,502 INFO ely.voix: « gert » : 1 phrase(s), 4.8 s d'audio en 2.9 s
+INFO:     127.0.0.1:65302 - "POST /speak HTTP/1.1" 200 OK
+2026-09-08 22:44:42,000 INFO ely.voix: « gert » : 1 phrase(s), 6.8 s d'audio en 5.4 s
+INFO:     127.0.0.1:65303 - "POST /speak HTTP/1.1" 200 OK
+2026-09-08 22:44:51,492 INFO ely.voix: « gert » : 1 phrase(s), 4.0 s d'audio en 2.1 s
+INFO:     127.0.0.1:65305 - "POST /speak HTTP/1.1" 200 OK
+2026-09-08 22:44:56,428 INFO ely.voix: « gert » : 1 phrase(s), 5.8 s d'audio en 2.2 s
+INFO:     127.0.0.1:65306 - "POST /speak HTTP/1.1" 200 OK
+2026-09-08 22:45:00,639 INFO ely.voix: « gert » : 1 phrase(s), 6.1 s d'audio en 2.3 s
+INFO:     127.0.0.1:65307 - "POST /speak HTTP/1.1" 200 OK
+2026-09-08 23:11:24,344 INFO ely.voix: « gert » : 1 phrase(s), 2.3 s d'audio en 8.9 s
+INFO:     127.0.0.1:49332 - "POST /speak HTTP/1.1" 200 OK
+2026-09-08 23:11:25,249 INFO ely.voix: « gert » : 1 phrase(s), 1.5 s d'audio en 9.8 s
+INFO:     127.0.0.1:49333 - "POST /speak HTTP/1.1" 200 OK
+2026-09-08 23:13:16,134 INFO ely.voix: « gert » : 1 phrase(s), 2.1 s d'audio en 2.1 s
+INFO:     127.0.0.1:49410 - "POST /speak HTTP/1.1" 200 OK
+2026-09-08 23:13:17,555 INFO ely.voix: « gert » : 1 phrase(s), 2.7 s d'audio en 3.5 s
+INFO:     127.0.0.1:49411 - "POST /speak HTTP/1.1" 200 OK
+2026-09-09 19:05:45,705 INFO ely.voix: « gert » : 1 phrase(s), 15.7 s d'audio en 19.5 s
+INFO:     127.0.0.1:54333 - "POST /speak HTTP/1.1" 200 OK
+2026-09-09 19:09:33,311 INFO ely.voix: « gert » : 2 phrase(s), 10.4 s d'audio en 10.2 s
+INFO:     127.0.0.1:54379 - "POST /speak HTTP/1.1" 200 OK
+2026-09-09 19:09:36,574 INFO ely.voix: « gert » : 1 phrase(s), 8.0 s d'audio en 13.5 s
+INFO:     127.0.0.1:54380 - "POST /speak HTTP/1.1" 200 OK
+2026-09-09 19:09:48,279 INFO ely.voix: « gert » : 1 phrase(s), 7.4 s d'audio en 2.9 s
+INFO:     127.0.0.1:54383 - "POST /speak HTTP/1.1" 200 OK
+2026-09-09 19:10:04,479 INFO ely.voix: « gert » : 1 phrase(s), 19.9 s d'audio en 8.6 s
+INFO:     127.0.0.1:54384 - "POST /speak HTTP/1.1" 200 OK
+2026-09-09 19:10:09,531 INFO ely.voix: « gert » : 1 phrase(s), 13.0 s d'audio en 6.2 s
+INFO:     127.0.0.1:54385 - "POST /speak HTTP/1.1" 200 OK
+2026-09-09 19:45:07,680 INFO ely.voix: « gert » : 1 phrase(s), 6.9 s d'audio en 21.4 s
+INFO:     127.0.0.1:54688 - "POST /speak HTTP/1.1" 200 OK
+2026-09-09 19:45:11,143 INFO ely.voix: « gert » : 1 phrase(s), 9.0 s d'audio en 24.8 s
+INFO:     127.0.0.1:54689 - "POST /speak HTTP/1.1" 200 OK
+2026-09-09 19:45:23,087 INFO ely.voix: « gert » : 1 phrase(s), 5.2 s d'audio en 2.2 s
+INFO:     127.0.0.1:54698 - "POST /speak HTTP/1.1" 200 OK
+2026-09-09 19:45:29,918 INFO ely.voix: « gert » : 1 phrase(s), 5.1 s d'audio en 2.1 s
+INFO:     127.0.0.1:54699 - "POST /speak HTTP/1.1" 200 OK
+2026-09-09 19:45:34,769 INFO ely.voix: « gert » : 1 phrase(s), 3.8 s d'audio en 1.7 s
+INFO:     127.0.0.1:54700 - "POST /speak HTTP/1.1" 200 OK
+2026-09-09 20:08:39,095 INFO ely.voix: « gert » : 1 phrase(s), 6.5 s d'audio en 12.4 s
+INFO:     127.0.0.1:54778 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 00:31:13,758 INFO ely.voix: « gert » : 1 phrase(s), 2.9 s d'audio en 18.8 s
+INFO:     127.0.0.1:57399 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 00:31:15,725 INFO ely.voix: « gert » : 1 phrase(s), 4.7 s d'audio en 20.8 s
+INFO:     127.0.0.1:57400 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 00:32:09,625 INFO ely.voix: « gert » : 1 phrase(s), 3.1 s d'audio en 2.8 s
+INFO:     127.0.0.1:57431 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 00:32:11,933 INFO ely.voix: « gert » : 1 phrase(s), 5.6 s d'audio en 5.1 s
+INFO:     127.0.0.1:57430 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 00:32:24,400 INFO ely.voix: « gert » : 1 phrase(s), 15.1 s d'audio en 6.3 s
+INFO:     127.0.0.1:57433 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 00:32:26,174 INFO ely.voix: « gert » : 1 phrase(s), 1.7 s d'audio en 4.9 s
+INFO:     127.0.0.1:57434 - "POST /speak HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57585 - "GET /health HTTP/1.1" 200 OK
+2026-09-10 00:46:23,073 INFO ely.voix: « gert » : 2 phrase(s), 5.1 s d'audio en 4.2 s
+INFO:     127.0.0.1:57593 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 03:03:29,870 INFO ely.voix: « gert » : 1 phrase(s), 7.5 s d'audio en 4.4 s
+INFO:     127.0.0.1:58752 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 03:03:31,101 INFO ely.voix: « gert » : 1 phrase(s), 3.1 s d'audio en 5.6 s
+INFO:     127.0.0.1:58753 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 03:38:56,208 INFO ely.voix: « gert » : 1 phrase(s), 6.3 s d'audio en 3.4 s
+INFO:     127.0.0.1:59168 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 03:42:07,824 INFO ely.voix: « gert » : 1 phrase(s), 3.9 s d'audio en 2.7 s
+INFO:     127.0.0.1:59255 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 03:42:13,319 INFO ely.voix: « gert » : 1 phrase(s), 14.8 s d'audio en 8.2 s
+INFO:     127.0.0.1:59256 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 03:48:06,786 INFO ely.voix: « gert » : 1 phrase(s), 3.9 s d'audio en 3.2 s
+INFO:     127.0.0.1:59364 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 03:48:08,748 INFO ely.voix: « gert » : 1 phrase(s), 4.5 s d'audio en 5.1 s
+INFO:     127.0.0.1:59362 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 03:48:16,435 INFO ely.voix: « gert » : 1 phrase(s), 3.4 s d'audio en 2.6 s
+INFO:     127.0.0.1:59366 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 03:48:19,436 INFO ely.voix: « gert » : 1 phrase(s), 3.6 s d'audio en 1.6 s
+INFO:     127.0.0.1:59367 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 03:48:26,382 INFO ely.voix: « gert » : 2 phrase(s), 13.1 s d'audio en 5.1 s
+INFO:     127.0.0.1:59368 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 03:48:34,081 INFO ely.voix: « gert » : 1 phrase(s), 20.0 s d'audio en 9.2 s
+INFO:     127.0.0.1:59369 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 07:57:32,433 INFO ely.voix: « gert » : 1 phrase(s), 2.5 s d'audio en 3.0 s
+INFO:     127.0.0.1:60423 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 07:57:34,880 INFO ely.voix: « gert » : 1 phrase(s), 6.4 s d'audio en 5.5 s
+INFO:     127.0.0.1:60424 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 19:56:44,044 INFO ely.voix: « gert » : 1 phrase(s), 12.5 s d'audio en 19.8 s
+INFO:     127.0.0.1:64452 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 20:01:37,107 INFO ely.voix: « gert » : 1 phrase(s), 6.7 s d'audio en 3.9 s
+INFO:     127.0.0.1:64620 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 20:01:39,440 INFO ely.voix: « gert » : 1 phrase(s), 5.5 s d'audio en 6.2 s
+INFO:     127.0.0.1:64621 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 20:02:40,128 INFO ely.voix: « gert » : 1 phrase(s), 5.1 s d'audio en 3.3 s
+INFO:     127.0.0.1:64632 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 20:02:41,402 INFO ely.voix: « gert » : 1 phrase(s), 3.0 s d'audio en 4.6 s
+INFO:     127.0.0.1:64633 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 20:03:33,191 INFO ely.voix: « gert » : 1 phrase(s), 4.5 s d'audio en 3.1 s
+INFO:     127.0.0.1:64663 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 20:03:37,768 INFO ely.voix: « gert » : 1 phrase(s), 12.5 s d'audio en 7.7 s
+INFO:     127.0.0.1:64662 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 20:03:53,364 INFO ely.voix: « gert » : 1 phrase(s), 5.1 s d'audio en 2.2 s
+INFO:     127.0.0.1:64665 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 20:03:58,823 INFO ely.voix: « gert » : 1 phrase(s), 7.4 s d'audio en 3.0 s
+INFO:     127.0.0.1:64666 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 20:04:25,025 INFO ely.voix: « gert » : 1 phrase(s), 11.1 s d'audio en 5.3 s
+INFO:     127.0.0.1:64684 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 20:08:03,900 INFO ely.voix: « gert » : 1 phrase(s), 4.4 s d'audio en 1.8 s
+INFO:     127.0.0.1:64724 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 20:08:08,795 INFO ely.voix: « gert » : 1 phrase(s), 13.6 s d'audio en 6.7 s
+INFO:     127.0.0.1:64725 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 20:08:25,020 INFO ely.voix: « gert » : 1 phrase(s), 3.5 s d'audio en 1.6 s
+INFO:     127.0.0.1:64728 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 20:59:06,753 INFO ely.voix: « gert » : 1 phrase(s), 7.1 s d'audio en 3.9 s
+INFO:     127.0.0.1:64958 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 21:00:21,463 INFO ely.voix: « gert » : 1 phrase(s), 3.9 s d'audio en 1.6 s
+INFO:     127.0.0.1:64979 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 21:00:26,125 INFO ely.voix: « gert » : 1 phrase(s), 13.0 s d'audio en 6.3 s
+INFO:     127.0.0.1:64980 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 21:00:41,785 INFO ely.voix: « gert » : 1 phrase(s), 4.0 s d'audio en 1.6 s
+INFO:     127.0.0.1:64982 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 21:00:46,409 INFO ely.voix: « gert » : 1 phrase(s), 5.3 s d'audio en 2.3 s
+INFO:     127.0.0.1:64983 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 21:00:50,935 INFO ely.voix: « gert » : 1 phrase(s), 7.0 s d'audio en 2.7 s
+INFO:     127.0.0.1:64984 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 21:02:50,552 INFO ely.voix: « gert » : 1 phrase(s), 6.2 s d'audio en 2.4 s
+INFO:     127.0.0.1:64998 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 21:02:53,776 INFO ely.voix: « gert » : 1 phrase(s), 8.4 s d'audio en 5.6 s
+INFO:     127.0.0.1:64999 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 21:02:59,218 INFO ely.voix: « gert » : 1 phrase(s), 4.4 s d'audio en 1.9 s
+INFO:     127.0.0.1:65001 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 21:03:07,219 INFO ely.voix: « gert » : 1 phrase(s), 2.8 s d'audio en 1.4 s
+INFO:     127.0.0.1:65003 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 21:06:52,924 INFO ely.voix: « gert » : 1 phrase(s), 5.2 s d'audio en 3.5 s
+INFO:     127.0.0.1:65067 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 21:06:55,693 INFO ely.voix: « gert » : 1 phrase(s), 5.4 s d'audio en 6.2 s
+INFO:     127.0.0.1:65068 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 21:07:47,305 INFO ely.voix: « gert » : 1 phrase(s), 4.1 s d'audio en 3.1 s
+INFO:     127.0.0.1:65096 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 21:07:47,979 INFO ely.voix: « gert » : 1 phrase(s), 1.1 s d'audio en 3.8 s
+INFO:     127.0.0.1:65097 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 21:07:51,982 INFO ely.voix: « gert » : 1 phrase(s), 6.5 s d'audio en 2.7 s
+INFO:     127.0.0.1:65103 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 21:36:55,525 INFO ely.voix: « gert » : 1 phrase(s), 9.0 s d'audio en 18.0 s
+INFO:     127.0.0.1:50780 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 21:36:57,528 INFO ely.voix: « gert » : 1 phrase(s), 5.0 s d'audio en 20.0 s
+INFO:     127.0.0.1:50781 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 21:39:13,201 INFO ely.voix: « gert » : 1 phrase(s), 7.5 s d'audio en 4.3 s
+INFO:     127.0.0.1:51046 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 22:40:26,354 INFO ely.voix: « gert » : 1 phrase(s), 5.5 s d'audio en 4.2 s
+INFO:     127.0.0.1:51320 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 22:40:28,922 INFO ely.voix: « gert » : 1 phrase(s), 6.5 s d'audio en 6.7 s
+INFO:     127.0.0.1:51321 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 22:40:33,988 INFO ely.voix: « gert » : 1 phrase(s), 3.3 s d'audio en 1.6 s
+INFO:     127.0.0.1:51324 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 22:51:28,585 INFO ely.voix: « gert » : 1 phrase(s), 11.0 s d'audio en 5.5 s
+INFO:     127.0.0.1:51441 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 22:52:05,952 INFO ely.voix: « gert » : 1 phrase(s), 6.2 s d'audio en 2.4 s
+INFO:     127.0.0.1:51446 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 22:52:07,822 INFO ely.voix: « gert » : 1 phrase(s), 5.1 s d'audio en 4.3 s
+INFO:     127.0.0.1:51447 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 22:53:09,883 INFO ely.voix: « gert » : 1 phrase(s), 7.2 s d'audio en 3.0 s
+INFO:     127.0.0.1:51468 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 22:53:12,208 INFO ely.voix: « gert » : 1 phrase(s), 5.7 s d'audio en 5.3 s
+INFO:     127.0.0.1:51469 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 22:53:20,950 INFO ely.voix: « gert » : 1 phrase(s), 8.5 s d'audio en 3.2 s
+INFO:     127.0.0.1:51471 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 22:53:27,238 INFO ely.voix: « gert » : 1 phrase(s), 9.8 s d'audio en 3.7 s
+INFO:     127.0.0.1:51472 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 22:53:34,207 INFO ely.voix: « gert » : 1 phrase(s), 5.2 s d'audio en 2.1 s
+INFO:     127.0.0.1:51474 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 22:55:30,373 INFO ely.voix: « gert » : 1 phrase(s), 8.3 s d'audio en 4.3 s
+INFO:     127.0.0.1:51505 - "POST /speak HTTP/1.1" 200 OK
+2026-09-10 22:55:35,079 INFO ely.voix: « gert » : 1 phrase(s), 12.3 s d'audio en 9.0 s
+INFO:     127.0.0.1:51506 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 02:27:36,788 INFO ely.voix: « gert » : 1 phrase(s), 13.9 s d'audio en 13.2 s
+INFO:     127.0.0.1:52231 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 02:29:41,489 INFO ely.voix: « gert » : 1 phrase(s), 12.6 s d'audio en 5.8 s
+INFO:     127.0.0.1:52259 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 02:30:43,231 INFO ely.voix: « gert » : 1 phrase(s), 8.4 s d'audio en 4.5 s
+INFO:     127.0.0.1:52279 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 02:35:52,722 INFO ely.voix: « gert » : 1 phrase(s), 2.5 s d'audio en 2.3 s
+INFO:     127.0.0.1:52351 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 02:35:54,466 INFO ely.voix: « gert » : 1 phrase(s), 4.1 s d'audio en 4.0 s
+INFO:     127.0.0.1:52352 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 02:37:54,247 INFO ely.voix: « gert » : 1 phrase(s), 10.3 s d'audio en 5.6 s
+INFO:     127.0.0.1:52381 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 02:37:59,985 INFO ely.voix: « gert » : 1 phrase(s), 15.3 s d'audio en 11.3 s
+INFO:     127.0.0.1:52382 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 02:39:23,554 INFO ely.voix: « gert » : 1 phrase(s), 3.1 s d'audio en 2.5 s
+INFO:     127.0.0.1:52418 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 02:39:26,181 INFO ely.voix: « gert » : 1 phrase(s), 6.9 s d'audio en 5.1 s
+INFO:     127.0.0.1:52419 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 02:39:41,738 INFO ely.voix: « gert » : 1 phrase(s), 21.2 s d'audio en 8.1 s
+INFO:     127.0.0.1:52422 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 02:39:42,761 INFO ely.voix: « gert » : 1 phrase(s), 2.1 s d'audio en 6.0 s
+INFO:     127.0.0.1:52423 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 02:42:26,951 INFO ely.voix: « gert » : 1 phrase(s), 2.6 s d'audio en 1.3 s
+INFO:     127.0.0.1:52444 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 02:42:29,538 INFO ely.voix: « gert » : 1 phrase(s), 7.1 s d'audio en 3.8 s
+INFO:     127.0.0.1:52443 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 02:45:37,772 INFO ely.voix: « gert » : 1 phrase(s), 11.9 s d'audio en 5.9 s
+INFO:     127.0.0.1:52481 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 02:48:05,070 INFO ely.voix: « gert » : 1 phrase(s), 11.2 s d'audio en 5.5 s
+INFO:     127.0.0.1:52546 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 02:48:09,814 INFO ely.voix: « gert » : 1 phrase(s), 12.7 s d'audio en 10.2 s
+INFO:     127.0.0.1:52547 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 02:48:27,549 INFO ely.voix: « gert » : 1 phrase(s), 10.3 s d'audio en 3.9 s
+INFO:     127.0.0.1:52551 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 02:48:39,331 INFO ely.voix: « gert » : 1 phrase(s), 11.8 s d'audio en 4.4 s
+INFO:     127.0.0.1:52553 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 02:48:49,623 INFO ely.voix: « gert » : 1 phrase(s), 11.6 s d'audio en 4.3 s
+INFO:     127.0.0.1:52554 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 02:55:31,194 INFO ely.voix: « gert » : 1 phrase(s), 3.7 s d'audio en 3.0 s
+INFO:     127.0.0.1:52620 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 02:55:35,036 INFO ely.voix: « gert » : 1 phrase(s), 10.2 s d'audio en 6.8 s
+INFO:     127.0.0.1:52621 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 02:55:38,993 INFO ely.voix: « gert » : 1 phrase(s), 9.9 s d'audio en 3.7 s
+INFO:     127.0.0.1:52623 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 03:05:53,194 INFO ely.voix: « gert » : 1 phrase(s), 1.6 s d'audio en 2.3 s
+INFO:     127.0.0.1:52782 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 03:05:54,214 INFO ely.voix: « gert » : 1 phrase(s), 2.0 s d'audio en 3.3 s
+INFO:     127.0.0.1:52783 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 03:06:59,734 INFO ely.voix: « gert » : 1 phrase(s), 1.0 s d'audio en 2.8 s
+INFO:     127.0.0.1:52802 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 13:44:52,117 INFO ely.voix: « gert » : 1 phrase(s), 6.9 s d'audio en 15.3 s
+INFO:     127.0.0.1:55234 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 13:45:05,565 INFO ely.voix: « gert » : 1 phrase(s), 6.7 s d'audio en 2.8 s
+INFO:     127.0.0.1:55236 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 13:46:07,466 INFO ely.voix: « gert » : 1 phrase(s), 5.9 s d'audio en 4.0 s
+INFO:     127.0.0.1:55260 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 13:46:26,054 INFO ely.voix: « gert » : 1 phrase(s), 7.2 s d'audio en 3.3 s
+INFO:     127.0.0.1:55274 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 13:47:23,421 INFO ely.voix: « gert » : 1 phrase(s), 17.1 s d'audio en 9.5 s
+INFO:     127.0.0.1:55285 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 13:47:25,442 INFO ely.voix: « gert » : 1 phrase(s), 4.4 s d'audio en 11.5 s
+INFO:     127.0.0.1:55286 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 13:47:40,344 INFO ely.voix: « gert » : 1 phrase(s), 2.9 s d'audio en 1.5 s
+INFO:     127.0.0.1:55291 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 13:47:42,653 INFO ely.voix: « gert » : 1 phrase(s), 5.2 s d'audio en 3.8 s
+INFO:     127.0.0.1:55292 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 13:47:46,695 INFO ely.voix: « gert » : 1 phrase(s), 7.5 s d'audio en 3.0 s
+INFO:     127.0.0.1:55294 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:02:01,518 INFO ely.voix: « gert » : 1 phrase(s), 8.3 s d'audio en 4.2 s
+INFO:     127.0.0.1:55522 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:02:05,552 INFO ely.voix: « gert » : 2 phrase(s), 9.9 s d'audio en 8.2 s
+INFO:     127.0.0.1:55523 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:02:13,750 INFO ely.voix: « gert » : 1 phrase(s), 8.5 s d'audio en 3.1 s
+INFO:     127.0.0.1:55525 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:02:25,177 INFO ely.voix: « gert » : 1 phrase(s), 12.5 s d'audio en 4.6 s
+INFO:     127.0.0.1:55527 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:02:33,154 INFO ely.voix: « gert » : 1 phrase(s), 11.0 s d'audio en 3.9 s
+INFO:     127.0.0.1:55528 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:02:47,785 INFO ely.voix: « gert » : 1 phrase(s), 16.8 s d'audio en 6.0 s
+INFO:     127.0.0.1:55529 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:02:56,754 INFO ely.voix: « gert » : 1 phrase(s), 10.7 s d'audio en 3.9 s
+INFO:     127.0.0.1:55530 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:03:09,653 WARNING TTS.tts.layers.xtts.tokenizer: The text length exceeds the character limit of 273 for language 'fr', this might cause truncated audio: si orion fait référence à un autre projet ou docum...
+2026-09-11 14:03:17,323 INFO ely.voix: « gert » : 1 phrase(s), 20.7 s d'audio en 7.7 s
+INFO:     127.0.0.1:55535 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:03:26,038 INFO ely.voix: « gert » : 1 phrase(s), 16.0 s d'audio en 5.7 s
+INFO:     127.0.0.1:55536 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:03:48,650 INFO ely.voix: « gert » : 1 phrase(s), 21.3 s d'audio en 7.6 s
+INFO:     127.0.0.1:55538 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:04:01,800 INFO ely.voix: « gert » : 1 phrase(s), 12.9 s d'audio en 4.6 s
+INFO:     127.0.0.1:55539 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:04:24,216 INFO ely.voix: « gert » : 1 phrase(s), 16.2 s d'audio en 5.7 s
+INFO:     127.0.0.1:55540 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:04:36,239 INFO ely.voix: « gert » : 1 phrase(s), 13.3 s d'audio en 4.7 s
+INFO:     127.0.0.1:55541 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:04:55,098 INFO ely.voix: « gert » : 1 phrase(s), 20.9 s d'audio en 7.4 s
+INFO:     127.0.0.1:55542 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:05:04,239 INFO ely.voix: « gert » : 1 phrase(s), 8.6 s d'audio en 3.2 s
+INFO:     127.0.0.1:55543 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:05:30,641 INFO ely.voix: « gert » : 1 phrase(s), 23.7 s d'audio en 8.6 s
+INFO:     127.0.0.1:55547 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:05:34,208 INFO ely.voix: « gert » : 1 phrase(s), 9.8 s d'audio en 3.5 s
+INFO:     127.0.0.1:55548 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:05:58,465 INFO ely.voix: « gert » : 1 phrase(s), 5.7 s d'audio en 2.2 s
+INFO:     127.0.0.1:55550 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:06:11,839 INFO ely.voix: « gert » : 1 phrase(s), 16.1 s d'audio en 5.7 s
+INFO:     127.0.0.1:55552 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:06:14,899 INFO ely.voix: « gert » : 1 phrase(s), 8.5 s d'audio en 3.1 s
+INFO:     127.0.0.1:55554 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:06:33,966 INFO ely.voix: « gert » : 1 phrase(s), 13.4 s d'audio en 4.8 s
+INFO:     127.0.0.1:55557 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:06:41,302 INFO ely.voix: « gert » : 1 phrase(s), 9.9 s d'audio en 3.5 s
+INFO:     127.0.0.1:55558 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:07:00,978 INFO ely.voix: « gert » : 1 phrase(s), 27.1 s d'audio en 9.7 s
+INFO:     127.0.0.1:55560 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:07:06,065 INFO ely.voix: « gert » : 1 phrase(s), 13.5 s d'audio en 4.8 s
+INFO:     127.0.0.1:55561 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:07:31,730 INFO ely.voix: « gert » : 1 phrase(s), 5.8 s d'audio en 2.3 s
+INFO:     127.0.0.1:55563 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:07:50,974 INFO ely.voix: « gert » : 1 phrase(s), 22.6 s d'audio en 7.9 s
+INFO:     127.0.0.1:55564 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:07:59,316 INFO ely.voix: « gert » : 1 phrase(s), 23.5 s d'audio en 10.4 s
+INFO:     127.0.0.1:55565 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:08:18,414 INFO ely.voix: « gert » : 1 phrase(s), 8.3 s d'audio en 3.1 s
+INFO:     127.0.0.1:55573 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:08:43,512 INFO ely.voix: « gert » : 1 phrase(s), 12.9 s d'audio en 4.6 s
+INFO:     127.0.0.1:55574 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:08:49,861 INFO ely.voix: « gert » : 1 phrase(s), 6.9 s d'audio en 2.6 s
+INFO:     127.0.0.1:55577 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:09:02,915 INFO ely.voix: « gert » : 1 phrase(s), 7.0 s d'audio en 2.7 s
+INFO:     127.0.0.1:55578 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:09:09,929 INFO ely.voix: « gert » : 1 phrase(s), 7.3 s d'audio en 2.7 s
+INFO:     127.0.0.1:55579 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:09:16,195 INFO ely.voix: « gert » : 1 phrase(s), 4.7 s d'audio en 1.9 s
+INFO:     127.0.0.1:55581 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:09:23,024 INFO ely.voix: « gert » : 1 phrase(s), 3.2 s d'audio en 1.4 s
+INFO:     127.0.0.1:55582 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:09:28,093 INFO ely.voix: « gert » : 1 phrase(s), 3.5 s d'audio en 1.7 s
+INFO:     127.0.0.1:55583 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:09:31,893 INFO ely.voix: « gert » : 1 phrase(s), 5.9 s d'audio en 2.2 s
+INFO:     127.0.0.1:55584 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 14:09:35,637 INFO ely.voix: « gert » : 1 phrase(s), 5.7 s d'audio en 2.4 s
+INFO:     127.0.0.1:55585 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 18:16:59,942 INFO ely.voix: « gert » : 1 phrase(s), 13.6 s d'audio en 6.4 s
+INFO:     127.0.0.1:56354 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 18:18:04,509 INFO ely.voix: « gert » : 1 phrase(s), 3.2 s d'audio en 1.5 s
+INFO:     127.0.0.1:56426 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 18:18:06,985 INFO ely.voix: « gert » : 1 phrase(s), 6.4 s d'audio en 3.9 s
+INFO:     127.0.0.1:56427 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 18:18:10,267 INFO ely.voix: « gert » : 1 phrase(s), 5.4 s d'audio en 2.2 s
+INFO:     127.0.0.1:56428 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 18:18:18,675 INFO ely.voix: « gert » : 1 phrase(s), 10.4 s d'audio en 4.2 s
+INFO:     127.0.0.1:56429 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 18:18:25,141 INFO ely.voix: « gert » : 1 phrase(s), 13.6 s d'audio en 5.1 s
+INFO:     127.0.0.1:56432 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 18:30:45,665 INFO ely.voix: « gert » : 1 phrase(s), 16.8 s d'audio en 15.9 s
+INFO:     127.0.0.1:56640 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 18:30:47,150 INFO ely.voix: « gert » : 1 phrase(s), 3.0 s d'audio en 17.4 s
+INFO:     127.0.0.1:56641 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 18:31:06,926 INFO ely.voix: « gert » : 1 phrase(s), 7.8 s d'audio en 2.9 s
+INFO:     127.0.0.1:56643 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 18:31:12,686 INFO ely.voix: « gert » : 1 phrase(s), 16.0 s d'audio en 5.6 s
+INFO:     127.0.0.1:56644 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 18:31:19,565 INFO ely.voix: « gert » : 1 phrase(s), 11.6 s d'audio en 4.3 s
+INFO:     127.0.0.1:56646 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 18:31:33,992 INFO ely.voix: « gert » : 1 phrase(s), 6.9 s d'audio en 2.6 s
+INFO:     127.0.0.1:56647 - "POST /speak HTTP/1.1" 200 OK
+2026-09-11 18:31:45,084 INFO ely.voix: « gert » : 1 phrase(s), 3.9 s d'audio en 2.0 s
+INFO:     127.0.0.1:56648 - "POST /speak HTTP/1.1" 200 OK
+2026-09-12 03:32:27,978 INFO ely.voix: « gert » : 1 phrase(s), 15.6 s d'audio en 7.3 s
+INFO:     127.0.0.1:58732 - "POST /speak HTTP/1.1" 200 OK
+2026-09-12 03:32:29,647 INFO ely.voix: « gert » : 1 phrase(s), 3.7 s d'audio en 8.9 s
+INFO:     127.0.0.1:58733 - "POST /speak HTTP/1.1" 200 OK
+2026-09-12 03:41:42,168 INFO ely.voix: « gert » : 1 phrase(s), 17.2 s d'audio en 7.8 s
+INFO:     127.0.0.1:58825 - "POST /speak HTTP/1.1" 200 OK
+2026-09-12 03:42:11,729 INFO ely.voix: « gert » : 1 phrase(s), 1.9 s d'audio en 1.9 s
+2026-09-12 03:42:11,730 WARNING TTS.tts.layers.xtts.tokenizer: The text length exceeds the character limit of 273 for language 'fr', this might cause truncated audio: les conditions actuellement applicables à orion so...
+INFO:     127.0.0.1:58831 - "POST /speak HTTP/1.1" 200 OK
+2026-09-12 03:42:21,812 INFO ely.voix: « gert » : 1 phrase(s), 25.6 s d'audio en 11.9 s
+INFO:     127.0.0.1:58832 - "POST /speak HTTP/1.1" 200 OK
+2026-09-12 03:42:52,804 INFO ely.voix: « gert » : 1 phrase(s), 8.2 s d'audio en 3.2 s
+INFO:     127.0.0.1:58834 - "POST /speak HTTP/1.1" 200 OK
+2026-09-12 03:42:56,626 INFO ely.voix: « gert » : 1 phrase(s), 10.6 s d'audio en 5.0 s
+INFO:     127.0.0.1:58835 - "POST /speak HTTP/1.1" 200 OK
+2026-09-13 10:07:43,945 INFO ely.voix: « gert » : 1 phrase(s), 6.3 s d'audio en 12.0 s
+2026-09-13 10:07:43,947 WARNING TTS.tts.layers.xtts.tokenizer: The text length exceeds the character limit of 273 for language 'fr', this might cause truncated audio: titre de l’onglet : « plans & pricing | claude by ...
+INFO:     127.0.0.1:53324 - "POST /speak HTTP/1.1" 200 OK
+2026-09-13 10:07:54,436 INFO ely.voix: « gert » : 1 phrase(s), 27.0 s d'audio en 22.5 s
+INFO:     127.0.0.1:53325 - "POST /speak HTTP/1.1" 200 OK
+2026-09-13 10:08:27,184 INFO ely.voix: « gert » : 1 phrase(s), 6.5 s d'audio en 3.5 s
+INFO:     127.0.0.1:53619 - "POST /speak HTTP/1.1" 200 OK
+2026-09-13 10:08:36,923 INFO ely.voix: « gert » : 1 phrase(s), 19.0 s d'audio en 7.0 s
+INFO:     127.0.0.1:53654 - "POST /speak HTTP/1.1" 200 OK
+2026-09-13 10:08:38,182 INFO ely.voix: « gert » : 1 phrase(s), 2.9 s d'audio en 1.7 s
+INFO:     127.0.0.1:53693 - "POST /speak HTTP/1.1" 200 OK
+2026-09-13 10:09:02,374 INFO ely.voix: « gert » : 1 phrase(s), 12.3 s d'audio en 4.6 s
+INFO:     127.0.0.1:53812 - "POST /speak HTTP/1.1" 200 OK
+2026-09-13 10:09:12,228 INFO ely.voix: « gert » : 1 phrase(s), 27.1 s d'audio en 11.5 s
+INFO:     127.0.0.1:53829 - "POST /speak HTTP/1.1" 200 OK
+2026-09-13 10:09:17,283 INFO ely.voix: « gert » : 1 phrase(s), 3.7 s d'audio en 1.6 s
+INFO:     127.0.0.1:53913 - "POST /speak HTTP/1.1" 200 OK
