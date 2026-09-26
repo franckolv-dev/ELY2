@@ -90,7 +90,8 @@ async def diff() -> str:
 
 async def run_tests(pattern: str = "", timeout: int = 900) -> tuple[bool, str]:
     tmp = tempfile.mkdtemp(prefix="ely-test-")
-    env = {**os.environ, "ELY_DATA_DIR": tmp, "PYTHONPATH": str(WORKTREE)}
+    # Pas de .pyc : une retouche de même taille dans la même seconde serait testée sur l'ancien bytecode
+    env = {**os.environ, "ELY_DATA_DIR": tmp, "PYTHONPATH": str(WORKTREE), "PYTHONDONTWRITEBYTECODE": "1"}
     for k in list(env):  # les tests n'appellent jamais de vrais modèles
         if k.endswith("_API_KEY"):
             env.pop(k)

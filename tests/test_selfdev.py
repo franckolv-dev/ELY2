@@ -1,6 +1,7 @@
 """Auto-amélioration : plugins à chaud, métriques, modification du code avec tests et déploiement."""
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -100,6 +101,19 @@ async def test_code_self_modification_pipeline(dev_ctx, fake_repo: Path):
     log = subprocess.run(["git", "log", "--oneline"], cwd=fake_repo, capture_output=True, text=True).stdout
     assert "ely-self: corrige add" in log
     assert db.one("SELECT * FROM improvements WHERE kind = 'code' AND status = 'deployed'")
+
+
+async def test_tests_run_on_edited_code_not_stale_bytecode(dev_ctx, fake_repo):
+    await execute(dev_ctx, "ely_code", {"action": "read", "path": "app.py"})
+    ok, _ = await pipeline.run_tests()
+    assert not ok
+    target = pipeline.WORKTREE / "app.py"
+    st = target.stat()
+    r = await execute(dev_ctx, "ely_edit", {"action": "replace", "path": "app.py", "old": "a - b", "new": "a + b"})
+    assert not r.is_error, r.content
+    os.utime(target, ns=(st.st_atime_ns, st.st_mtime_ns))  # même taille, même date : seul le contenu change
+    ok, out = await pipeline.run_tests()
+    assert ok, out
 
 
 async def test_syntax_error_is_reported(dev_ctx, fake_repo):
