@@ -12,6 +12,7 @@ for k in list(os.environ):
     if k.endswith("_API_KEY") or k in ("LMSTUDIO_BASE_URL", "TELEGRAM_BOT_TOKEN", "GOOGLE_CLIENT_ID"):
         os.environ.pop(k)
 os.environ["LMSTUDIO_BASE_URL"] = "http://127.0.0.1:9/v1"  # injoignable exprès
+os.environ["XTTS_URL"] = "http://127.0.0.1:9"  # idem : le vrai service vocal du Mac ne répond pas aux tests
 _chrome = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
 if Path(_chrome).exists() and not os.environ.get("ELY_BROWSER_EXECUTABLE"):
     os.environ["ELY_BROWSER_EXECUTABLE"] = _chrome

@@ -359,7 +359,11 @@ class ChromePage:
         await self.wait_for_load_state(wait_until, timeout)
 
     async def go_back(self, **_kw) -> None:
-        await self.evaluate("history.back()")
+        # pas de history.back() évalué dans la page : Chrome récent interrompt l'évaluation par la navigation
+        h = await self.cdp("Page.getNavigationHistory")
+        i = h.get("currentIndex", 0)
+        if i > 0:
+            await self.cdp("Page.navigateToHistoryEntry", entryId=h["entries"][i - 1]["id"])
         await asyncio.sleep(0.4)
         await self.wait_for_load_state("domcontentloaded", 15000)
 
