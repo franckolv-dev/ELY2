@@ -141,6 +141,13 @@ async def main() -> None:
         await m.wait_for_selector("text=Je te conseille", timeout=20000)
         await m.wait_for_timeout(800)
         await m.screenshot(path=OUT / "15-mobile-reponse.png")
+
+        # 7) déconnexion depuis le menu du compte (en bas de la barre latérale)
+        await page.click(".who-btn")
+        await page.wait_for_timeout(300)
+        await page.screenshot(path=OUT / "16-menu-compte.png")
+        await page.click("[role=menu] button:has-text('Se déconnecter')")
+        await page.wait_for_selector("text=Se connecter")
         await browser.close()
 
     print("ERREURS :", *errors, sep="\n  ") if errors else print("Aucune erreur JavaScript.")

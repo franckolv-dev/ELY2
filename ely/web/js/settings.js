@@ -302,6 +302,21 @@ function ChatGPTRow({ onChange }) {
   <//>`;
 }
 
+// Modèles essayés dans l'ordre quand le modèle choisi ne répond pas
+function FallbackRow({ fb, onSave }) {
+  const [text, setText] = useState(null);
+  if (!fb) return null;
+  const value = text ?? (fb.configured === "auto" ? "" : fb.configured);
+  const save = () => { if (text !== null) { onSave(text.trim()); setText(null); } };
+  return html`<${Row} title="Secours en cas de panne" hint="Essayés dans l'ordre si le modèle choisi ne répond pas.">
+    <input class="input mono" placeholder="auto" value=${value} onInput=${(e) => setText(e.target.value)}
+      onBlur=${save} onKeyDown=${(e) => { if (e.key === "Enter") e.target.blur(); }} />
+    <span class="meta-text">actuel : ${fb.effective ? fb.effective.split(", ").join(" → ") : "aucun"}</span>
+    <p class="desc">Automatique : tes autres choix de modèles, puis les gratuits (abonnement ChatGPT, LM Studio).
+      Jamais un modèle payant que tu n'as pas choisi. Sinon, une liste séparée par des virgules (fournisseur:modèle).</p>
+  <//>`;
+}
+
 function Models() {
   const [data, reload] = useLoad(() => Promise.all([get("/api/models"), get("/api/admin/models/all")]).then(([a, b]) => ({ ...a, all: b })));
   const [busy, setBusy] = useState(false);
@@ -325,6 +340,7 @@ function Models() {
       </select>
       <span class="meta-text">actuel : ${data.roles[role]?.effective || "—"}</span>
     <//>`)}
+    <${FallbackRow} fb=${data.roles.fallbacks} onSave=${async (v) => { await put("/api/admin/models", { fallbacks: v || "auto" }); reload(); toast("Secours enregistrés"); }} />
     <${ChatGPTRow} onChange=${reload} />
     <${Row} title="Fournisseurs" hint="Clés d'API lues dans le fichier .env, sans redémarrage.">
       <div class="list">${Object.entries(data.providers).map(([p, s]) => html`<div class="list-item center" key=${p}><div class="grow"><b>${p}</b><div class="sub">${s}</div></div>

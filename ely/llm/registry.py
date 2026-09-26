@@ -73,6 +73,8 @@ STATIC_FALLBACK = {
     "deepseek": ["deepseek-chat"],
     "openrouter": ["anthropic/claude-opus-5"],
 }
+# Sans coût au token : un repli automatique peut y aller même si personne ne les a choisis
+FREE_PROVIDERS = ("chatgpt", "lmstudio", "ollama")
 # Prix indicatifs ($ / million de tokens entrée, sortie) pour le tableau de bord
 PRICES = {
     "claude-fable-5": (10, 50), "claude-opus-5-5": (4, 20), "claude-opus-5": (5, 25), "claude-opus-4": (5, 25),
@@ -181,22 +183,25 @@ class Registry:
             return self._pick("fast") or self._pick("main")
         return None
 
+    def fallbacks_configured(self) -> str:
+        return (db.get_setting("model_fallbacks") or settings.model_fallbacks or "auto").strip() or "auto"
+
     def chain(self, role: str = "main", preferred: str | None = None) -> list[str]:
-        """Modèle principal puis replis : un par fournisseur, local en dernier."""
+        """Modèle du rôle puis replis. En automatique : les modèles choisis pour les autres rôles, puis les
+        gratuits (abonnement, local). Jamais un modèle payant que personne n'a choisi."""
         first = preferred or self.resolve(role) or self.resolve("main")
         out: list[str] = [first] if first else []
-        fb = (db.get_setting("model_fallbacks") or settings.model_fallbacks or "auto").strip()
-        if fb and fb != "auto":
+        fb = self.fallbacks_configured()
+        if fb != "auto":
             out += [x.strip() for x in fb.split(",") if x.strip()]
         else:
+            out += [ref for r in ("main", "strong", "fast") if (ref := self.resolve(r))]
             used = {r.split(":", 1)[0] for r in out}
-            base_role = "main" if role in ("main", "strong") else "fast"
-            while True:
-                nxt = self._pick(base_role, exclude_providers=used)
-                if not nxt:
-                    break
-                out.append(nxt)
-                used.add(nxt.split(":", 1)[0])
+            for prov in FREE_PROVIDERS:
+                others = set(self.providers) - {prov}
+                pick = prov not in used and (self._pick("main", exclude_providers=others) or self._pick("fast", exclude_providers=others))
+                if pick:
+                    out.append(pick)
         seen, uniq = set(), []
         for r in out:
             if r not in seen:
@@ -225,7 +230,6 @@ class Registry:
             raise LLMError("Aucun modèle disponible : configure une clé d'API ou lance LM Studio.", kind="not_found")
         errors = []
         transient = False
-        context = False
         for i, ref in enumerate(chain):
             try:
                 prov, mid = self.provider_for(ref)
@@ -241,8 +245,9 @@ class Registry:
                 except LLMError as e:
                     log.warning("modèle %s (essai %d) : %s", ref, attempt + 1, e)
                     errors.append(f"{ref}: {e}")
+                    if e.kind == "context":
+                        raise  # la boucle condense l'historique et réessaie le même modèle, sans en changer
                     transient = transient or e.retryable
-                    context = context or e.kind == "context"
                     if e.retryable and attempt < 2:
                         await asyncio.sleep(2 * (3 ** attempt))
                         if on_switch:
@@ -251,8 +256,7 @@ class Registry:
                     break
             if i + 1 < len(chain) and on_switch:
                 await on_switch(chain[i + 1], f"{ref} indisponible, bascule sur {chain[i + 1]}")
-        raise LLMError("Aucun modèle n'a pu répondre : " + " | ".join(errors[-4:]), retryable=transient,
-                       kind="context" if context else "error")
+        raise LLMError("Aucun modèle n'a pu répondre : " + " | ".join(errors[-4:]), retryable=transient)
 
     async def complete(self, prompt: str, *, role: str = "fast", system: str = "", max_tokens: int = 4000,
                        user_id: int | None = None, purpose: str = "background") -> str:
@@ -280,7 +284,9 @@ class Registry:
             pass
 
     def roles_view(self) -> dict:
-        return {r: {"configured": self.configured(r) or "auto", "effective": self.resolve(r)} for r in ROLES}
+        view = {r: {"configured": self.configured(r) or "auto", "effective": self.resolve(r)} for r in ROLES}
+        view["fallbacks"] = {"configured": self.fallbacks_configured(), "effective": ", ".join(self.chain("main")[1:])}
+        return view
 
 
 registry = Registry()

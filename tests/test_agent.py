@@ -245,3 +245,56 @@ async def test_delegate_runs_subagents_in_parallel(fake, user):
     assert asyncio.get_running_loop().time() - t0 < 2.0
     last = json.loads(db.one("SELECT data FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT 1", (cid,))["data"])
     assert "Rapport" in last["content"]
+
+
+def _three_providers(fake):
+    """LM Studio choisi pour l'agent, abonnement ChatGPT pour l'escalade, et une clé Anthropic jamais choisie."""
+    from conftest import FakeProvider
+    from ely.llm import registry
+    from ely.llm.base import ModelInfo
+
+    provs = {}
+    for name, mid in (("lmstudio", "google/gemma-4-26b-a4b"), ("chatgpt", "gpt-6-astra"), ("anthropic", "claude-opus-5")):
+        p = FakeProvider(name)
+        p.models = [ModelInfo(id=mid, provider=name, context=32768 if name == "lmstudio" else 200_000)]
+        registry.providers[name] = p
+        registry.catalog[name] = p.models
+        registry.status[name] = "ok (1 modèle)"
+        provs[name] = p
+    provs["anthropic"].script = lambda **k: "réponse payante"
+    provs["chatgpt"].script = lambda **k: "réponse de l'abonnement"
+    db.set_setting("model_main", "lmstudio:google/gemma-4-26b-a4b")
+    db.set_setting("model_strong", "chatgpt:gpt-6-astra")
+    return provs
+
+
+async def test_auto_fallbacks_never_use_an_unchosen_paid_model(fake, user):
+    from ely.llm import registry
+
+    provs = _three_providers(fake)
+    provs["lmstudio"].script = lambda **k: LLMError("LM Studio a planté", kind="error")
+    assert "anthropic:claude-opus-5" not in registry.chain("main")
+    r = await registry.chat(role="main", system=[], messages=[{"role": "user", "content": "Bonjour"}])
+    assert r.model == "chatgpt:gpt-6-astra" and not provs["anthropic"].calls
+    db.set_setting("model_fallbacks", "anthropic:claude-opus-5")  # choisi explicitement : là, oui
+    assert registry.chain("main")[1] == "anthropic:claude-opus-5"
+    db.set_setting("model_fallbacks", "auto")
+
+
+async def test_context_overflow_condenses_instead_of_switching_model(fake, user):
+    provs = _three_providers(fake)
+    state = {"overflowed": False}
+
+    def local(model, system, messages, tools):
+        if not last_user_text(messages).startswith("Tu es le contrôleur") and not state["overflowed"]:
+            state["overflowed"] = True
+            return LLMError("request exceeds the model's context length (32768)", kind="context", status=400)
+        return script(lambda m, t: "Voici ta réponse, avec gemma.")(model, system, messages, tools)
+
+    provs["lmstudio"].script = local
+    cid = new_conversation(user)
+    await runner.submit(user, cid, "Résume-moi les nouvelles du jour.")
+    await wait_idle(cid)
+    last = json.loads(db.one("SELECT data FROM messages WHERE conversation_id = ? AND role = 'assistant' ORDER BY id DESC LIMIT 1", (cid,))["data"])
+    assert state["overflowed"] and last["model"] == "lmstudio:google/gemma-4-26b-a4b"
+    assert not provs["anthropic"].calls and not provs["chatgpt"].calls

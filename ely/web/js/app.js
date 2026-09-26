@@ -54,6 +54,7 @@ function Login({ setup, onLogged }) {
 function Sidebar({ me, convs, cur, live, open, badge, onPick, onNew, onSettings, onSearch, onChanged, pwa }) {
   const [q, setQ] = useState("");
   const [menu, setMenu] = useState(null);
+  const [userMenu, setUserMenu] = useState(false);
   const timer = useRef();
   const groups = useMemo(() => {
     const out = [];
@@ -67,11 +68,11 @@ function Sidebar({ me, convs, cur, live, open, badge, onPick, onNew, onSettings,
     return out;
   }, [convs]);
   useEffect(() => {
-    if (menu === null) return;
-    const close = () => setMenu(null);
+    if (menu === null && !userMenu) return;
+    const close = () => { setMenu(null); setUserMenu(false); };
     addEventListener("click", close);
     return () => removeEventListener("click", close);
-  }, [menu]);
+  }, [menu, userMenu]);
   async function rename(c) {
     const t = prompt("Nouveau titre", c.title);
     if (t) { await patch(`/api/conversations/${c.id}`, { title: t }); onChanged(); }
@@ -107,10 +108,19 @@ function Sidebar({ me, convs, cur, live, open, badge, onPick, onNew, onSettings,
       ${!convs.length ? html`<div class="side-empty">${q ? "Aucun résultat." : "Tes conversations apparaîtront ici."}</div>` : null}
     </div>
     <div class="sidebar-foot">
-      <div class="avatar">${(me.name || "?")[0].toUpperCase()}</div>
-      <div class="who"><b>${me.name}</b><span>${me.role === "admin" ? "Administrateur" : me.email}</span></div>
+      <button class="who-btn" title="Mon compte" aria-haspopup="menu" aria-expanded=${userMenu}
+        onClick=${(e) => { e.stopPropagation(); setMenu(null); setUserMenu(!userMenu); }}>
+        <div class="avatar">${(me.name || "?")[0].toUpperCase()}</div>
+        <div class="who"><b>${me.name}</b><span>${me.role === "admin" ? "Administrateur" : me.email}</span></div>
+      </button>
       ${pwa ? html`<button class="icon-btn" title="Installer l'application" onClick=${pwa}><${Icon} name="phone" /></button>` : null}
       <button class="icon-btn" title="Réglages" onClick=${() => onSettings("profil")}><${Icon} name="gear" size=${16} stroke=${1.4} /></button>
+      ${userMenu ? html`<div class="popover up" role="menu" onClick=${(e) => e.stopPropagation()}>
+        <div class="popover-head">${me.email}</div>
+        <button role="menuitem" onClick=${() => { setUserMenu(false); onSettings("profil"); }}><${Icon} name="gear" size=${14} stroke=${1.4} /> Réglages</button>
+        <button role="menuitem" class="danger" onClick=${async () => { await post("/api/auth/logout"); location.href = "/"; }}>
+          <${Icon} name="logout" size=${14} /> Se déconnecter</button>
+      </div>` : null}
     </div>
   </aside>`;
 }
