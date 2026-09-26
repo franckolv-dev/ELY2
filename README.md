@@ -40,7 +40,11 @@ cd ELY2
 2. Relancez `./ely.sh`, ouvrez **http://localhost:8000** : le premier compte créé devient administrateur.
 3. Pour qu'Ely démarre toute seule avec le Mac : `./ely.sh service`.
 
-Les autres commandes : `./ely.sh install` (mise à jour des dépendances), `./ely.sh test` (tests), `./ely.sh unservice`.
+**Mettre Ely à jour** : `./ely.sh update`, puis relancez Ely (le service, lui, redémarre tout seul). Préférez-le à `git pull` :
+Ely modifie parfois son propre code (auto-amélioration), et `git pull` refuse alors de réunir les deux historiques ;
+`update` garde ses améliorations et les vôtres. La version qui tourne s'affiche au démarrage et dans le menu du compte.
+
+Les autres commandes : `./ely.sh install` (dépendances), `./ely.sh test` (tests), `./ely.sh unservice`.
 
 **« Le port 8000 est déjà utilisé »** : un autre programme l'occupe, souvent l'ancien Ely en Docker
 (`docker compose down` dans son dossier) ou une instance d'Ely déjà lancée en service. Ely affiche qui l'occupe ;
@@ -213,7 +217,7 @@ ely/
   api/        app.py, chat.py, settings_routes.py, admin.py
   web/        interface PWA bilingue français/anglais (Preact + htm, sans étape de compilation)
 extension/    « Ely pour Chrome » (MV3, sans compilation)
-tests/        87 tests : boucle, outils, navigateur réel, extension Chrome réelle, adaptateurs (faux serveurs OpenAI/Anthropic), API, MCP, auto-modification
+tests/        90 tests : boucle, outils, navigateur réel, extension Chrome réelle, adaptateurs (faux serveurs OpenAI/Anthropic), API, MCP, auto-modification
 scripts/      mock_llm.py (faux modèle pour essayer sans tokens), e2e_ui.py (parcours complet de l'interface)
 ```
 

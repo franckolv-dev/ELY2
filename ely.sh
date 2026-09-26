@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Ely — installation et lancement (macOS / Linux)
 #   ./ely.sh            installe si besoin puis lance Ely (supervisé)
+#   ./ely.sh update     récupère la dernière version (en gardant les améliorations faites par Ely) et redémarre le service
 #   ./ely.sh install    installe / met à jour les dépendances
 #   ./ely.sh service    démarrage automatique à l'ouverture de session (macOS)
 #   ./ely.sh unservice  retire le démarrage automatique
@@ -30,7 +31,7 @@ install() {
   fi
   if [ ! -f .env ]; then
     cp .env.example .env
-    echo "→ fichier .env créé : ajoute tes clés d'API (ou lance simplement LM Studio)."
+    echo "→ fichier .env créé : ajoutez vos clés d'API (ou lancez simplement LM Studio)."
   fi
   sha1sum pyproject.toml 2>/dev/null | cut -d' ' -f1 > .venv/.deps || shasum pyproject.toml | cut -d' ' -f1 > .venv/.deps
   echo "✓ installation terminée"
@@ -41,6 +42,10 @@ deps_changed() {
   now=$(sha1sum pyproject.toml 2>/dev/null | cut -d' ' -f1 || shasum pyproject.toml | cut -d' ' -f1)
   [ "$now" != "$(cat .venv/.deps 2>/dev/null)" ]
 }
+
+version() { git log -1 --format='%h (%cd)' --date=format:%d/%m/%Y 2>/dev/null; }
+
+elyport() { local port="${ELY_PORT:-$(env_value ELY_PORT)}"; echo "${port:-8000}"; }
 
 json_get() { "$PY" -c "import json,sys; print(json.load(open(sys.argv[1])).get(sys.argv[2],''))" "$1" "$2" 2>/dev/null; }
 
@@ -61,11 +66,11 @@ start() {
   local data port
   # l'environnement a priorité sur .env (comme côté Python)
   data="${ELY_DATA_DIR:-$(env_value ELY_DATA_DIR)}"; data="${data:-$ROOT/data}"
-  port="${ELY_PORT:-$(env_value ELY_PORT)}"; port="${port:-8000}"
+  port="$(elyport)"
   case "$data" in /*) ;; *) data="$ROOT/$data" ;; esac
   mkdir -p "$data/selfdev"
   trap 'kill "$CHILD" 2>/dev/null; wait "$CHILD" 2>/dev/null; exit 0' INT TERM
-  echo "→ Ely démarre sur http://localhost:${port}"
+  echo "→ Ely $(version) démarre sur http://localhost:${port}"
   while true; do
     rm -f "$data/selfdev/restart_requested"
     "$PY" -m ely &
@@ -109,6 +114,25 @@ start() {
   done
 }
 
+update() {
+  # fusion (et non rebase) : les commits qu'Ely a faits elle-même en s'améliorant sont conservés
+  echo "→ récupération de la dernière version…"
+  if ! git pull --no-rebase --no-edit; then
+    git merge --abort 2>/dev/null
+    echo "✗ mise à jour impossible (voir le message de git ci-dessus) : Ely reste en version $(version)."
+    return 1
+  fi
+  deps_changed && install
+  echo "✓ Ely est à jour : version $(version)"
+  if [ "$(uname)" = "Darwin" ] && [ -f "$HOME/Library/LaunchAgents/fr.ely.agent.plist" ]; then
+    launchctl kickstart -k "gui/$(id -u)/fr.ely.agent" && echo "↻ service Ely redémarré sur la nouvelle version"
+  elif curl -fs "http://127.0.0.1:$(elyport)/api/health" >/dev/null 2>&1; then
+    echo "⚠ Ely tourne encore avec l'ancienne version : arrêtez-la (Ctrl+C dans sa fenêtre), puis relancez ./ely.sh"
+  else
+    echo "→ lancez ./ely.sh"
+  fi
+}
+
 service() {
   if [ "$(uname)" != "Darwin" ]; then
     echo "Sur Linux, crée un service systemd qui lance : $ROOT/ely.sh"; exit 1
@@ -136,9 +160,10 @@ PLIST
 
 case "${1:-start}" in
   install) install ;;
+  update) update ;;
   start) start ;;
   service) install && service ;;
   unservice) launchctl unload "$HOME/Library/LaunchAgents/fr.ely.agent.plist" 2>/dev/null; rm -f "$HOME/Library/LaunchAgents/fr.ely.agent.plist"; echo "✓ retiré" ;;
   test) [ -x "$PY" ] || install; "$PY" -m pytest -q ;;
-  *) echo "usage : ./ely.sh [start|install|service|unservice|test]"; exit 1 ;;
+  *) echo "usage : ./ely.sh [start|update|install|service|unservice|test]"; exit 1 ;;
 esac

@@ -132,3 +132,14 @@ async def test_favicon_is_the_current_icon(client):
     assert r.content == (Path(__file__).resolve().parent.parent / "ely/web/icons/favicon-32.png").read_bytes()
     page = (await client.get("/")).text
     assert 'href="/static/icons/favicon-32.png?v=' in page  # adresse versionnée : les navigateurs rechargent l'icône
+
+
+async def test_after_an_update_the_browser_gets_the_new_interface(client):
+    """Les fichiers de l'interface sont revalidés à chaque chargement : jamais d'ancienne version tirée du cache
+    après `git pull` ; et la version qui tourne réellement est affichée (menu du compte)."""
+    r = await client.get("/static/js/app.js")
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-cache"
+    r2 = await client.get("/static/js/app.js", headers={"If-None-Match": r.headers["etag"]})
+    assert r2.status_code == 304  # inchangé : rien n'est retéléchargé
+    version = (await client.get("/api/setup")).json()["version"]
+    assert version and version == (await client.get("/api/health")).json()["code"]

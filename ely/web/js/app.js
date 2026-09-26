@@ -93,7 +93,7 @@ function Login({ setup, onLogged, dark, onTheme, lang, onLang }) {
 }
 
 // ---------------------------------------------------------------- barre latérale
-function Sidebar({ me, convs, cur, live, open, onPick, onNew, onSettings, onSearch, onChanged, onInstall, onExtension }) {
+function Sidebar({ me, version, convs, cur, live, open, onPick, onNew, onSettings, onSearch, onChanged, onInstall, onExtension }) {
   const [q, setQ] = useState("");
   const [menu, setMenu] = useState(null);
   const [userMenu, setUserMenu] = useState(false);
@@ -158,7 +158,7 @@ function Sidebar({ me, convs, cur, live, open, onPick, onNew, onSettings, onSear
         </button>
         <button class="icon-btn" title=${t("side.logout")} onClick=${logout}><${Icon} name="logout" size=${18} /></button>
         ${userMenu ? html`<div class="popover up" role="menu" onClick=${(e) => e.stopPropagation()}>
-          <div class="popover-head">${me.email}</div>
+          <div class="popover-head">${me.email}${version ? html`<span class="ver">${t("side.version", { v: version })}</span>` : null}</div>
           ${!isStandalone() ? html`<button role="menuitem" title=${t("side.installTip")} onClick=${() => { setUserMenu(false); onInstall(); }}>
             <${Icon} name="install" size=${16} /> ${t("side.install")}</button>` : null}
           ${!onPhone() ? html`<button role="menuitem" title=${t("side.extensionTip")} onClick=${() => { setUserMenu(false); onExtension(); }}>
@@ -452,7 +452,7 @@ function App() {
     extra=${html`<${ModelSelect} variant="chip" ...${modelProps} />`} />`;
 
   return html`<div class="layout">
-    <${Sidebar} me=${me} convs=${convs} cur=${cur} live=${live} open=${sideOpen}
+    <${Sidebar} me=${me} version=${setup?.version} convs=${convs} cur=${cur} live=${live} open=${sideOpen}
       onInstall=${() => (pwa ? pwa() : setDialog("install"))} onExtension=${() => { setDialog("extension"); setSideOpen(false); }}
       onPick=${pick} onNew=${() => pick(null)} onSettings=${(tab) => { setSettingsTab(tab); setSideOpen(false); }}
       onSearch=${loadConvs} onChanged=${(deleted) => { if (deleted === cur) setCur(null); loadConvs(); }} />

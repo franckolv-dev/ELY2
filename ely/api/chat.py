@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, 
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
-from .. import auth
+from .. import CODE_VERSION, auth
 from ..agent.runner import public_message, runner
 from ..browser import manager
 from ..config import settings
@@ -41,7 +41,8 @@ def _login_response(user: dict, request: Request, response: Response) -> dict:
 
 @router.get("/api/setup")
 def setup_state():
-    return {"needs_setup": not db.val("SELECT COUNT(*) FROM users"), "open_registration": settings.open_registration}
+    return {"needs_setup": not db.val("SELECT COUNT(*) FROM users"), "open_registration": settings.open_registration,
+            "version": CODE_VERSION}
 
 
 @router.post("/api/auth/register")

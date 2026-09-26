@@ -27,7 +27,7 @@ const FR = {
   "side.running": "En cours", "side.waiting": "Attend votre réponse", "side.options": "Options",
   "side.rename": "Renommer", "side.renamePrompt": "Nouveau titre", "side.pin": "Épingler", "side.unpin": "Désépingler",
   "side.deleteConfirm": "Supprimer cette conversation ?", "side.settings": "Réglages", "side.personal": "Espace personnel",
-  "side.account": "Mon compte", "side.logout": "Se déconnecter", "side.install": "Installer", "side.installTip": "Installer l'application",
+  "side.account": "Mon compte", "side.logout": "Se déconnecter", "side.version": "Version {v}", "side.install": "Installer", "side.installTip": "Installer l'application",
   "side.extension": "Extension Chrome", "side.extensionTip": "Installer l'extension Ely pour Chrome",
   // en-tête
   "head.yourSpace": "Votre espace", "head.conversations": "Conversations",
@@ -240,7 +240,7 @@ const EN = {
   "side.running": "In progress", "side.waiting": "Waiting for your reply", "side.options": "Options",
   "side.rename": "Rename", "side.renamePrompt": "New title", "side.pin": "Pin", "side.unpin": "Unpin",
   "side.deleteConfirm": "Delete this conversation?", "side.settings": "Settings", "side.personal": "Personal space",
-  "side.account": "My account", "side.logout": "Sign out", "side.install": "Install", "side.installTip": "Install the app",
+  "side.account": "My account", "side.logout": "Sign out", "side.version": "Version {v}", "side.install": "Install", "side.installTip": "Install the app",
   "side.extension": "Chrome extension", "side.extensionTip": "Install the Ely extension for Chrome",
   "head.yourSpace": "Your space", "head.conversations": "Conversations",
   "head.handsFree": "Hands-free mode (voice conversation)", "head.handsFreeOn": "Hands-free: speak, Ely answers aloud",
