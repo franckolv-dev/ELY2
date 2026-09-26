@@ -76,6 +76,22 @@ async def test_files(client, user):
     assert (await client.get("/files/../../ely.db", headers=h)).status_code in (400, 404)
 
 
+async def test_elys_working_files_stay_out_of_the_users_files(client, user):
+    """Les scripts et essais intermédiaires d'Ely ne s'affichent pas parmi les documents de l'utilisateur."""
+    from conftest import new_conversation
+
+    from ely.tools import ToolContext, execute
+
+    h = await login(client, user["email"], "motdepasse")
+    ctx = ToolContext(user=user, conversation_id=new_conversation(user), run_id=0, emit=lambda *a: asyncio.sleep(0))
+    r = await execute(ctx, "file_write", {"path": ".travail/injection.js", "content": "document.title"})
+    assert not r.is_error and r.files == []
+    r = await execute(ctx, "file_write", {"path": "Promotion.md", "content": "# Promotion"})
+    assert r.files == ["Promotion.md"]
+    shown = [f["path"] for f in (await client.get("/api/files", headers=h)).json()]
+    assert "Promotion.md" in shown and not any("injection" in f for f in shown)
+
+
 async def test_memory_and_integrations(client, user):
     h = await login(client, user["email"], "motdepasse")
     await client.put("/api/memory/profile", headers=h, json={"content": "## Identité\n- Franck, développeur"})
@@ -106,3 +122,51 @@ async def test_admin_models_and_selfdev(client, user, fake):
     assert "journal" in sd and "metrics" in sd
     health = (await client.get("/api/health")).json()
     assert health["ok"] and health["tools"] >= 25
+
+
+async def test_favicon_is_the_current_icon(client):
+    from pathlib import Path
+
+    r = await client.get("/favicon.ico")
+    assert r.status_code == 200 and r.headers["content-type"] == "image/png"
+    assert r.content == (Path(__file__).resolve().parent.parent / "ely/web/icons/favicon-32.png").read_bytes()
+    page = (await client.get("/")).text
+    assert 'href="/static/icons/favicon-32.png?v=' in page  # adresse versionnée : les navigateurs rechargent l'icône
+
+
+async def test_after_an_update_the_browser_gets_the_new_interface(client):
+    """Les fichiers de l'interface sont revalidés à chaque chargement : jamais d'ancienne version tirée du cache
+    après `git pull` ; et la version qui tourne réellement est affichée (menu du compte)."""
+    r = await client.get("/static/js/app.js")
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-cache"
+    r2 = await client.get("/static/js/app.js", headers={"If-None-Match": r.headers["etag"]})
+    assert r2.status_code == 304  # inchangé : rien n'est retéléchargé
+    version = (await client.get("/api/setup")).json()["version"]
+    assert version and version == (await client.get("/api/health")).json()["code"]
+
+
+async def test_recorded_voice_is_relayed_from_the_macs_voice_service(client, user, xtts, monkeypatch):
+    """La voix clonée de l'ancienne version (service XTTS du Mac) : Ely la propose et relaie la synthèse."""
+    from ely.config import settings
+
+    h = await login(client, user["email"], "motdepasse")
+    assert (await client.get("/api/tts/voices", headers=h)).json() == {"voices": ["gert"], "default": "gert"}
+    r = await client.post("/api/tts", headers=h, json={"text": "Votre  train part\nà 8 h 12.", "voice": "gert"})
+    assert r.status_code == 200 and r.headers["content-type"] == "audio/wav" and r.content[:4] == b"RIFF"
+    assert xtts == [{"text": "Votre train part à 8 h 12.", "voice": "gert", "language": "fr"}]
+    # service arrêté : aucune voix enregistrée proposée, et la page se rabat sur les voix du navigateur
+    monkeypatch.setattr(settings, "xtts_url", "http://127.0.0.1:9")
+    assert (await client.get("/api/tts/voices", headers=h)).json()["voices"] == []
+    assert (await client.post("/api/tts", headers=h, json={"text": "Bonjour."})).status_code == 502
+
+
+async def test_downloaded_extension_leaves_out_the_store_notes(client, user):
+    """Le zip de l'extension n'emporte que l'extension : ni CHROMEWEBSTORE.md ni fichiers cachés."""
+    import io
+    import zipfile
+
+    h = await login(client, user["email"], "motdepasse")
+    r = await client.get("/api/chrome/extension.zip", headers=h, params={"url": "http://ely.test"})
+    names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
+    assert "ely-chrome/manifest.json" in names and "ely-chrome/config.json" in names
+    assert not [n for n in names if n.endswith(".md") or "/." in n], names

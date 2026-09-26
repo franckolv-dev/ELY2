@@ -18,14 +18,35 @@ def next_cron(expr: str, tz: str, after: float | None = None) -> float:
     return croniter(expr, base).get_next(dt.datetime).timestamp()
 
 
+def _when_text(ts: float, tz: str) -> str:
+    return dt.datetime.fromtimestamp(ts, ZoneInfo(tz)).strftime("%d/%m/%Y à %H:%M")
+
+
+def _next_run(cron: str, when: str, tz: str) -> float:
+    """Prochaine exécution ; ValueError avec un message lisible si l'horaire ne convient pas."""
+    if cron:
+        if not croniter.is_valid(cron):
+            raise ValueError(f"Expression cron invalide : {cron}")
+        return next_cron(cron, tz)
+    nxt = parse_local(when, tz).timestamp()
+    if nxt < time.time() - 60:
+        raise ValueError("Cette date est déjà passée.")
+    return nxt
+
+
 @tool("schedule", """Planifie une tâche que tu exécuteras seul plus tard : rappel, veille, rapport récurrent, publication programmée…
 action=create : instruction (ce que tu devras faire, formulé de façon autonome) + when (date/heure locale ISO, une fois)
-ou cron (récurrent, 5 champs, heure locale, ex. « 0 8 * * 1-5 » = jours ouvrés à 8 h). action=list · action=cancel(id).""",
-      {"action": {"type": "string", "enum": ["create", "list", "cancel"]}, "instruction": {"type": "string"},
-       "when": {"type": "string"}, "cron": {"type": "string"}, "id": {"type": "integer"}},
+ou cron (récurrent, 5 champs, heure locale, ex. « 0 8 * * 1-5 » = jours ouvrés à 8 h).
+action=update(id, instruction?, when?, cron?) : pour préciser ou corriger une tâche existante, jamais une deuxième tâche.
+action=list · action=cancel(id).""",
+      {"action": {"type": "string", "enum": ["create", "update", "list", "cancel"]}, "instruction": {"type": "string"},
+       "when": {"type": "string"}, "cron": {"type": "string"}, "id": {"type": "integer"},
+       "distinct": {"type": "boolean", "description": "create : autre tâche que celle déjà prévue au même horaire"}},
       ["action"], label="Planification", icon="⏰", timeout=20)
-async def schedule(ctx: ToolContext, action: str, instruction: str = "", when: str = "", cron: str = "", id: int | None = None) -> ToolResult:
+async def schedule(ctx: ToolContext, action: str, instruction: str = "", when: str = "", cron: str = "", id: int | None = None,
+                   distinct: bool = False) -> ToolResult:
     tz = user_tz(ctx.user)
+    cron = " ".join((cron or "").split())
     if action == "list":
         rows = db.all("SELECT * FROM schedules WHERE user_id = ? AND enabled = 1 ORDER BY next_run", (ctx.user_id,))
         if not rows:
@@ -36,20 +57,40 @@ async def schedule(ctx: ToolContext, action: str, instruction: str = "", when: s
     if action == "cancel":
         n = db.run("UPDATE schedules SET enabled = 0 WHERE id = ? AND user_id = ?", (id, ctx.user_id))
         return ToolResult(f"Tâche #{id} annulée." if n else f"Tâche #{id} introuvable.", is_error=not n)
+    if action == "update":
+        row = db.one("SELECT * FROM schedules WHERE id = ? AND user_id = ? AND enabled = 1", (id, ctx.user_id))
+        if not row:
+            return ToolResult(f"Tâche #{id} introuvable (action=list pour les voir).", is_error=True)
+        fields = {"instruction": instruction} if instruction else {}
+        if cron or when:
+            try:
+                fields.update(cron="" if when and not cron else cron, next_run=_next_run(cron, when, tz))
+            except ValueError as e:
+                return ToolResult(str(e), is_error=True)
+        if not fields:
+            return ToolResult("Rien à modifier : donne instruction, when ou cron.", is_error=True)
+        db.update("schedules", "id = ?", (id,), **fields)
+        row = db.one("SELECT * FROM schedules WHERE id = ?", (id,))
+        return ToolResult(f"Tâche #{id} mise à jour, prochaine exécution le {_when_text(row['next_run'], tz)}.")
     if not instruction or not (when or cron):
         return ToolResult("Il faut instruction et when (ou cron).", is_error=True)
-    if cron:
-        if not croniter.is_valid(cron):
-            return ToolResult(f"Expression cron invalide : {cron}", is_error=True)
-        nxt = next_cron(cron, tz)
-    else:
-        nxt = parse_local(when, tz).timestamp()
-        if nxt < time.time() - 60:
-            return ToolResult("Cette date est déjà passée.", is_error=True)
+    try:
+        nxt = _next_run(cron, when, tz)
+    except ValueError as e:
+        return ToolResult(str(e), is_error=True)
+    # même horaire qu'une tâche existante : presque toujours la même demande, reformulée ou complétée
+    same = None if distinct else db.one(
+        "SELECT * FROM schedules WHERE user_id = ? AND enabled = 1 AND (cron = ? AND cron != '' OR cron = '' AND ? = '' "
+        "AND abs(next_run - ?) < 60)", (ctx.user_id, cron, cron, nxt))
+    if same:
+        return ToolResult(
+            f"Rien de créé : la tâche #{same['id']} est déjà prévue à cet horaire (« {same['instruction'][:300]} »). "
+            f"Même demande, précisée ou reformulée → action=update id={same['id']}. "
+            "Tâche vraiment différente → refais create avec distinct=true.", is_error=True)
     sid = db.insert("schedules", user_id=ctx.user_id, conversation_id=ctx.conversation_id, instruction=instruction,
                     cron=cron, next_run=nxt, enabled=1, created_at=now())
-    when_txt = dt.datetime.fromtimestamp(nxt, ZoneInfo(tz)).strftime("%d/%m/%Y à %H:%M")
-    return ToolResult(f"Tâche #{sid} planifiée{' (récurrente : ' + cron + ')' if cron else ''}, prochaine exécution le {when_txt}.")
+    return ToolResult(f"Tâche #{sid} planifiée{' (récurrente : ' + cron + ')' if cron else ''}, "
+                      f"prochaine exécution le {_when_text(nxt, tz)}.")
 
 
 @tool("ask_user", """Pose une question à l'utilisateur et attend sa réponse (il est notifié sur son téléphone).
@@ -64,7 +105,8 @@ async def ask_user(ctx: ToolContext, question: str, options: list[str] | None = 
     return ToolResult(f"Réponse de l'utilisateur : {answer}")
 
 
-@tool("notify", "Envoie une notification sur le téléphone/ordinateur de l'utilisateur (utile pour les tâches planifiées ou longues).",
+@tool("notify", "Envoie une notification à l'utilisateur : téléphone, ordinateur et Telegram s'il l'a relié "
+      "(c'est ainsi qu'on lui écrit sur Telegram). Utile pour les tâches planifiées ou longues.",
       {"title": {"type": "string"}, "message": {"type": "string"}}, ["message"], label="Notification", icon="🔔", timeout=30)
 async def notify(ctx: ToolContext, message: str, title: str = "Ely") -> ToolResult:
     n = await send_notification(ctx.user_id, title, message, url=f"/?c={ctx.conversation_id}")

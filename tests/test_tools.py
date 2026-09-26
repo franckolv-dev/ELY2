@@ -96,6 +96,33 @@ async def test_schedule_and_scheduler(fake, ctx):
     await asyncio.sleep(0.3)
 
 
+async def test_rephrased_schedule_updates_the_task_instead_of_duplicating_it(ctx):
+    """« Chaque matin à 9 h… » redemandé, précisé ou reformulé : une seule tâche, mise à jour."""
+    def active():
+        return db.all("SELECT * FROM schedules WHERE user_id = ? AND enabled = 1", (ctx.user_id,))
+
+    r = await execute(ctx, "schedule", {"action": "create", "instruction": "Résumé de mes e-mails et de l'agenda", "cron": "0 9 * * *"})
+    assert "planifiée" in r.content, r.content
+    sid = active()[0]["id"]
+    r = await execute(ctx, "schedule", {"action": "create", "cron": "0  9 * * *",
+                                        "instruction": "Chaque matin : e-mails, agenda, actualités, envoi sur Telegram"})
+    assert r.is_error and f"#{sid}" in r.content and "update" in r.content
+    assert len(active()) == 1
+    r = await execute(ctx, "schedule", {"action": "update", "id": sid,
+                                        "instruction": "Chaque matin : e-mails, agenda, actualités, envoi sur Telegram"})
+    assert not r.is_error, r.content
+    [row] = active()
+    assert "Telegram" in row["instruction"] and row["cron"] == "0 9 * * *"
+    # une vraie autre tâche au même horaire reste possible
+    r = await execute(ctx, "schedule", {"action": "create", "instruction": "Arroser les plantes", "cron": "0 9 * * *", "distinct": True})
+    assert not r.is_error and len(active()) == 2
+    # changer l'horaire d'une tâche existante
+    r = await execute(ctx, "schedule", {"action": "update", "id": sid, "cron": "30 8 * * 1-5"})
+    assert not r.is_error and db.one("SELECT cron FROM schedules WHERE id = ?", (sid,))["cron"] == "30 8 * * 1-5"
+    r = await execute(ctx, "schedule", {"action": "update", "id": 999999, "instruction": "x"})
+    assert r.is_error
+
+
 async def test_memory_tools(ctx):
     await execute(ctx, "remember", {"fact": "Le médecin traitant de Franck est le Dr Martin à Villeurbanne", "category": "santé"})
     r = await execute(ctx, "remember", {"fact": "Le médecin traitant de Franck est le Dr Martin à Villeurbanne (Doctolib)", "category": "santé"})
@@ -165,3 +192,32 @@ async def test_browser_fills_a_form(ctx, tmp_path):
     from ely.browser import manager
 
     await manager.shutdown()
+
+
+async def test_seed_skills_match_real_requests(ctx):
+    from ely.memory.seed import seed_skills
+    from ely.memory.store import relevant_skills
+
+    seed_skills()
+    assert seed_skills() == 0  # idempotent
+    hits = relevant_skills(ctx.user_id, "Prends-moi rendez-vous chez le dentiste sur Doctolib jeudi")
+    assert hits and "Doctolib" in hits[0]["name"]
+    hits = relevant_skills(ctx.user_id, "Publie un post sur LinkedIn à propos de notre catalogue")
+    assert hits and "LinkedIn" in hits[0]["name"]
+    assert not relevant_skills(ctx.user_id, "Quelle est la capitale du Japon ?")
+
+
+async def test_seed_skills_read_email_codes_instead_of_asking():
+    from ely.db import db
+    from ely.memory.seed import seed_skills
+
+    seed_skills()
+    row = db.one("SELECT id, content FROM skills WHERE name = 'Prendre un rendez-vous médical sur Doctolib'")
+    # base d'une version précédente : le code reçu par e-mail était demandé à l'utilisateur
+    old = row["content"].split("   Code reçu par e-mail")[0] + "   Code reçu par SMS ou e-mail → ask_user (c'est le seul cas où demander).\n5. suite"
+    db.run("UPDATE skills SET content = ? WHERE id = ?", (old, row["id"]))
+    seed_skills()
+    content = db.val("SELECT content FROM skills WHERE id = ?", (row["id"],))
+    assert "ask_user (c'est le seul cas" in content and "SMS ou e-mail → ask_user" not in content
+    assert "le lire dans la messagerie" in content and content.endswith("5. suite")
+    assert db.one("SELECT rowid FROM skills_fts WHERE skills_fts MATCH 'messagerie' AND rowid = ?", (row["id"],))

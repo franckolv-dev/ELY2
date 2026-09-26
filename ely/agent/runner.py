@@ -59,6 +59,8 @@ def public_message(row: dict) -> dict:
     data.pop("thinking", None)
     if data.get("images"):
         data["images"] = len(data["images"])
+    if data.get("role") == "tool" and len(data.get("content") or "") > 4000:
+        data["content"] = data["content"][:4000] + "…"
     c = data.get("content")
     if isinstance(c, list):
         data["content"] = [p if p.get("type") != "image" else {"type": "image", "media_type": p.get("media_type"),
@@ -86,8 +88,12 @@ class Runner:
         for q in list(self.subscribers.get(user_id, ())):
             try:
                 q.put_nowait(event)
-            except asyncio.QueueFull:
-                pass
+            except asyncio.QueueFull:  # client lent : on jette le plus ancien, jamais les fins de tâche
+                try:
+                    q.get_nowait()
+                    q.put_nowait(event)
+                except (asyncio.QueueEmpty, asyncio.QueueFull):
+                    pass
         for fn in self.listeners:
             if event["type"] in ("message", "ask_user", "tool_start"):
                 asyncio.ensure_future(fn(user_id, event))
@@ -132,7 +138,7 @@ class Runner:
         row = db.one("SELECT * FROM messages WHERE id = ?", (mid,))
         await self.emit(st, "message", {"message": public_message(row)})
         text = message_text(msg)
-        if st.ask_future and not st.ask_future.done():
+        if st.ask_future and not st.ask_future.done() and not kind:
             st.ask_future.set_result(text or "(réponse vide)")
             return {"message_id": mid, "run_id": st.run_id, "mode": "answer"}
         if st.task and not st.task.done():
@@ -168,7 +174,11 @@ class Runner:
             except Exception as e:
                 log.exception("tâche %s", run_id)
                 db.run("UPDATE runs SET status = 'error', error = ?, updated_at = ? WHERE id = ?", (str(e)[:1000], now(), run_id))
-                note = {"role": "assistant", "content": f"⚠️ Erreur interne : {e}", "kind": "note"}
+                from ..llm import LLMError
+
+                hint = (" — vérifie les clés d'API dans .env ou que LM Studio est lancé (Réglages → Modèles)."
+                        if isinstance(e, LLMError) and "Aucun modèle disponible" not in str(e) else "")
+                note = {"role": "assistant", "content": f"⚠️ {e}{hint}", "kind": "note"}
                 mid = save_message(st.conversation_id, run_id, note)
                 await self.emit(st, "message", {"message": public_message(db.one("SELECT * FROM messages WHERE id = ?", (mid,)))})
             finally:

@@ -91,6 +91,15 @@ def admin_user(user: dict = Depends(current_user)) -> dict:
     return user
 
 
+def addresses_informally(user: dict | None) -> bool:
+    """Vouvoiement par défaut ; tutoiement seulement si la personne l'a demandé."""
+    return ((user or {}).get("settings") or {}).get("address") == "tu"
+
+
+def tv(user: dict | None, vous: str, tu: str) -> str:
+    return tu if addresses_informally(user) else vous
+
+
 def update_user_settings(user_id: int, **values) -> dict:
     u = get_user(user_id)
     s = {**u["settings"], **values}

@@ -21,9 +21,12 @@ def user_tz(user: dict) -> str:
 
 
 def parse_local(value: str, tz: str) -> dt.datetime:
+    """Date ISO → heure locale de l'utilisateur (une heure UTC « …Z » est convertie)."""
     v = value.strip().replace(" ", "T")
+    if v.endswith("Z"):
+        v = v[:-1] + "+00:00"
     d = dt.datetime.fromisoformat(v) if "T" in v else dt.datetime.fromisoformat(v + "T00:00")
-    return d if d.tzinfo else d.replace(tzinfo=ZoneInfo(tz))
+    return d.astimezone(ZoneInfo(tz)) if d.tzinfo else d.replace(tzinfo=ZoneInfo(tz))
 
 
 def _google(ctx: ToolContext) -> bool:
@@ -165,8 +168,10 @@ def ics_feed(user_id: int) -> str:
     def esc(s: str) -> str:
         return s.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
 
+    from ..auth import get_user
+
     lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Ely//Agenda//FR", "X-WR-CALNAME:Ely", "CALSCALE:GREGORIAN"]
-    tz = settings.timezone
+    tz = user_tz(get_user(user_id) or {})
     for r in db.all("SELECT * FROM events WHERE user_id = ? ORDER BY start", (user_id,)):
         s = parse_local(r["start"], tz).astimezone(dt.timezone.utc)
         e = parse_local(r["end"], tz).astimezone(dt.timezone.utc)

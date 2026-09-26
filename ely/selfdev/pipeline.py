@@ -61,8 +61,15 @@ async def prepare() -> str:
 
 
 async def ensure_session() -> None:
-    """Crée la copie si besoin, sans écraser un travail en cours."""
+    """Crée la copie si besoin, sans écraser un travail en cours.
+
+    Si la copie contient des commits absents de la version active (retour arrière effectué par le
+    lanceur, fusion refusée), elle est remise à niveau : on ne redéploie jamais une version rejetée."""
     if not (WORKTREE / ".git").exists():
+        await prepare()
+        return
+    code, out = await git("rev-list", "--count", f"{await head()}..{BRANCH}")
+    if code or out.strip() != "0":
         await prepare()
 
 
@@ -83,7 +90,8 @@ async def diff() -> str:
 
 async def run_tests(pattern: str = "", timeout: int = 900) -> tuple[bool, str]:
     tmp = tempfile.mkdtemp(prefix="ely-test-")
-    env = {**os.environ, "ELY_DATA_DIR": tmp, "PYTHONPATH": str(WORKTREE)}
+    # Pas de .pyc : une retouche de même taille dans la même seconde serait testée sur l'ancien bytecode
+    env = {**os.environ, "ELY_DATA_DIR": tmp, "PYTHONPATH": str(WORKTREE), "PYTHONDONTWRITEBYTECODE": "1"}
     for k in list(env):  # les tests n'appellent jamais de vrais modèles
         if k.endswith("_API_KEY"):
             env.pop(k)

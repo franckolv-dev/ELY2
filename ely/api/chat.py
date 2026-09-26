@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, 
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
-from .. import auth
+from .. import CODE_VERSION, auth
 from ..agent.runner import public_message, runner
 from ..browser import manager
 from ..config import settings
@@ -41,7 +41,8 @@ def _login_response(user: dict, request: Request, response: Response) -> dict:
 
 @router.get("/api/setup")
 def setup_state():
-    return {"needs_setup": not db.val("SELECT COUNT(*) FROM users"), "open_registration": settings.open_registration}
+    return {"needs_setup": not db.val("SELECT COUNT(*) FROM users"), "open_registration": settings.open_registration,
+            "version": CODE_VERSION}
 
 
 @router.post("/api/auth/register")
@@ -50,7 +51,7 @@ def register(body: Credentials, request: Request, response: Response):
     if not first and not settings.open_registration:
         inv = db.one("SELECT code FROM invites WHERE code = ? AND used_by IS NULL", (body.invite.strip(),))
         if not inv:
-            raise HTTPException(403, "Inscription sur invitation : demande un code à l'administrateur")
+            raise HTTPException(403, "Inscription sur invitation : demandez un code à l'administrateur")
     user = auth.create_user(body.email, body.name, body.password)
     if not first and body.invite:
         db.run("UPDATE invites SET used_by = ? WHERE code = ?", (user["id"], body.invite.strip()))
@@ -252,16 +253,22 @@ async def events(request: Request, user=Depends(auth.current_user)):
 # ---------------------------------------------------------------------- navigateur en direct
 @router.get("/api/browser/frame")
 async def browser_frame(conversation_id: int | None = None, fresh: bool = False, user=Depends(auth.current_user)):
-    ub = manager.users.get(user["id"])
-    if ub and (fresh or not conversation_id):
+    ub = manager.current(user["id"])
+
+    async def live():
         page = await ub.page(ub.active_key)
-        return {"image": await ub.frame(page), "url": page.url}
+        try:
+            return {"image": await ub.frame(page), "url": page.url}
+        except Exception:  # Chrome peut refuser la capture d'une fenêtre masquée
+            return {"image": None, "url": page.url}
+
+    if ub and (fresh or not conversation_id):
+        return await live()
     st = runner.states.get(conversation_id or 0)
     if st and st.last_frame and st.user_id == user["id"]:
         return st.last_frame
     if ub:
-        page = await ub.page(ub.active_key)
-        return {"image": await ub.frame(page), "url": page.url}
+        return await live()
     return {"image": None, "url": ""}
 
 
@@ -292,7 +299,10 @@ async def browser_action(body: BrowserAction, user=Depends(auth.current_user)):
     elif body.action == "back":
         await page.go_back()
     await asyncio.sleep(0.8)
-    return {"image": await ub.frame(page), "url": page.url}
+    try:
+        return {"image": await ub.frame(page), "url": page.url}
+    except Exception:
+        return {"image": None, "url": page.url}
 
 
 # ---------------------------------------------------------------------- fichiers
@@ -351,6 +361,41 @@ def serve_file(path: str, download: bool = False, user=Depends(auth.current_user
 
 
 # ---------------------------------------------------------------------- voix
+# Voix enregistrées : le service vocal XTTS du Mac (voix clonée), relayé par Ely pour que la page n'ait
+# qu'une adresse à connaître, en local comme par l'adresse publique.
+@router.get("/api/tts/voices")
+async def tts_voices(user=Depends(auth.current_user)):
+    try:
+        async with httpx.AsyncClient(timeout=3) as c:
+            r = await c.get(f"{settings.xtts_url}/voices")
+        r.raise_for_status()
+        data = r.json()
+        return {"voices": data.get("voices") or [], "default": data.get("default_voice") or ""}
+    except (httpx.HTTPError, ValueError):
+        return {"voices": [], "default": ""}  # service arrêté ou absent : on lit avec les voix du navigateur
+
+
+class SpeakRequest(BaseModel):
+    text: str
+    voice: str = ""
+    language: str = "fr"
+
+
+@router.post("/api/tts")
+async def tts(body: SpeakRequest, user=Depends(auth.current_user)):
+    text = " ".join(body.text.split())[:1000]
+    if not text:
+        raise HTTPException(400, "Texte vide")
+    try:
+        async with httpx.AsyncClient(timeout=120) as c:
+            r = await c.post(f"{settings.xtts_url}/speak", json={"text": text, "voice": body.voice or None,
+                                                                   "language": body.language[:5] or "fr"})
+        r.raise_for_status()
+    except httpx.HTTPError as e:
+        raise HTTPException(502, f"Service vocal injoignable ({settings.xtts_url}) : {e}") from e
+    return Response(r.content, media_type="audio/wav", headers={"Cache-Control": "no-store"})
+
+
 @router.post("/api/transcribe")
 async def transcribe(file: UploadFile = File(...), user=Depends(auth.current_user)):
     import os

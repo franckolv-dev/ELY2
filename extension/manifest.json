@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Ely pour Chrome",
+  "short_name": "Ely",
+  "version": "1.2.1",
+  "description": "Permet à Ely d'agir dans votre Chrome, avec vos sessions (messagerie, Doctolib…), dans une fenêtre à part.",
+  "minimum_chrome_version": "116",
+  "permissions": ["debugger", "tabs", "cookies", "storage", "alarms"],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "background.js" },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Ely",
+    "default_icon": { "16": "icons/icon-16.png", "48": "icons/icon-48.png", "128": "icons/icon-128.png" }
+  },
+  "icons": { "16": "icons/icon-16.png", "48": "icons/icon-48.png", "128": "icons/icon-128.png" }
+}

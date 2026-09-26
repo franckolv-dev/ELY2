@@ -9,3 +9,11 @@ build/
 dist/
 .DS_Store
 node_modules/
+
+# « Empaqueter l'extension » de Chrome : paquet et clé privée, à ne jamais publier
+*.crx
+*.pem
+
+# Service vocal (voice/xtts) : l'enregistrement de la voix et le journal restent sur le Mac
+voice/xtts/voices/
+voice/xtts/xtts.log

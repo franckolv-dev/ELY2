@@ -16,6 +16,7 @@ import logging
 import re
 from dataclasses import replace
 
+from ..auth import tv
 from ..config import settings
 from ..db import db, now
 from ..llm import LLMError, parse_json_loose, registry
@@ -108,13 +109,19 @@ Règles :
 - Si l'agent déclare un blocage : non satisfaite s'il reste des alternatives raisonnables (autre site, navigateur,
   autre méthode, recherche).
 Réponds uniquement en JSON : {{"done": true ou false, "missing": "ce qui manque et comment y arriver (1-2 phrases)"}}"""
-    try:
-        raw = await registry.complete(prompt, role="fast", max_tokens=600, user_id=user_id, purpose="verify")
-        v = parse_json_loose(raw)
-        return bool(v.get("done", True)), str(v.get("missing", ""))[:600]
-    except Exception as e:  # contrôleur indisponible : on ne bloque jamais l'utilisateur
-        log.info("vérification impossible : %s", e)
-        return True, ""
+    for attempt in range(2):
+        try:
+            raw = await registry.complete(prompt, role="fast", max_tokens=3000, user_id=user_id, purpose="verify")
+            v = parse_json_loose(raw)
+            return bool(v.get("done", True)), str(v.get("missing", ""))[:600]
+        except Exception as e:  # réponse tronquée ou illisible : un nouvel essai, puis on ne bloque jamais l'utilisateur
+            log.info("vérification impossible (essai %d) : %s", attempt + 1, e)
+    return True, ""
+
+
+def run_messages(run_id: int) -> list[dict]:
+    """Messages complets d'une tâche, depuis la base (indépendant de la compaction du contexte)."""
+    return [json.loads(r["data"]) for r in db.all("SELECT data FROM messages WHERE run_id = ? ORDER BY id", (run_id,))]
 
 
 # ---------------------------------------------------------------------- compaction
@@ -162,6 +169,7 @@ class AgentLoop:
         self.state = json.loads(run["state"] or "{}")
         self.conv = db.one("SELECT * FROM conversations WHERE id = ?", (self.conv_id,))
         self.escalated = bool(self.state.get("escalated"))
+        self.ask_lock = asyncio.Lock()
 
     async def emit(self, type_: str, data: dict | None = None) -> None:
         await self.runner.emit(self.st, type_, data)
@@ -184,6 +192,10 @@ class AgentLoop:
 
     # ---------------------------------------------------------------- questions à l'utilisateur
     async def ask(self, question: str, options: list[str] | None, tool_call_id: str) -> str:
+        async with self.ask_lock:  # deux ask_user dans le même tour : l'un après l'autre
+            return await self._ask(question, options, tool_call_id)
+
+    async def _ask(self, question: str, options: list[str] | None, tool_call_id: str) -> str:
         from ..notify import notify
 
         self.st.status = "waiting_user"
@@ -192,17 +204,21 @@ class AgentLoop:
         db.run("UPDATE runs SET status = 'waiting_user', updated_at = ? WHERE id = ?", (now(), self.run_id))
         self.save_state(pending_ask=self.st.ask)
         await self.emit("ask_user", self.st.ask)
-        asyncio.create_task(notify(self.user["id"], "Ely a besoin de toi", question, url=f"/?c={self.conv_id}", tag=f"ask-{self.conv_id}"))
+        asyncio.create_task(notify(self.user["id"], tv(self.user, "Ely a besoin de vous", "Ely a besoin de toi"), question, url=f"/?c={self.conv_id}", tag=f"ask-{self.conv_id}"))
         try:
             return await self.st.ask_future
         finally:
-            self.st.status = "running"
-            self.st.ask = None
-            self.st.ask_future = None
-            db.run("UPDATE runs SET status = 'running', updated_at = ? WHERE id = ?", (now(), self.run_id))
-            self.state.pop("pending_ask", None)
-            self.save_state()
-            await self.emit("status", {"status": "running"})
+            if not self.runner.shutting_down:  # redémarrage : la question reste en attente et sera reposée
+                await self._ask_done()
+
+    async def _ask_done(self) -> None:
+        self.st.status = "running"
+        self.st.ask = None
+        self.st.ask_future = None
+        db.run("UPDATE runs SET status = 'running', updated_at = ? WHERE id = ?", (now(), self.run_id))
+        self.state.pop("pending_ask", None)
+        self.save_state()
+        await self.emit("status", {"status": "running"})
 
     # ---------------------------------------------------------------- outils
     async def run_tool(self, ctx: ToolContext, tc: dict, fail_counts: dict) -> dict:
@@ -226,6 +242,7 @@ class AgentLoop:
         if res.files:
             msg["files"] = res.files
         mid = self.persist(msg)
+        await self.publish_message(mid)
         await self.emit("tool_end", {"id": tc["id"], "name": tc["name"], "ok": not res.is_error, "message_id": mid,
                                      "preview": content[:300], "files": res.files})
         return msg
@@ -251,18 +268,22 @@ class AgentLoop:
                 await self.emit("model", {"model": resp.model})
                 return resp
             except LLMError as e:
-                if e.kind == "context":
+                if e.kind == "context" and attempt < 3:
                     await self.compact(history, force=True)
                     continue
-                if attempt >= len(RETRY_DELAYS):
+                if attempt >= len(RETRY_DELAYS) or not e.retryable:  # clé refusée, aucun modèle… : inutile d'attendre
                     raise
                 delay = RETRY_DELAYS[attempt]
                 await self.emit("status", {"status": "retrying", "detail": f"Modèles indisponibles, nouvel essai dans {delay} s : {str(e)[:200]}"})
                 await asyncio.sleep(delay)
+        raise LLMError("Le modèle n'a pas pu répondre malgré plusieurs essais.")
 
     async def compact(self, history: list[dict], force: bool = False) -> None:
-        ref = registry.chain("main", self.conv.get("model") or None)[:1]
-        ctx_len = registry.info(ref[0]).context if ref else 128_000
+        try:
+            ref = registry.chain("main", self.conv.get("model") or None)[:1]
+            ctx_len = registry.info(ref[0]).context if ref else 128_000
+        except Exception:
+            ctx_len = 128_000
         limit = min(settings.context_soft_limit, int(ctx_len * 0.6))
         if not force and estimate_tokens(history) < limit:
             return
@@ -278,6 +299,8 @@ class AgentLoop:
                 cut = i
                 break
         cut = min(cut, len(history) - 2)
+        while cut > 1 and history[cut]["role"] == "tool":
+            cut -= 1
         if cut <= 1:
             return
         await self.emit("status", {"status": "running", "detail": "Résumé du contexte…"})
@@ -296,8 +319,6 @@ class AgentLoop:
         objective = self.run_row["objective"]
         pending = self.state.get("pending_ask") if resume else None
         history = load_history(self.conv_id, {pending["tool_call_id"]} if pending else set())
-        start_mid = self.state.get("start_message") or 0
-        run_start = next((i for i, m in enumerate(history) if (m.get("_id") or 0) >= start_mid), max(0, len(history) - 1))
 
         selfdev = self.conv.get("channel") == "selfdev" and user.get("role") == "admin"
         ctx = ToolContext(user=user, conversation_id=self.conv_id, run_id=self.run_id, emit=self.emit, extra={"selfdev": selfdev})
@@ -315,7 +336,12 @@ class AgentLoop:
         rejections = int(self.state.get("rejections", 0))
         no_progress = int(self.state.get("no_progress", 0))
         successes = 0
+        empty = 0
         fail_counts: dict[str, int] = {}
+        # reprise juste après la réponse finale (redémarrage pendant la vérification) : on vérifie directement,
+        # sans rappeler le modèle sur un historique qui se termine par sa propre réponse
+        final_pending = (resume and not pending and history and history[-1]["role"] == "assistant"
+                         and not history[-1].get("tool_calls") and history[-1].get("content"))
 
         if pending:  # reprise après redémarrage pendant une question à l'utilisateur
             answer = await self.ask(pending["question"], pending.get("options"), pending["tool_call_id"])
@@ -330,32 +356,43 @@ class AgentLoop:
                 self.st.queue.clear()
                 objective = db.val("SELECT objective FROM runs WHERE id = ?", (self.run_id,)) or objective
 
-            if settings.max_steps and steps >= settings.max_steps:
-                history.append({"role": "user", "kind": "control", "content": "[Limite d'étapes atteinte] Fais le point : ce qui est fait, "
-                                "ce qui reste, et la meilleure suite possible."})
-                resp = await self.call_model(system, history, None, model)
+            if final_pending and not self.st.queue:
+                msg = history[-1]
+                final_pending = False
+            else:
+                final_pending = False
+                if settings.max_steps and steps >= settings.max_steps:
+                    history.append({"role": "user", "kind": "control", "content": "[Limite d'étapes atteinte] N'appelle plus d'outil. "
+                                    "Fais le point : ce qui est fait, ce qui reste, et la meilleure suite possible."})
+                    resp = await self.call_model(system, history, schemas, model)  # outils déclarés : l'historique en contient
+                    msg = resp.to_message()
+                    msg.pop("tool_calls", None)
+                    msg["content"] = msg["content"] or "J'ai atteint la limite d'étapes pour cette tâche."
+                    await self.publish_message(self.persist(msg))
+                    db.run("UPDATE runs SET status = 'stopped', updated_at = ? WHERE id = ?", (now(), self.run_id))
+                    break
+
+                await self.compact(history)
+                resp = await self.call_model(system, history, schemas, model)
                 msg = resp.to_message()
+                if not msg["content"] and not msg.get("tool_calls"):
+                    empty += 1
+                    if empty >= 3:
+                        raise LLMError("Le modèle renvoie des réponses vides : essaie un autre modèle (menu en haut).")
+                    history.append({"role": "user", "kind": "control", "content": "[Contrôle] Ta réponse était vide. Continue la tâche ou donne ta réponse finale."})
+                    continue
+                empty = 0
+                history.append(msg)
                 await self.publish_message(self.persist(msg))
-                db.run("UPDATE runs SET status = 'stopped', updated_at = ? WHERE id = ?", (now(), self.run_id))
-                break
+                self.st.partial = ""
 
-            await self.compact(history)
-            resp = await self.call_model(system, history, schemas, model)
-            msg = resp.to_message()
-            if not msg["content"] and not msg.get("tool_calls"):
-                history.append({"role": "user", "kind": "control", "content": "[Contrôle] Ta réponse était vide. Continue la tâche ou donne ta réponse finale."})
-                continue
-            history.append(msg)
-            await self.publish_message(self.persist(msg))
-            self.st.partial = ""
-
-            if msg.get("tool_calls"):
-                steps += 1
-                results = await asyncio.gather(*(self.run_tool(ctx, tc, fail_counts) for tc in msg["tool_calls"]))
-                history.extend(results)
-                successes += sum(1 for r in results if not r.get("is_error"))
-                self.save_state(steps=steps)
-                continue
+                if msg.get("tool_calls"):
+                    steps += 1
+                    results = await asyncio.gather(*(self.run_tool(ctx, tc, fail_counts) for tc in msg["tool_calls"]))
+                    history.extend(results)
+                    successes += sum(1 for r in results if not r.get("is_error"))
+                    self.save_state(steps=steps)
+                    continue
 
             if self.st.queue:
                 continue
@@ -363,7 +400,7 @@ class AgentLoop:
             answer = msg["content"]
             if not TRIVIAL.match(objective.strip()):
                 await self.emit("status", {"status": "running", "detail": "Vérification de l'objectif…"})
-                done, missing = await verify(objective, history[run_start:], answer, user["id"])
+                done, missing = await verify(objective, run_messages(self.run_id), answer, user["id"])
                 await self.emit("verify", {"done": done, "missing": missing})
                 if not done:
                     rejections += 1

@@ -10,7 +10,7 @@ import time
 
 import httpx
 
-from ..auth import get_user
+from ..auth import get_user, tv
 from ..config import settings
 from ..db import db, now
 from ..integrations import get, put, remove
@@ -20,6 +20,7 @@ log = logging.getLogger("ely.telegram")
 API = "https://api.telegram.org/bot{token}/{method}"
 _username = ""
 _typing: dict[int, float] = {}
+RETRY_S = 5  # pause après une réponse en erreur de Telegram (évite de le marteler)
 
 
 def bot_username() -> str:
@@ -78,9 +79,11 @@ async def handle(update: dict) -> None:
         if row:
             put(row["user_id"], "telegram", {"chat_id": chat_id, "username": msg["from"].get("username", "")})
             remove(row["user_id"], "telegram_pending")
-            await telegram_send(chat_id, "✅ Compte Ely relié. Parle-moi ici comme dans l'application.")
+            linked = get_user(row["user_id"])
+            await telegram_send(chat_id, tv(linked, "✅ Compte Ely relié. Parlez-moi ici comme dans l'application.",
+                                            "✅ Compte Ely relié. Parle-moi ici comme dans l'application."))
         else:
-            await telegram_send(chat_id, "Bonjour ! Pour me relier à ton compte Ely : Réglages → Connexions → Telegram.")
+            await telegram_send(chat_id, "Bonjour ! Pour me relier à votre compte Ely : Réglages → Connexions → Telegram.")
         return
     user = user_for_chat(chat_id)
     if not user:
@@ -155,13 +158,25 @@ async def polling_loop() -> None:
         _username = me.get("result", {}).get("username", "")
     except Exception as e:
         log.warning("Telegram injoignable : %s", e)
+    # un webhook laissé par une autre application (l'ancienne version d'Ely) bloquerait getUpdates
+    try:
+        await call("deleteWebhook")
+    except Exception as e:
+        log.info("Telegram : %s", e)
     offset = 0
     while True:
         try:
             res = await call("getUpdates", offset=offset, timeout=50, allowed_updates=["message", "edited_message"])
+            if not res.get("ok"):
+                desc = res.get("description", "")
+                log.warning("Telegram refuse getUpdates : %s", desc or res)
+                if res.get("error_code") == 409 and "webhook" in desc.lower():
+                    await call("deleteWebhook")
+                await asyncio.sleep(RETRY_S)
+                continue
             for upd in res.get("result", []):
                 offset = upd["update_id"] + 1
                 asyncio.create_task(handle(upd))
         except Exception as e:
             log.info("Telegram : %s", e)
-            await asyncio.sleep(5)
+            await asyncio.sleep(RETRY_S)

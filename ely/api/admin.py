@@ -25,6 +25,9 @@ async def models(user=Depends(auth.current_user)):
 
 @router.post("/api/admin/models/refresh")
 async def refresh_models(user=Depends(auth.admin_user)):
+    from ..config import reload_env
+
+    reload_env()  # nouvelles clés du .env prises en compte sans redémarrer
     registry.build_providers()
     await registry.refresh()
     return {"providers": registry.status, "roles": registry.roles_view()}
@@ -84,7 +87,7 @@ class UserPatch(BaseModel):
 def patch_user(uid: int, body: UserPatch, user=Depends(auth.admin_user)):
     if body.role in ("admin", "user"):
         if uid == user["id"] and body.role != "admin":
-            raise HTTPException(400, "Tu ne peux pas te retirer toi-même le rôle administrateur")
+            raise HTTPException(400, "Vous ne pouvez pas vous retirer vous-même le rôle administrateur")
         db.run("UPDATE users SET role = ? WHERE id = ?", (body.role, uid))
     if body.password:
         db.run("UPDATE users SET password_hash = ? WHERE id = ?", (auth.hash_password(body.password), uid))
@@ -96,7 +99,10 @@ def patch_user(uid: int, body: UserPatch, user=Depends(auth.admin_user)):
 @router.delete("/api/admin/users/{uid}")
 def delete_user(uid: int, user=Depends(auth.admin_user)):
     if uid == user["id"]:
-        raise HTTPException(400, "Impossible de supprimer ton propre compte")
+        raise HTTPException(400, "Impossible de supprimer votre propre compte")
+    from ..memory.store import purge_user_index
+
+    purge_user_index(uid)
     db.run("DELETE FROM users WHERE id = ?", (uid,))
     return {"ok": True}
 
@@ -202,3 +208,61 @@ async def revert(iid: int, user=Depends(auth.admin_user)):
         asyncio.get_running_loop().call_later(2, pipeline.request_restart)
         return {"ok": True, "message": "Modification annulée, redémarrage…"}
     return {"ok": True, "message": "Modification annulée. Redémarre Ely pour l'appliquer."}
+
+
+# ---------------------------------------------------------------------- extensions MCP
+@router.get("/api/admin/mcp")
+def mcp_state(user=Depends(auth.admin_user)):
+    from ..mcp_client import load_config, manager
+
+    return {"servers": load_config(), "status": manager.status()}
+
+
+class McpIn(BaseModel):
+    servers: dict
+
+
+@router.put("/api/admin/mcp")
+async def mcp_save(body: McpIn, user=Depends(auth.admin_user)):
+    from ..mcp_client import manager, save_config
+
+    save_config(body.servers)
+    await manager.start_all()
+    return {"status": manager.status()}
+
+
+# ---------------------------------------------------------------------- abonnement ChatGPT
+@router.get("/api/admin/chatgpt")
+def chatgpt_state(user=Depends(auth.admin_user)):
+    from ..llm import chatgpt_provider
+
+    return chatgpt_provider.status()
+
+
+class ChatGPTIn(BaseModel):
+    auth_json: str = ""
+
+
+@router.post("/api/admin/chatgpt")
+async def chatgpt_import(body: ChatGPTIn, user=Depends(auth.admin_user)):
+    from ..llm import LLMError, chatgpt_provider
+
+    try:
+        st = await chatgpt_provider.import_auth(body.auth_json.strip() or None)
+    except LLMError as e:
+        raise HTTPException(400, str(e))
+    except ValueError as e:
+        raise HTTPException(400, f"Contenu illisible : {e}")
+    registry.build_providers()
+    await registry.refresh()
+    return {**st, "roles": registry.roles_view()}
+
+
+@router.delete("/api/admin/chatgpt")
+async def chatgpt_disconnect(user=Depends(auth.admin_user)):
+    from ..llm import chatgpt_provider
+
+    chatgpt_provider.disconnect()
+    registry.build_providers()
+    await registry.refresh()
+    return {"ok": True}

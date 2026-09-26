@@ -7,12 +7,13 @@ from __future__ import annotations
 
 import os
 import secrets
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 
 ROOT = Path(__file__).resolve().parent.parent
+_BOOT_ENV = set(os.environ)  # variables fixées hors .env : elles gardent la priorité
 load_dotenv(ROOT / ".env")
 
 
@@ -83,6 +84,9 @@ class Settings:
     tavily_api_key: str = field(default_factory=lambda: _env("TAVILY_API_KEY"))
     brave_api_key: str = field(default_factory=lambda: _env("BRAVE_API_KEY"))
 
+    # Voix enregistrée (voix clonée) : service vocal XTTS qui tourne à part sur le Mac, port 8020 par défaut
+    xtts_url: str = field(default_factory=lambda: _env("XTTS_URL", "http://127.0.0.1:8020").rstrip("/"))
+
     # Navigateur
     browser_headless: bool = field(default_factory=lambda: _bool("ELY_BROWSER_HEADLESS", True))
     browser_channel: str = field(default_factory=lambda: _env("ELY_BROWSER_CHANNEL"))
@@ -141,3 +145,13 @@ class Settings:
 
 
 settings = Settings()
+
+
+def reload_env() -> None:
+    """Relit le .env sans redémarrer (nouvelles clés d'API, modèles…) et met à jour les réglages en place."""
+    for key, value in dotenv_values(ROOT / ".env").items():
+        if key not in _BOOT_ENV and value is not None:
+            os.environ[key] = value
+    fresh = Settings()
+    for f in fields(Settings):
+        setattr(settings, f.name, getattr(fresh, f.name))

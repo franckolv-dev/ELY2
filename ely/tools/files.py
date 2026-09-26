@@ -5,6 +5,7 @@ import asyncio
 import base64
 import io
 import os
+import signal
 import sys
 import time
 import uuid
@@ -72,7 +73,8 @@ async def file_read(ctx: ToolContext, path: str, offset: int = 0, limit: int = 2
     return ToolResult(text, images=images)
 
 
-@tool("file_write", "Crée ou modifie un fichier texte dans l'espace de fichiers (l'utilisateur peut le télécharger).",
+@tool("file_write", "Crée ou modifie un fichier texte dans l'espace de fichiers (l'utilisateur le voit et peut le télécharger). "
+      "Fichiers intermédiaires (scripts, essais, brouillons) : dans .travail/, invisible pour lui.",
       {"path": {"type": "string"}, "content": {"type": "string"}, "append": {"type": "boolean"}},
       ["path", "content"], label="Écriture de fichier", icon="💾", timeout=30)
 async def file_write(ctx: ToolContext, path: str, content: str, append: bool = False) -> ToolResult:
@@ -80,7 +82,9 @@ async def file_write(ctx: ToolContext, path: str, content: str, append: bool = F
     p.parent.mkdir(parents=True, exist_ok=True)
     with open(p, "a" if append else "w", encoding="utf-8") as f:
         f.write(content)
-    return ToolResult(f"Fichier {'complété' if append else 'écrit'} : {ctx.rel(p)} ({p.stat().st_size} octets)", files=[ctx.rel(p)])
+    rel = ctx.rel(p)
+    shown = not any(part.startswith(".") for part in Path(rel).parts)  # .travail/ & co : pas montré à l'utilisateur
+    return ToolResult(f"Fichier {'complété' if append else 'écrit'} : {rel} ({p.stat().st_size} octets)", files=[rel] if shown else [])
 
 
 @tool("file_list", "Liste les fichiers de l'espace de fichiers de l'utilisateur (documents reçus, créés, téléchargés).",
@@ -113,11 +117,22 @@ async def _run(ctx: ToolContext, argv: list[str], timeout: int) -> ToolResult:
     env = {**os.environ, "PYTHONIOENCODING": "utf-8", "MPLBACKEND": "Agg", "ELY_WORKSPACE": str(ws)}
     proc = await asyncio.create_subprocess_exec(*argv, cwd=str(ws), env=env, stdout=asyncio.subprocess.PIPE,
                                                 stderr=asyncio.subprocess.STDOUT, start_new_session=True)
+
+    async def kill_all() -> None:  # tout le groupe de processus, pas seulement l'enfant direct
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        await proc.wait()
+
     try:
         out, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except asyncio.TimeoutError:
-        proc.kill()
+        await kill_all()
         return ToolResult(f"Arrêt après {timeout} s (délai dépassé).", is_error=True)
+    except BaseException:  # tâche annulée ou arrêt d'Ely
+        await asyncio.shield(kill_all())
+        raise
     text = out.decode("utf-8", errors="replace").strip()
     after = _snapshot(ws)
     changed = [ctx.rel(Path(p)) for p, m in after.items() if before.get(p) != m]

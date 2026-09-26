@@ -216,3 +216,120 @@ async def test_cancel(fake, user):
     assert await runner.cancel(cid)
     await wait_idle(cid)
     assert db.val("SELECT status FROM runs WHERE id = ?", (res["run_id"],)) == "cancelled"
+
+
+async def test_delegate_runs_subagents_in_parallel(fake, user):
+    """delegate lance des sous-agents en parallèle ; chacun agit avec les outils et rend un rapport."""
+    started = []
+
+    async def agent(messages, tools):
+        first = last_user_text(messages[:1])
+        if "Ta sous-tâche" in first:
+            started.append(first)
+            await asyncio.sleep(0.2)  # si les sous-agents étaient séquentiels, le test serait lent
+            if not tool_results(messages):
+                name = "Alpha" if "Alpha" in first else "Beta"
+                return call("contacts_save", name=name)
+            return f"Rapport : contact ajouté ({'Alpha' if 'Alpha' in first else 'Beta'})."
+        if not tool_results(messages):
+            return call("delegate", tasks=["Ajoute le contact Alpha", "Ajoute le contact Beta"])
+        return "Les deux sous-agents ont terminé : " + tool_results(messages)[-1]["content"][:200]
+
+    fake.script = script(agent)
+    cid = new_conversation(user)
+    t0 = asyncio.get_running_loop().time()
+    await runner.submit(user, cid, "Ajoute Alpha et Beta à mes contacts en parallèle")
+    await wait_idle(cid)
+    names = {r["name"] for r in db.all("SELECT name FROM contacts WHERE user_id = ?", (user["id"],))}
+    assert {"Alpha", "Beta"} <= names and len(started) == 4
+    assert asyncio.get_running_loop().time() - t0 < 2.0
+    last = json.loads(db.one("SELECT data FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT 1", (cid,))["data"])
+    assert "Rapport" in last["content"]
+
+
+def _three_providers(fake):
+    """LM Studio choisi pour l'agent, abonnement ChatGPT pour l'escalade, et une clé Anthropic jamais choisie."""
+    from conftest import FakeProvider
+    from ely.llm import registry
+    from ely.llm.base import ModelInfo
+
+    provs = {}
+    for name, mid in (("lmstudio", "google/gemma-4-26b-a4b"), ("chatgpt", "gpt-6-astra"), ("anthropic", "claude-opus-5")):
+        p = FakeProvider(name)
+        p.models = [ModelInfo(id=mid, provider=name, context=32768 if name == "lmstudio" else 200_000)]
+        registry.providers[name] = p
+        registry.catalog[name] = p.models
+        registry.status[name] = "ok (1 modèle)"
+        provs[name] = p
+    provs["anthropic"].script = lambda **k: "réponse payante"
+    provs["chatgpt"].script = lambda **k: "réponse de l'abonnement"
+    db.set_setting("model_main", "lmstudio:google/gemma-4-26b-a4b")
+    db.set_setting("model_strong", "chatgpt:gpt-6-astra")
+    return provs
+
+
+async def test_auto_fallbacks_never_use_an_unchosen_paid_model(fake, user):
+    from ely.llm import registry
+
+    provs = _three_providers(fake)
+    provs["lmstudio"].script = lambda **k: LLMError("LM Studio a planté", kind="error")
+    assert "anthropic:claude-opus-5" not in registry.chain("main")
+    r = await registry.chat(role="main", system=[], messages=[{"role": "user", "content": "Bonjour"}])
+    assert r.model == "chatgpt:gpt-6-astra" and not provs["anthropic"].calls
+    db.set_setting("model_fallbacks", "anthropic:claude-opus-5")  # choisi explicitement : là, oui
+    assert registry.chain("main")[1] == "anthropic:claude-opus-5"
+    db.set_setting("model_fallbacks", "auto")
+
+
+async def test_context_overflow_condenses_instead_of_switching_model(fake, user):
+    provs = _three_providers(fake)
+    state = {"overflowed": False}
+
+    def local(model, system, messages, tools):
+        if not last_user_text(messages).startswith("Tu es le contrôleur") and not state["overflowed"]:
+            state["overflowed"] = True
+            return LLMError("request exceeds the model's context length (32768)", kind="context", status=400)
+        return script(lambda m, t: "Voici ta réponse, avec gemma.")(model, system, messages, tools)
+
+    provs["lmstudio"].script = local
+    cid = new_conversation(user)
+    await runner.submit(user, cid, "Résume-moi les nouvelles du jour.")
+    await wait_idle(cid)
+    last = json.loads(db.one("SELECT data FROM messages WHERE conversation_id = ? AND role = 'assistant' ORDER BY id DESC LIMIT 1", (cid,))["data"])
+    assert state["overflowed"] and last["model"] == "lmstudio:google/gemma-4-26b-a4b"
+    assert not provs["anthropic"].calls and not provs["chatgpt"].calls
+
+
+async def test_vouvoiement_by_default_and_tutoiement_on_request(fake, user):
+    from ely import auth
+
+    systems = []
+
+    def fn(model, system, messages, tools):
+        text = last_user_text(messages)
+        if "mémoire d'Ely" in text:  # apprentissage après l'échange
+            return json.dumps({"profile": None, "facts": [], "address": "tu" if "tutoie-moi" in text else None, "skill": None})
+        if "contrôleur qualité" in text:
+            return json.dumps({"done": True, "missing": ""})
+        if "Donne un titre" in text:
+            return "Titre de test"
+        systems.append("\n".join(system))
+        return "D'accord, je te tutoie." if "tutoie" in text else "Bonjour."
+
+    fake.script = fn
+    cid = new_conversation(user)
+    await runner.submit(user, cid, "Tu peux me tutoyer : tutoie-moi, s'il te plaît.")
+    await wait_idle(cid)
+    assert "s'adresser à elle : vouvoiement" in systems[0]  # par défaut, Ely vouvoie
+    await asyncio.sleep(0.3)  # apprentissage en arrière-plan
+    fresh = auth.get_user(user["id"])
+    assert fresh["settings"].get("address") == "tu"
+    cid2 = new_conversation(user)
+    await runner.submit(fresh, cid2, "Quel temps fera-t-il demain ?")
+    await wait_idle(cid2)
+    assert "s'adresser à elle : tutoiement" in systems[-1]
+    cid3 = new_conversation(user)
+    await runner.submit(fresh, cid3, "Finalement, ne me tutoie pas.")
+    await wait_idle(cid3)
+    await asyncio.sleep(0.3)
+    assert auth.get_user(user["id"])["settings"].get("address") == "vous"

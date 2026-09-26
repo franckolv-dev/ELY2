@@ -23,9 +23,14 @@ class AnthropicProvider:
     kind = "anthropic"
     name = "anthropic"
 
+    # options récentes de l'API, désactivées d'elles-mêmes si le compte ou le modèle les refuse
+    OPTIONAL = {"fallbacks": ("fallback", "beta"), "eager": ("eager_input_streaming",), "display": ("display",),
+                "effort": ("effort", "output_config"), "thinking": ("thinking", "adaptive")}
+
     def __init__(self, api_key: str, base_url: str | None = None) -> None:
         self.client = anthropic.AsyncAnthropic(api_key=api_key, base_url=base_url or None, max_retries=2, timeout=900)
         self.models: list[ModelInfo] = []
+        self.disabled: set[str] = set()
 
     async def list_models(self) -> list[ModelInfo]:
         out = []
@@ -99,6 +104,8 @@ class AnthropicProvider:
                 push("user", [block])
         if out and out[0]["role"] != "user":
             out.insert(0, {"role": "user", "content": [{"type": "text", "text": "(suite de la conversation)"}]})
+        if out and out[-1]["role"] == "assistant":
+            out.append({"role": "user", "content": [{"type": "text", "text": "(continue)"}]})
         return out
 
     @staticmethod
@@ -110,13 +117,22 @@ class AnthropicProvider:
     async def chat(self, model: str, system: list[str], messages: list[dict], tools: list[dict] | None = None,
                    on_delta: DeltaCallback = None, max_tokens: int = 32000, effort: str = "high") -> LLMResponse:
         ref = f"anthropic:{model}"
-        try:
-            return await self._chat(model, ref, system, messages, tools, on_delta, max_tokens, effort, keep_thinking=True)
-        except LLMError as e:
-            # Historique retouché (compaction) : on réessaie une fois sans les blocs de réflexion.
-            if e.status == 400 and "thinking" in str(e).lower():
-                return await self._chat(model, ref, system, messages, tools, on_delta, max_tokens, effort, keep_thinking=False)
-            raise
+        keep_thinking = True
+        for _ in range(5):
+            try:
+                return await self._chat(model, ref, system, messages, tools, on_delta, max_tokens, effort, keep_thinking)
+            except LLMError as e:
+                if e.status != 400:
+                    raise
+                msg = str(e).lower()
+                if keep_thinking and "thinking" in msg and "block" in msg:
+                    keep_thinking = False  # historique retouché (compaction) : sans les anciens blocs de réflexion
+                    continue
+                culprit = next((k for k, words in self.OPTIONAL.items() if k not in self.disabled and any(w in msg for w in words)), None)
+                if not culprit:
+                    raise
+                self.disabled.add(culprit)
+        raise LLMError("anthropic : requête refusée malgré les ajustements", status=400)
 
     async def _chat(self, model, ref, system, messages, tools, on_delta, max_tokens, effort, keep_thinking) -> LLMResponse:
         params: dict = {
@@ -128,11 +144,14 @@ class AnthropicProvider:
         }
         if tools:
             params["tools"] = self.convert_tools(tools)
-        if ADAPTIVE.search(model):
-            params["thinking"] = {"type": "adaptive", "display": "summarized"}
-        if EFFORT.search(model):
+            if "eager" in self.disabled:
+                for t in params["tools"]:
+                    t.pop("eager_input_streaming", None)
+        if ADAPTIVE.search(model) and "thinking" not in self.disabled:
+            params["thinking"] = {"type": "adaptive"} if "display" in self.disabled else {"type": "adaptive", "display": "summarized"}
+        if EFFORT.search(model) and "effort" not in self.disabled:
             params["output_config"] = {"effort": effort}
-        use_beta = bool(SERVER_FALLBACK.search(model))
+        use_beta = bool(SERVER_FALLBACK.search(model)) and "fallbacks" not in self.disabled
         if use_beta:
             params["betas"] = ["server-side-fallback-2026-07-01"]
             params["fallbacks"] = "default"
@@ -178,11 +197,10 @@ class AnthropicProvider:
                 thinking.append(block.model_dump(exclude_none=True))
         if final.stop_reason == "max_tokens" and calls:
             raise LLMError("anthropic: réponse tronquée pendant un appel d'outil", retryable=True)
-        served = getattr(final, "model", model) or model
         u = final.usage
         return LLMResponse(
             text="".join(text_parts).strip(), tool_calls=calls, thinking=thinking, stop_reason=final.stop_reason or "",
-            model=f"anthropic:{served}" if served == model else ref,
+            model=ref,
             input_tokens=(u.input_tokens or 0) + (u.cache_read_input_tokens or 0) + (u.cache_creation_input_tokens or 0),
             output_tokens=u.output_tokens or 0, cached_tokens=u.cache_read_input_tokens or 0,
         )

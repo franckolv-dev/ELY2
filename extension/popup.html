@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <style>
+    :root { --bg: #ffffff; --ink: #172d27; --muted: #657267; --sunken: #eef3ef; --accent: #254c3d; --accent-ink: #ffffff; --err: #b3452c; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #14221d; --ink: #e3ece6; --muted: #a9b9ac; --sunken: #101c17; --accent: #a8cfb6; --accent-ink: #183728; } }
+    body { margin: 0; width: 300px; padding: 16px; background: var(--bg); color: var(--ink); font: 13px/1.5 system-ui, -apple-system, sans-serif; }
+    .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 16px; margin-bottom: 12px; }
+    .mark { width: 18px; height: 18px; color: var(--accent); }
+    .state { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--err); }
+    .dot.on { background: #4d9a2f; }
+    .detail { color: var(--muted); margin: 4px 0 14px; }
+    label { display: block; color: var(--muted); margin-bottom: 4px; }
+    input { box-sizing: border-box; width: 100%; height: 34px; border: 0; border-radius: 10px; padding: 0 10px; background: var(--sunken); color: var(--ink); font: 12px ui-monospace, Menlo, monospace; outline: none; }
+    input:focus-visible, button:focus-visible, a.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .row { display: flex; gap: 8px; margin-top: 10px; }
+    button, a.btn { flex: 1; height: 32px; border-radius: 7px; border: 0; cursor: pointer; font: inherit; font-weight: 500; text-decoration: none; display: grid; place-items: center; }
+    .primary { background: var(--accent); color: var(--accent-ink); }
+    .ghost { background: var(--sunken); color: var(--ink); }
+  </style>
+</head>
+<body>
+  <div class="brand"><svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M5.6 1H6.45A4.6 4.6 0 0 1 11.05 5.6V9.95A1.1 1.1 0 0 1 9.95 11.05H5.6A4.6 4.6 0 0 1 1 6.45V5.6A4.6 4.6 0 0 1 5.6 1ZM17.55 1H18.4A4.6 4.6 0 0 1 23 5.6V6.45A4.6 4.6 0 0 1 18.4 11.05H14.05A1.1 1.1 0 0 1 12.95 9.95V5.6A4.6 4.6 0 0 1 17.55 1ZM5.6 12.95H9.95A1.1 1.1 0 0 1 11.05 14.05V18.4A4.6 4.6 0 0 1 6.45 23H5.6A4.6 4.6 0 0 1 1 18.4V17.55A4.6 4.6 0 0 1 5.6 12.95ZM14.05 12.95H18.4A4.6 4.6 0 0 1 23 17.55V18.4A4.6 4.6 0 0 1 18.4 23H17.55A4.6 4.6 0 0 1 12.95 18.4V14.05A1.1 1.1 0 0 1 14.05 12.95Z"/></svg>ELY</div>
+  <div class="state"><span class="dot" id="dot"></span><span id="status">…</span></div>
+  <div class="detail" id="detail"></div>
+  <label for="url" id="addr">Adresse d'Ely</label>
+  <input id="url" placeholder="http://localhost:8000" spellcheck="false">
+  <div class="row">
+    <button class="primary" id="save">Reconnecter</button>
+    <a class="btn ghost" id="open" target="_blank">Ouvrir Ely</a>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

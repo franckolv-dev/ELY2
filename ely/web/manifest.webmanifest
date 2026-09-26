@@ -1,0 +1,28 @@
+{
+  "name": "Ely — agent personnel",
+  "short_name": "Ely",
+  "description": "Votre assistant personnel autonome : parlez-lui, il agit.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "lang": "fr",
+  "icons": [
+    { "src": "/static/icons/icon-192.png?v=2", "sizes": "192x192", "type": "image/png" },
+    { "src": "/static/icons/icon-512.png?v=2", "sizes": "512x512", "type": "image/png" },
+    { "src": "/static/icons/icon-maskable-512.png?v=2", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/static/icons/icon.svg?v=2", "sizes": "any", "type": "image/svg+xml" }
+  ],
+  "share_target": {
+    "action": "/share",
+    "method": "GET",
+    "params": { "title": "title", "text": "text", "url": "url" }
+  },
+  "shortcuts": [
+    { "name": "Nouvelle conversation", "url": "/?new=1", "icons": [{ "src": "/static/icons/icon-192.png?v=2", "sizes": "192x192" }] },
+    { "name": "Parler à Ely", "url": "/?voice=1", "icons": [{ "src": "/static/icons/icon-192.png?v=2", "sizes": "192x192" }] }
+  ]
+}

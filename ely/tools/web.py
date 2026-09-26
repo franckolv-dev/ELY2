@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import os
 import re
 import time
 
@@ -47,6 +48,57 @@ async def _brave(q: str, n: int, category: str | None) -> list[dict]:
                 for x in r.json().get("web", {}).get("results", [])]
 
 
+def _key(name: str) -> str:
+    return os.environ.get(name, "").strip()
+
+
+async def _serper(q: str, n: int, category: str | None) -> list[dict]:
+    async with httpx.AsyncClient(timeout=15) as c:
+        r = await c.post(f"https://google.serper.dev/{'news' if category == 'news' else 'search'}",
+                         headers={"X-API-KEY": _key("SERPER_API_KEY")}, json={"q": q, "gl": "fr", "hl": "fr", "num": n})
+        r.raise_for_status()
+        data = r.json()
+    out = []
+    kg = data.get("knowledgeGraph") or {}
+    if kg.get("description"):
+        out.append({"title": kg.get("title", ""), "url": kg.get("website", ""), "snippet": kg["description"]})
+    for x in data.get("news" if category == "news" else "organic", []):
+        out.append({"title": x.get("title", ""), "url": x.get("link", ""), "snippet": x.get("snippet", ""), "date": x.get("date", "")})
+    return out[:n]
+
+
+async def _exa(q: str, n: int, category: str | None) -> list[dict]:
+    async with httpx.AsyncClient(timeout=20) as c:
+        r = await c.post("https://api.exa.ai/search", headers={"x-api-key": _key("EXA_API_KEY")},
+                         json={"query": q, "type": "auto", "numResults": max(1, min(n, 25)),
+                               "contents": {"highlights": {"maxCharacters": 1000}}})
+        r.raise_for_status()
+        items = r.json().get("results") or []
+    return [{"title": x.get("title") or x["url"], "url": x["url"],
+             "snippet": " ".join(x.get("highlights") or []) or (x.get("text") or "")[:500]} for x in items if x.get("url")][:n]
+
+
+async def _searchcans(q: str, n: int, category: str | None) -> list[dict]:
+    async with httpx.AsyncClient(timeout=15) as c:
+        r = await c.post("https://www.searchcans.com/api/v1/search", headers={"Authorization": f"Bearer {_key('SEARCHCANS_API_KEY')}"},
+                         json={"t": "google", "s": q, "country": "fr", "language": "fr", "p": 1})
+        r.raise_for_status()
+        payload = r.json()
+    if payload.get("code") not in (None, 0):  # erreurs annoncées dans le corps, en HTTP 200
+        raise RuntimeError(str(payload.get("msg") or payload.get("code")))
+    items = (payload.get("data") or {}).get("organic") or []
+    return [{"title": x.get("title", ""), "url": x.get("link", ""), "snippet": x.get("snippet", "")} for x in items][:n]
+
+
+async def _google(q: str, n: int, category: str | None) -> list[dict]:
+    async with httpx.AsyncClient(timeout=15) as c:
+        r = await c.get("https://www.googleapis.com/customsearch/v1", params={
+            "key": _key("GOOGLE_SEARCH_API_KEY"), "cx": _key("GOOGLE_SEARCH_CX"), "q": q, "num": min(n, 10), "gl": "fr", "hl": "fr"})
+        r.raise_for_status()
+        items = r.json().get("items") or []
+    return [{"title": x.get("title", ""), "url": x.get("link", ""), "snippet": x.get("snippet", "")} for x in items][:n]
+
+
 async def _ddgs(q: str, n: int, category: str | None) -> list[dict]:
     from ddgs import DDGS
 
@@ -65,6 +117,14 @@ def _providers():
     out = []
     if settings.searxng_url:
         out.append(("searxng", _searxng))
+    if _key("SERPER_API_KEY"):
+        out.append(("serper", _serper))
+    if _key("EXA_API_KEY"):
+        out.append(("exa", _exa))
+    if _key("SEARCHCANS_API_KEY"):
+        out.append(("searchcans", _searchcans))
+    if _key("GOOGLE_SEARCH_API_KEY") and _key("GOOGLE_SEARCH_CX"):
+        out.append(("google", _google))
     if settings.tavily_api_key:
         out.append(("tavily", _tavily))
     if settings.brave_api_key:

@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+html,body{margin:0;height:100%;}
+body{font-family:'Geist',system-ui,sans-serif;-webkit-font-smoothing:antialiased;}
+a{color:inherit;}
+a:hover{opacity:.8;}
+*{box-sizing:border-box;}
+textarea,input,select,button{font-family:inherit;}
+::placeholder{color:var(--muted);opacity:1;}
+</style>
+</helmet>
+<div style="{{ themeVars }}">
+<div style="display:grid;grid-template-columns:264px minmax(0,1fr);height:100vh;min-height:620px;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.5;transition:background .25s,color .25s;">
+
+  <aside style="display:flex;flex-direction:column;gap:20px;padding:18px 14px 14px;border-right:1px solid var(--line);min-width:0;">
+    <div style="display:flex;align-items:center;gap:10px;padding:2px 6px;">
+      <div style="width:22px;height:22px;border-radius:7px;background:var(--accent);display:grid;place-items:center;">
+        <div style="width:8px;height:8px;border-radius:50%;background:var(--accentInk);"></div>
+      </div>
+      <span style="font-size:19px;font-weight:600;letter-spacing:-0.03em;">ely</span>
+      <span style="margin-left:auto;font-family:'Geist Mono',monospace;font-size:10.5px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:1px 8px;">local</span>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <button style="display:flex;align-items:center;gap:10px;height:40px;padding:0 12px;border:none;border-radius:12px;background:var(--ink);color:var(--bg);font-size:14px;font-weight:500;cursor:pointer;" style-hover="opacity:.9">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M7 1.5v11M1.5 7h11"></path></svg>
+        <span>{{ t.newChat }}</span>
+        <span style="margin-left:auto;font-family:'Geist Mono',monospace;font-size:11px;opacity:.55;">⌘ N</span>
+      </button>
+      <div style="display:flex;align-items:center;gap:10px;height:38px;padding:0 12px;border-radius:12px;background:var(--sunken);color:var(--muted);">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="6" cy="6" r="4.3"></circle><path d="M9.3 9.3l3.2 3.2"></path></svg>
+        <input placeholder="{{ t.search }}" style="flex:1;min-width:0;border:none;background:transparent;outline:none;color:var(--ink);font-size:14px;">
+        <span style="font-family:'Geist Mono',monospace;font-size:11px;">⌘ K</span>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:4px;">
+      <div style="font-family:'Geist Mono',monospace;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:0 8px 6px;">{{ t.today }}</div>
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;background:var(--surface);box-shadow:0 0 0 1px var(--line);">
+        <div style="width:6px;height:6px;border-radius:50%;background:var(--accentDeep);flex:none;"></div>
+        <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500;">{{ t.convTitle }}</span>
+        <span style="font-family:'Geist Mono',monospace;font-size:11px;color:var(--muted);">19:38</span>
+      </div>
+    </div>
+
+    <div style="margin-top:auto;display:flex;align-items:center;gap:10px;padding:8px;border-radius:14px;" style-hover="background:var(--sunken)">
+      <div style="width:34px;height:34px;border-radius:10px;background:var(--sunken);box-shadow:inset 0 0 0 1px var(--line);display:grid;place-items:center;font-family:'Instrument Serif',serif;font-size:20px;">F</div>
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.25;">
+        <span style="font-weight:500;">Franck</span>
+        <span style="font-size:12px;color:var(--muted);">{{ t.admin }}</span>
+      </div>
+      <button onClick="{{ openSettings }}" title="{{ t.settings }}" style="width:34px;height:34px;border:none;border-radius:10px;background:transparent;color:var(--ink);display:grid;place-items:center;cursor:pointer;" style-hover="background:var(--line)">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2.2"></circle><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" stroke-linecap="round"></path></svg>
+      </button>
+    </div>
+  </aside>
+
+  <main style="display:flex;flex-direction:column;min-width:0;min-height:0;">
+    <header style="display:flex;align-items:center;gap:12px;height:60px;padding:0 20px 0 28px;border-bottom:1px solid var(--line);">
+      <h1 style="margin:0;font-size:15px;font-weight:500;letter-spacing:-0.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;">{{ t.convTitle }}</h1>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+        <div style="display:flex;align-items:center;gap:8px;height:32px;padding:0 12px;border-radius:999px;background:var(--sunken);font-family:'Geist Mono',monospace;font-size:12px;white-space:nowrap;">
+          <span style="width:7px;height:7px;border-radius:50%;background:var(--accentDeep);"></span>
+          <span>gemma-4-26b-a4b</span>
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2.5 4l2.5 2.5L7.5 4"></path></svg>
+        </div>
+        <div style="display:flex;padding:3px;border-radius:999px;background:var(--sunken);font-family:'Geist Mono',monospace;font-size:11.5px;">
+          <sc-for list="{{ langOpts }}" as="o" hint-placeholder-count="2">
+            <button onClick="{{ o.onClick }}" style="height:26px;padding:0 10px;border:none;border-radius:999px;cursor:pointer;background:{{ o.bg }};color:{{ o.fg }};font-family:inherit;font-size:inherit;">{{ o.short }}</button>
+          </sc-for>
+        </div>
+        <button onClick="{{ toggleTheme }}" title="{{ t.theme }}" style="width:32px;height:32px;border:none;border-radius:999px;background:var(--sunken);color:var(--ink);display:grid;place-items:center;cursor:pointer;">
+          <sc-if value="{{ isDark }}" hint-placeholder-val="{{ false }}">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="8" cy="8" r="3"></circle><path d="M8 1v1.6M8 13.4V15M1 8h1.6M13.4 8H15M3 3l1.1 1.1M11.9 11.9L13 13M3 13l1.1-1.1M11.9 4.1L13 3"></path></svg>
+          </sc-if>
+          <sc-if value="{{ isLight }}" hint-placeholder-val="{{ true }}">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M13.5 9.8A6 6 0 016.2 2.5a6 6 0 107.3 7.3z"></path></svg>
+          </sc-if>
+        </button>
+      </div>
+    </header>
+
+    <div style="flex:1;overflow:auto;min-height:0;">
+      <div style="max-width:760px;margin:0 auto;padding:40px 28px 24px;display:flex;flex-direction:column;gap:28px;">
+
+        <div style="display:flex;justify-content:flex-end;">
+          <div style="max-width:78%;padding:12px 16px;border-radius:18px 18px 4px 18px;background:var(--sunken);font-size:15px;text-wrap:pretty;">{{ t.userMsg }}</div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          <div style="display:flex;align-items:center;gap:8px;font-family:'Geist Mono',monospace;font-size:11.5px;color:var(--muted);">
+            <span style="width:14px;height:14px;border-radius:5px;background:var(--accent);"></span><span>ely</span><span>·</span><span>19:36</span>
+          </div>
+          <div style="font-size:15.5px;line-height:1.65;display:flex;flex-direction:column;gap:12px;text-wrap:pretty;">
+            <p style="margin:0;">{{ t.a1p1 }}</p>
+            <p style="margin:0;">{{ t.a1p2a }}<strong style="font-weight:600;">MoE</strong>, <strong style="font-weight:600;">&lt; 24B</strong>{{ t.and }}<strong style="font-weight:600;">GGUF/GGML</strong>{{ t.a1p2b }}</p>
+          </div>
+          <sc-if value="{{ showTraces }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border-radius:12px;border:1px dashed var(--line2);font-size:13px;color:var(--muted);">
+              <span style="flex:none;font-family:'Geist Mono',monospace;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:6px;background:var(--sunken);color:var(--ink);">{{ t.traceTag }}</span>
+              <span style="text-wrap:pretty;">{{ t.trace }}</span>
+            </div>
+          </sc-if>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:14px;">
+          <div style="display:flex;align-items:center;gap:8px;font-family:'Geist Mono',monospace;font-size:11.5px;color:var(--muted);">
+            <span style="width:14px;height:14px;border-radius:5px;background:var(--accent);"></span><span>ely</span><span>·</span><span>19:38</span>
+          </div>
+
+          <div style="border-radius:12px;background:var(--sunken);overflow:hidden;">
+            <button onClick="{{ toggleAction }}" style="width:100%;display:flex;align-items:center;gap:10px;height:40px;padding:0 14px;border:none;background:transparent;color:var(--ink);cursor:pointer;font-family:'Geist Mono',monospace;font-size:12px;">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.3l2.5 2.4L10 3.3"></path></svg>
+              <span>{{ t.oneAction }}</span>
+              <span style="color:var(--muted);">web_search → huggingface.co</span>
+              <span style="margin-left:auto;color:var(--muted);">{{ actionChevron }}</span>
+            </button>
+            <sc-if value="{{ actionOpen }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:0 14px 14px 36px;font-family:'Geist Mono',monospace;font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:4px;">
+                <span>query: "MoE 24B GGUF"</span>
+                <span>results: 14 · 1.8s</span>
+              </div>
+            </sc-if>
+          </div>
+
+          <div style="font-size:15.5px;line-height:1.65;display:flex;flex-direction:column;gap:12px;text-wrap:pretty;">
+            <p style="margin:0;">{{ t.a2p1 }}</p>
+            <p style="margin:0;font-weight:600;">{{ t.a2p2 }}</p>
+            <p style="margin:0;">{{ t.a2p3 }}</p>
+          </div>
+
+          <div style="border-radius:16px;background:var(--surface);box-shadow:0 0 0 1px var(--line);padding:18px;display:flex;flex-direction:column;gap:14px;">
+            <div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+              <div style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;">
+                <span style="font-family:'Geist Mono',monospace;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);">{{ t.model }}</span>
+                <span style="font-family:'Geist Mono',monospace;font-size:14.5px;font-weight:500;word-break:break-all;">Huihui-MoE-24B-A8B-abliterated-GGUF</span>
+              </div>
+              <a href="https://huggingface.co/mradermacher/Huihui-MoE-24B-A8B-abliterated-GGUF" target="_blank" style="display:flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:999px;background:var(--accent);color:var(--accentInk);text-decoration:none;font-size:13px;font-weight:500;white-space:nowrap;">{{ t.open }} ↗</a>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;">
+              <sc-for list="{{ specs }}" as="s" hint-placeholder-count="4">
+                <span style="font-family:'Geist Mono',monospace;font-size:12px;padding:4px 9px;border-radius:7px;background:var(--sunken);">{{ s }}</span>
+              </sc-for>
+            </div>
+            <p style="margin:0;font-size:14px;color:var(--muted);text-wrap:pretty;">{{ t.specText }}</p>
+          </div>
+
+          <p style="margin:0;font-size:15.5px;line-height:1.65;text-wrap:pretty;">{{ t.a2end }}</p>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;">
+            <sc-for list="{{ t.suggest }}" as="s" hint-placeholder-count="3">
+              <button style="height:34px;padding:0 14px;border-radius:999px;border:1px solid var(--line2);background:transparent;color:var(--ink);font-size:13.5px;cursor:pointer;" style-hover="background:var(--sunken)">{{ s }}</button>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="padding:0 28px 14px;">
+      <div style="max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:8px;">
+        <div style="display:flex;align-items:flex-end;gap:8px;padding:8px;border-radius:20px;background:var(--surface);box-shadow:0 0 0 1px var(--line), 0 12px 32px -18px rgba(0,0,0,.35);">
+          <button title="{{ t.attach }}" style="width:40px;height:40px;flex:none;border:none;border-radius:14px;background:transparent;color:var(--muted);display:grid;place-items:center;cursor:pointer;" style-hover="background:var(--sunken)">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 3v10M3 8h10"></path></svg>
+          </button>
+          <textarea rows="1" value="{{ draft }}" onChange="{{ onDraft }}" placeholder="{{ t.placeholder }}" style="flex:1;min-width:0;resize:none;border:none;outline:none;background:transparent;color:var(--ink);font-size:15px;line-height:1.5;padding:9px 4px;min-height:40px;max-height:160px;"></textarea>
+          <button title="{{ t.voice }}" style="width:40px;height:40px;flex:none;border:none;border-radius:14px;background:var(--accent);color:var(--accentInk);display:grid;place-items:center;cursor:pointer;">
+            <sc-if value="{{ hasDraft }}" hint-placeholder-val="{{ false }}">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M3.5 7.5L8 3l4.5 4.5"></path></svg>
+            </sc-if>
+            <sc-if value="{{ noDraft }}" hint-placeholder-val="{{ true }}">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="5.5" y="1.5" width="5" height="8.5" rx="2.5"></rect><path d="M3 7.5a5 5 0 0010 0M8 12.5v2"></path></svg>
+            </sc-if>
+          </button>
+        </div>
+        <div style="text-align:center;font-family:'Geist Mono',monospace;font-size:11px;color:var(--muted);">{{ t.hint }}</div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<sc-if value="{{ settingsOpen }}" hint-placeholder-val="{{ false }}">
+  <div onClick="{{ closeSettings }}" style="position:fixed;inset:0;background:var(--scrim);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:grid;place-items:center;padding:24px;z-index:10;font-size:14px;line-height:1.5;color:var(--ink);">
+    <div onClick="{{ stop }}" style="width:100%;max-width:1040px;height:min(740px,100%);display:grid;grid-template-columns:232px minmax(0,1fr);border-radius:22px;overflow:hidden;background:var(--surface);box-shadow:0 0 0 1px var(--line), 0 40px 80px -30px rgba(0,0,0,.45);">
+
+      <nav style="background:var(--bg);border-right:1px solid var(--line);padding:22px 12px;display:flex;flex-direction:column;gap:18px;overflow:auto;">
+        <sc-for list="{{ navGroups }}" as="g" hint-placeholder-count="2">
+          <div style="display:flex;flex-direction:column;gap:2px;">
+            <div style="font-family:'Geist Mono',monospace;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:0 10px 8px;">{{ g.title }}</div>
+            <sc-for list="{{ g.items }}" as="it" hint-placeholder-count="5">
+              <button onClick="{{ it.onClick }}" style="display:flex;align-items:center;gap:12px;height:36px;padding:0 10px;border:none;border-radius:10px;background:{{ it.bg }};color:var(--ink);cursor:pointer;text-align:left;font-size:14px;font-weight:{{ it.weight }};box-shadow:{{ it.shadow }};">
+                <span style="font-family:'Geist Mono',monospace;font-size:11px;color:var(--muted);width:18px;">{{ it.num }}</span>
+                <span style="flex:1;">{{ it.label }}</span>
+                <span style="width:6px;height:6px;border-radius:50%;background:{{ it.dot }};"></span>
+              </button>
+            </sc-for>
+          </div>
+        </sc-for>
+      </nav>
+
+      <section style="overflow:auto;position:relative;">
+        <button onClick="{{ closeSettings }}" title="{{ t.close }}" style="position:sticky;top:16px;float:right;margin-right:16px;width:34px;height:34px;border:none;border-radius:999px;background:var(--sunken);color:var(--ink);display:grid;place-items:center;cursor:pointer;z-index:1;">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 2l8 8M10 2l-8 8"></path></svg>
+        </button>
+        <div style="padding:40px 48px 48px;max-width:720px;">
+          <div style="font-family:'Geist Mono',monospace;font-size:11.5px;color:var(--muted);">{{ page.num }} / 11</div>
+          <h2 style="margin:4px 0 6px;font-family:'Instrument Serif',serif;font-weight:400;font-size:44px;line-height:1.05;letter-spacing:-0.01em;">{{ page.title }}</h2>
+          <p style="margin:0 0 32px;color:var(--muted);font-size:15px;text-wrap:pretty;">{{ page.desc }}</p>
+
+          <sc-if value="{{ isProfile }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;">
+              <div style="display:grid;grid-template-columns:200px minmax(0,1fr);gap:24px;padding:22px 0;border-top:1px solid var(--line);">
+                <div style="display:flex;flex-direction:column;gap:2px;"><span style="font-weight:500;">{{ t.account }}</span><span style="font-size:13px;color:var(--muted);">{{ t.accountHint }}</span></div>
+                <div style="display:flex;flex-direction:column;gap:14px;">
+                  <label style="display:flex;flex-direction:column;gap:6px;"><span style="font-size:13px;color:var(--muted);">{{ t.firstName }}</span>
+                    <input value="Franck" style="height:42px;padding:0 14px;border-radius:12px;border:none;background:var(--sunken);color:var(--ink);font-size:14.5px;outline:none;" style-focus="box-shadow:0 0 0 2px var(--accent)"></label>
+                  <label style="display:flex;flex-direction:column;gap:6px;"><span style="font-size:13px;color:var(--muted);">{{ t.tz }}</span>
+                    <input value="Europe/Paris" style="height:42px;padding:0 14px;border-radius:12px;border:none;background:var(--sunken);color:var(--ink);font-size:14.5px;font-family:'Geist Mono',monospace;outline:none;" style-focus="box-shadow:0 0 0 2px var(--accent)"></label>
+                  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                    <button style="height:38px;padding:0 16px;border:none;border-radius:999px;background:var(--ink);color:var(--bg);font-size:14px;font-weight:500;cursor:pointer;">{{ t.save }}</button>
+                    <span style="font-family:'Geist Mono',monospace;font-size:12px;color:var(--muted);">franck.olv@gmail.com · {{ t.adminLower }}</span>
+                  </div>
+                </div>
+              </div>
+              <div style="display:grid;grid-template-columns:200px minmax(0,1fr);gap:24px;padding:22px 0;border-top:1px solid var(--line);">
+                <div style="display:flex;flex-direction:column;gap:2px;"><span style="font-weight:500;">{{ t.appearance }}</span><span style="font-size:13px;color:var(--muted);">{{ t.appearanceHint }}</span></div>
+                <div style="display:flex;flex-direction:column;gap:14px;">
+                  <div style="display:flex;flex-wrap:wrap;gap:4px;padding:4px;border-radius:14px;background:var(--sunken);width:fit-content;">
+                    <sc-for list="{{ themeOpts }}" as="o" hint-placeholder-count="3">
+                      <button onClick="{{ o.onClick }}" style="height:32px;padding:0 14px;border:none;border-radius:10px;cursor:pointer;font-size:13.5px;background:{{ o.bg }};color:var(--ink);box-shadow:{{ o.shadow }};">{{ o.label }}</button>
+                    </sc-for>
+                  </div>
+                  <div style="display:flex;flex-wrap:wrap;gap:4px;padding:4px;border-radius:14px;background:var(--sunken);width:fit-content;">
+                    <sc-for list="{{ langOpts }}" as="o" hint-placeholder-count="2">
+                      <button onClick="{{ o.onClick }}" style="height:32px;padding:0 14px;border:none;border-radius:10px;cursor:pointer;font-size:13.5px;background:{{ o.segBg }};color:var(--ink);box-shadow:{{ o.shadow }};">{{ o.label }}</button>
+                    </sc-for>
+                  </div>
+                </div>
+              </div>
+              <div style="display:grid;grid-template-columns:200px minmax(0,1fr);gap:24px;padding:22px 0;border-top:1px solid var(--line);">
+                <div style="display:flex;flex-direction:column;gap:2px;"><span style="font-weight:500;">{{ t.voiceTitle }}</span><span style="font-size:13px;color:var(--muted);">{{ t.voiceHint }}</span></div>
+                <div style="display:flex;flex-direction:column;gap:14px;">
+                  <button onClick="{{ toggleReadAloud }}" style="display:flex;align-items:center;gap:12px;border:none;background:transparent;padding:0;color:var(--ink);cursor:pointer;font-size:14.5px;text-align:left;">
+                    <span style="width:40px;height:24px;border-radius:999px;padding:3px;background:{{ switchBg }};display:flex;justify-content:{{ switchJustify }};transition:background .2s;">
+                      <span style="width:18px;height:18px;border-radius:50%;background:{{ switchKnob }};"></span>
+                    </span>
+                    <span>{{ t.readAloud }}</span>
+                  </button>
+                  <select style="height:42px;padding:0 12px;border-radius:12px;border:none;background:var(--sunken);color:var(--ink);font-size:14.5px;outline:none;">
+                    <option>{{ t.auto }}</option>
+                  </select>
+                </div>
+              </div>
+              <div style="display:grid;grid-template-columns:200px minmax(0,1fr);gap:24px;padding:22px 0;border-top:1px solid var(--line);">
+                <div style="display:flex;flex-direction:column;gap:2px;"><span style="font-weight:500;">{{ t.notif }}</span><span style="font-size:13px;color:var(--muted);">{{ t.notifHint }}</span></div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;">
+                  <button style="height:38px;padding:0 16px;border:none;border-radius:999px;background:var(--accent);color:var(--accentInk);font-size:14px;font-weight:500;cursor:pointer;">{{ t.enableDevice }}</button>
+                  <button style="height:38px;padding:0 16px;border:1px solid var(--line2);border-radius:999px;background:transparent;color:var(--ink);font-size:14px;cursor:pointer;">{{ t.test }}</button>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isMemory }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;gap:36px;">
+              <div style="display:flex;flex-direction:column;gap:12px;">
+                <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;">
+                  <span style="font-weight:500;font-size:15px;">{{ t.knows }}</span>
+                  <span style="font-size:13px;color:var(--muted);">{{ t.knowsHint }}</span>
+                </div>
+                <textarea value="{{ memoryText }}" onChange="{{ onMemory }}" style="width:100%;min-height:210px;padding:16px 18px;border-radius:16px;border:none;background:var(--sunken);color:var(--ink);font-size:14.5px;line-height:1.65;resize:vertical;outline:none;" style-focus="box-shadow:0 0 0 2px var(--accent)"></textarea>
+                <div style="display:flex;align-items:center;gap:12px;">
+                  <button disabled="{{ memoryClean }}" style="height:38px;padding:0 16px;border:none;border-radius:999px;background:var(--ink);color:var(--bg);font-size:14px;font-weight:500;cursor:pointer;opacity:{{ saveOpacity }};">{{ t.save }}</button>
+                  <span style="font-family:'Geist Mono',monospace;font-size:12px;color:var(--muted);">{{ t.autoUpdated }}</span>
+                </div>
+              </div>
+
+              <div style="display:flex;flex-direction:column;gap:12px;">
+                <div style="display:flex;align-items:baseline;gap:8px;">
+                  <span style="font-weight:500;font-size:15px;">{{ t.memories }}</span>
+                  <span style="font-family:'Geist Mono',monospace;font-size:12px;color:var(--muted);">{{ memCount }}</span>
+                </div>
+                <div style="display:flex;gap:8px;padding:6px;border-radius:16px;background:var(--sunken);">
+                  <input value="{{ newMem }}" onChange="{{ onNewMem }}" onKeyDown="{{ onNewMemKey }}" placeholder="{{ t.addPh }}" style="flex:1;min-width:0;height:38px;padding:0 10px;border:none;background:transparent;color:var(--ink);font-size:14.5px;outline:none;">
+                  <button onClick="{{ addMem }}" style="height:38px;padding:0 16px;border:none;border-radius:12px;background:var(--surface);color:var(--ink);font-size:14px;font-weight:500;cursor:pointer;box-shadow:0 0 0 1px var(--line);">{{ t.add }}</button>
+                </div>
+                <div style="display:flex;flex-direction:column;">
+                  <sc-for list="{{ memories }}" as="m" hint-placeholder-count="2">
+                    <div style="display:flex;gap:16px;align-items:flex-start;padding:16px 4px;border-bottom:1px solid var(--line);">
+                      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;">
+                        <span style="font-size:14.5px;text-wrap:pretty;">{{ m.text }}</span>
+                        <div style="display:flex;gap:6px;font-family:'Geist Mono',monospace;font-size:11px;color:var(--muted);">
+                          <span style="padding:1px 7px;border-radius:6px;background:var(--sunken);">{{ m.kind }}</span>
+                          <span style="padding:1px 7px;border-radius:6px;background:var(--sunken);">{{ m.src }}</span>
+                          <span style="padding:1px 0;">{{ m.when }}</span>
+                        </div>
+                      </div>
+                      <button onClick="{{ m.remove }}" title="{{ t.del }}" style="width:32px;height:32px;flex:none;border:none;border-radius:10px;background:transparent;color:var(--muted);display:grid;place-items:center;cursor:pointer;" style-hover="background:var(--sunken);color:var(--ink)">
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2 3.5h10M5.5 3.5V2h3v1.5M3.5 3.5l.6 8.5h5.8l.6-8.5"></path></svg>
+                      </button>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isOther }}" hint-placeholder-val="{{ false }}">
+            <div style="border-top:1px solid var(--line);padding-top:22px;font-family:'Geist Mono',monospace;font-size:12.5px;color:var(--muted);">{{ t.notInMock }}</div>
+          </sc-if>
+        </div>
+      </section>
+    </div>
+  </div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;accent&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;lime&quot;,&quot;glacier&quot;,&quot;signal&quot;],&quot;default&quot;:&quot;lime&quot;,&quot;tsType&quot;:&quot;'lime'|'glacier'|'signal'&quot;},&quot;defaultTheme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;light&quot;,&quot;dark&quot;,&quot;auto&quot;],&quot;default&quot;:&quot;light&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;defaultLang&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;fr&quot;,&quot;en&quot;],&quot;default&quot;:&quot;fr&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;showTraces&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},&quot;openSettings&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;}}">
+const ACCENTS = {
+  lime:    { a: 'oklch(0.9 0.19 122)',  ink: 'oklch(0.24 0.05 122)', deepL: 'oklch(0.55 0.15 132)', deepD: 'oklch(0.9 0.19 122)' },
+  glacier: { a: 'oklch(0.86 0.1 250)',  ink: 'oklch(0.24 0.05 240)', deepL: 'oklch(0.55 0.13 240)', deepD: 'oklch(0.86 0.1 250)' },
+  signal:  { a: 'oklch(0.78 0.17 52)',  ink: 'oklch(0.22 0.05 45)',  deepL: 'oklch(0.6 0.17 45)',   deepD: 'oklch(0.78 0.17 52)' },
+};
+const I18N = {
+  fr: {
+    newChat: 'Nouvelle demande', search: 'Rechercher', today: "Aujourd'hui", convTitle: 'Actualités modèles IA locaux',
+    admin: 'Administrateur', adminLower: 'administrateur', settings: 'Réglages', theme: 'Thème',
+    userMsg: "Je veux un modèle MoE de moins de 24B, prêt pour l'inférence locale. Pas une piste : un dépôt concret.",
+    a1p1: "Franck, vous avez raison. La recommandation doit être actionnable. La présence du modèle sur Hugging Face est une étape, mais la disponibilité immédiate en format exécutable local (GGUF/GGML) est la clé.",
+    a1p2a: 'Je vais donc effectuer une recherche finale et très spécifique sur Hugging Face pour trouver un dépôt qui combine ces trois éléments : ', and: ', et ',
+    a1p2b: " (le format pour l'inférence locale avec des outils comme LM Studio ou llama.cpp). Je lance cette recherche maintenant.",
+    traceTag: 'Objectif non atteint', trace: "L'agent n'a pas encore exécuté la recherche finale sur Hugging Face en utilisant les critères MoE, < 24B et GGUF/GGML pour fournir une réponse concrète à la demande initiale.",
+    oneAction: '1 action',
+    a2p1: "Franck, j'ai trouvé la réponse concrète que vous cherchiez.",
+    a2p2: "Oui, il existe un modèle qui correspond à vos critères et qui est prêt pour l'inférence locale.",
+    a2p3: 'Le dépôt suivant sur Hugging Face contient une version quantifiée (GGUF) qui correspond à votre recherche :',
+    model: 'Modèle', open: 'Ouvrir',
+    specText: "Version GGUF optimisée pour une exécution locale avec llama.cpp ou LM Studio. Le nom suggère une architecture MoE autour de la barre des 24B.",
+    a2end: 'Voulez-vous que je fasse quelque chose avec ce modèle maintenant ?',
+    suggest: ['Le télécharger', 'Le tester avec un prompt', 'Le comparer à un autre modèle'],
+    attach: 'Joindre', voice: 'Dicter', placeholder: "Demande n'importe quoi à Ely…",
+    hint: 'Entrée pour envoyer · Maj+Entrée pour aller à la ligne · glisse un fichier pour le joindre',
+    close: 'Fermer', groupSettings: 'Réglages', groupAdmin: 'Administration',
+    nav: ['Profil','Mémoire','Connexions','Identifiants','Tâches planifiées','Fichiers','Modèles','Utilisateurs','Consommation','Extensions MCP','Auto-amélioration'],
+    descProfile: "Ton compte et tes préférences d'utilisation.", descMemory: "Ce qu'Ely a appris sur toi au fil des échanges. Tout est modifiable.", descOther: 'Section de réglages.',
+    account: 'Compte', accountHint: 'Ely utilise ton prénom pour signer ses messages.', firstName: 'Prénom', tz: 'Fuseau horaire', save: 'Enregistrer',
+    appearance: 'Apparence', appearanceHint: "Thème et langue de l'interface.", auto: 'Automatique', light: 'Clair', dark: 'Sombre',
+    voiceTitle: 'Voix', voiceHint: 'Lecture des réponses.', readAloud: 'Lire les réponses à voix haute',
+    notif: 'Notifications', notifHint: 'Sois prévenu sur ton téléphone quand Ely a terminé une tâche ou a besoin de toi.', enableDevice: 'Activer sur cet appareil', test: 'Tester',
+    knows: "Ce qu'Ely sait de toi", knowsHint: 'Toujours présent dans son esprit.', autoUpdated: 'mis à jour après chaque échange',
+    memories: 'Souvenirs', addPh: 'Ajouter un souvenir (ex. Mon dentiste est le Dr Leroy)', add: 'Ajouter', del: 'Supprimer',
+    fact: 'fait', manual: 'manuel', ago: 'il y a 22 min', now: "à l'instant",
+    notInMock: 'Contenu non maquetté dans cette version.',
+    memo: "Franck est un utilisateur extrêmement exigeant concernant la fraîcheur et la précision des informations. Il travaille sur des recherches très spécifiques, notamment sur les modèles d'IA locaux. Il est méticuleux quant à la validation des sources et des dates, exigeant une information au plus près du temps réel. Il est prêt à affiner ses requêtes, passant de recherches larges à des recherches très ciblées sur des plateformes techniques comme Hugging Face pour trouver des spécifications précises (MoE, taille < 24B, format GGUF).",
+    mem: ["Franck utilise des outils de recherche avancés (browser, web_search) pour valider la disponibilité et la mise à jour des modèles IA.", "Franck recherche activement des modèles d'IA locaux spécifiques, notamment ceux basés sur l'architecture MoE et dont la taille est inférieure à 24 milliards de paramètres."],
+  },
+  en: {
+    newChat: 'New request', search: 'Search', today: 'Today', convTitle: 'Local AI model news',
+    admin: 'Administrator', adminLower: 'administrator', settings: 'Settings', theme: 'Theme',
+    userMsg: "I want an MoE model under 24B that's ready for local inference. Not a lead: an actual repository.",
+    a1p1: "You're right, Franck. The recommendation needs to be actionable. Having the model on Hugging Face is one step, but immediate availability in a locally runnable format (GGUF/GGML) is what matters.",
+    a1p2a: "I'll run a final, very specific search on Hugging Face for a repository that combines all three: ", and: ', and ',
+    a1p2b: ' (the format for local inference with tools like LM Studio or llama.cpp). Starting the search now.',
+    traceTag: 'Goal not met', trace: "The agent hasn't yet run the final Hugging Face search using the MoE, < 24B and GGUF/GGML criteria to give a concrete answer to the original request.",
+    oneAction: '1 action',
+    a2p1: 'Franck, I found the concrete answer you were looking for.',
+    a2p2: "Yes, there's a model that matches your criteria and is ready for local inference.",
+    a2p3: 'This Hugging Face repository contains a quantized (GGUF) build that matches your search:',
+    model: 'Model', open: 'Open',
+    specText: 'GGUF build optimized for local execution with llama.cpp or LM Studio. The name suggests an MoE architecture right around the 24B mark.',
+    a2end: 'Want me to do something with this model now?',
+    suggest: ['Download it', 'Test it with a prompt', 'Compare it to another model'],
+    attach: 'Attach', voice: 'Dictate', placeholder: 'Ask Ely anything…',
+    hint: 'Enter to send · Shift+Enter for a new line · drop a file to attach it',
+    close: 'Close', groupSettings: 'Settings', groupAdmin: 'Admin',
+    nav: ['Profile','Memory','Connections','Credentials','Scheduled tasks','Files','Models','Users','Usage','MCP extensions','Self-improvement'],
+    descProfile: 'Your account and usage preferences.', descMemory: "What Ely has learned about you over time. Everything is editable.", descOther: 'Settings section.',
+    account: 'Account', accountHint: 'Ely signs its messages with your first name.', firstName: 'First name', tz: 'Time zone', save: 'Save',
+    appearance: 'Appearance', appearanceHint: 'Interface theme and language.', auto: 'Automatic', light: 'Light', dark: 'Dark',
+    voiceTitle: 'Voice', voiceHint: 'Spoken replies.', readAloud: 'Read replies aloud',
+    notif: 'Notifications', notifHint: 'Get a ping on your phone when Ely finishes a task or needs you.', enableDevice: 'Enable on this device', test: 'Test',
+    knows: 'What Ely knows about you', knowsHint: 'Always on its mind.', autoUpdated: 'updated after every exchange',
+    memories: 'Memories', addPh: 'Add a memory (e.g. My dentist is Dr Leroy)', add: 'Add', del: 'Delete',
+    fact: 'fact', manual: 'manual', ago: '22 min ago', now: 'just now',
+    notInMock: 'Not mocked up in this version.',
+    memo: "Franck is extremely demanding about how fresh and accurate information is. He works on very specific research, especially local AI models. He is meticulous about validating sources and dates and expects information as close to real time as possible. He is willing to refine his queries, moving from broad searches to highly targeted ones on technical platforms like Hugging Face to find precise specs (MoE, size < 24B, GGUF format).",
+    mem: ['Franck uses advanced research tools (browser, web_search) to check whether AI models are available and up to date.', 'Franck is actively looking for specific local AI models, particularly MoE-based ones under 24 billion parameters.'],
+  },
+};
+
+class Component extends DCLogic {
+  state = {
+    theme: this.props.defaultTheme ?? 'light',
+    lang: this.props.defaultLang ?? 'fr',
+    settingsOpen: this.props.openSettings ?? false,
+    page: 1, actionOpen: false, readAloud: false, draft: '',
+    memoryText: null, memoryDirty: false, newMem: '',
+    memories: [{ id: 1, i: 0 }, { id: 2, i: 1 }],
+  };
+  componentDidMount() {
+    this.mq = window.matchMedia('(prefers-color-scheme: dark)');
+    this.onMq = () => this.forceUpdate();
+    this.mq.addEventListener('change', this.onMq);
+  }
+  componentDidUpdate(prev) {
+    const p = this.props, u = {};
+    if (p.defaultTheme !== prev.defaultTheme && p.defaultTheme) u.theme = p.defaultTheme;
+    if (p.defaultLang !== prev.defaultLang && p.defaultLang) u.lang = p.defaultLang;
+    if (p.openSettings !== prev.openSettings) u.settingsOpen = !!p.openSettings;
+    if (Object.keys(u).length) this.setState(u);
+  }
+  componentWillUnmount() { this.mq && this.mq.removeEventListener('change', this.onMq); }
+
+  renderVals() {
+    const s = this.state, t = I18N[s.lang];
+    const dark = s.theme === 'dark' || (s.theme === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    const ac = ACCENTS[this.props.accent ?? 'lime'] || ACCENTS.lime;
+    const themeVars = dark ? {
+      '--bg': 'oklch(0.3 0.009 250)', '--surface': 'oklch(0.34 0.01 250)', '--sunken': 'oklch(0.38 0.011 250)',
+      '--line': 'oklch(0.41 0.011 250)', '--line2': 'oklch(0.49 0.012 250)', '--ink': 'oklch(0.97 0.005 250)', '--muted': 'oklch(0.8 0.009 250)',
+      '--scrim': 'oklch(0.14 0.008 250 / 0.6)',
+    } : {
+      '--bg': 'oklch(0.975 0.004 265)', '--surface': 'oklch(0.998 0.002 265)', '--sunken': 'oklch(0.95 0.007 265)',
+      '--line': 'oklch(0.91 0.008 265)', '--line2': 'oklch(0.85 0.01 265)', '--ink': 'oklch(0.19 0.02 265)', '--muted': 'oklch(0.49 0.018 265)',
+      '--scrim': 'oklch(0.25 0.02 265 / 0.35)',
+    };
+    Object.assign(themeVars, { '--accent': ac.a, '--accentInk': ac.ink, '--accentDeep': dark ? ac.deepD : ac.deepL });
+
+    const lift = dark ? '0 0 0 1px var(--line2)' : '0 1px 2px rgba(0,0,0,.08), 0 0 0 1px var(--line)';
+    const setLang = l => () => this.setState({ lang: l, memoryText: s.memoryDirty ? s.memoryText : null });
+    const langOpts = [['fr', 'FR', 'Français'], ['en', 'EN', 'English']].map(([k, short, label]) => ({
+      short, label, onClick: setLang(k),
+      bg: s.lang === k ? 'var(--ink)' : 'transparent', fg: s.lang === k ? 'var(--bg)' : 'var(--muted)',
+      segBg: s.lang === k ? 'var(--surface)' : 'transparent', shadow: s.lang === k ? lift : 'none',
+    }));
+    const themeOpts = [['auto', t.auto], ['light', t.light], ['dark', t.dark]].map(([k, label]) => ({
+      label, onClick: () => this.setState({ theme: k }),
+      bg: s.theme === k ? 'var(--surface)' : 'transparent', shadow: s.theme === k ? lift : 'none',
+    }));
+    const mkItem = i => ({
+      num: String(i).padStart(2, '0'), label: t.nav[i - 1], onClick: () => this.setState({ page: i }),
+      bg: s.page === i ? 'var(--surface)' : 'transparent', shadow: s.page === i ? lift : 'none',
+      weight: s.page === i ? 500 : 400, dot: s.page === i ? 'var(--accentDeep)' : 'transparent',
+    });
+    const navGroups = [
+      { title: t.groupSettings, items: [1, 2, 3, 4, 5, 6].map(mkItem) },
+      { title: t.groupAdmin, items: [7, 8, 9, 10, 11].map(mkItem) },
+    ];
+    const page = {
+      num: String(s.page).padStart(2, '0'), title: t.nav[s.page - 1],
+      desc: s.page === 1 ? t.descProfile : s.page === 2 ? t.descMemory : t.descOther,
+    };
+    const addMem = () => {
+      const v = s.newMem.trim(); if (!v) return;
+      this.setState({ newMem: '', memories: [{ id: Date.now(), text: v, manual: true }, ...s.memories] });
+    };
+    const memories = s.memories.map(m => ({
+      text: m.text ?? t.mem[m.i], kind: t.fact, src: m.manual ? t.manual : 'auto', when: m.manual ? t.now : t.ago,
+      remove: () => this.setState(st => ({ memories: st.memories.filter(x => x.id !== m.id) })),
+    }));
+
+    return {
+      t, themeVars, isDark: dark, isLight: !dark, langOpts, themeOpts, navGroups, page,
+      showTraces: this.props.showTraces ?? true,
+      toggleTheme: () => this.setState({ theme: dark ? 'light' : 'dark' }),
+      openSettings: () => this.setState({ settingsOpen: true }),
+      closeSettings: () => this.setState({ settingsOpen: false }),
+      stop: e => e.stopPropagation(),
+      settingsOpen: s.settingsOpen,
+      isProfile: s.page === 1, isMemory: s.page === 2, isOther: s.page > 2,
+      actionOpen: s.actionOpen, actionChevron: s.actionOpen ? '−' : '+',
+      toggleAction: () => this.setState({ actionOpen: !s.actionOpen }),
+      specs: ['MoE', '24B · A8B', 'GGUF', 'llama.cpp', 'LM Studio'],
+      draft: s.draft, onDraft: e => this.setState({ draft: e.target.value }),
+      hasDraft: !!s.draft.trim(), noDraft: !s.draft.trim(),
+      readAloud: s.readAloud, toggleReadAloud: () => this.setState({ readAloud: !s.readAloud }),
+      switchBg: s.readAloud ? 'var(--accent)' : 'var(--line2)', switchJustify: s.readAloud ? 'flex-end' : 'flex-start',
+      switchKnob: s.readAloud ? 'var(--accentInk)' : 'var(--surface)',
+      memoryText: s.memoryText ?? t.memo, onMemory: e => this.setState({ memoryText: e.target.value, memoryDirty: true }),
+      memoryClean: !s.memoryDirty, saveOpacity: s.memoryDirty ? 1 : 0.35,
+      newMem: s.newMem, onNewMem: e => this.setState({ newMem: e.target.value }),
+      onNewMemKey: e => { if (e.key === 'Enter') addMem(); }, addMem,
+      memories, memCount: String(memories.length),
+    };
+  }
+}
+</script>
+</body>
+</html>
