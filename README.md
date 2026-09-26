@@ -1,249 +1,254 @@
-# Ely 2 — votre agent personnel autonome
+# Ely 2 — your autonomous personal agent
 
-**Vous lui parlez, il agit.** Ely prend un rendez-vous chez le médecin, publie sur LinkedIn ou Facebook, rédige et envoie
-vos e-mails, ajoute un contact ou un rendez-vous, cherche, compare, rédige des documents… depuis votre ordinateur ou votre
-téléphone Android. Et **il ne s'arrête pas tant que l'objectif n'est pas atteint.**
+**English** · [Français](README.fr.md)
 
-![Ely réserve un rendez-vous dans son navigateur](docs/images/rdv.png)
+**You talk to it, it acts.** Ely books a doctor's appointment, posts on LinkedIn or Facebook, writes and sends your
+emails, adds a contact or an event, searches, compares, drafts documents… from your computer or your Android phone.
+And **it doesn't stop until the goal is reached.**
 
-Trois mots d'ordre : **efficacité, autonomie, performance.** Ely 2 est une réécriture complète : ~6 800 lignes de
-Python et ~2 600 lignes d'interface, au lieu des 240 000 lignes et 9 services Docker de la version précédente.
-Un seul processus, une seule base SQLite, zéro service à maintenir.
+![Ely books an appointment in its browser](docs/images/rdv.png)
+
+Three watchwords: **efficiency, autonomy, performance.** Ely 2 is a complete rewrite: ~6,800 lines of Python and
+~2,600 lines of interface, instead of the previous version's 240,000 lines and 9 Docker services.
+One process, one SQLite database, zero services to maintain.
+
+The interface is bilingual (English / French, formal "vous" by default), and Ely answers in your language.
 
 ---
 
-## Ce qu'on peut lui demander
+## What you can ask
 
-| Vous dites… | Ely… |
+| You say… | Ely… |
 |---|---|
-| « Prends-moi un RDV chez un généraliste jeudi en fin de journée » | ouvre Doctolib dans son navigateur (avec votre session), choisit le créneau, réserve, ajoute le RDV à votre agenda avec l'adresse |
-| « Publie sur LinkedIn un post sur notre nouveau catalogue, avec une image » | rédige le post, génère l'image, publie (API ou navigateur), vérifie que c'est en ligne |
-| « Réponds à Paul que c'est d'accord pour mardi » | retrouve le mail de Paul, rédige, envoie depuis votre boîte |
-| « Ajoute Marie Leroy, 06 12 34 56 78, c'est ma kiné » | crée le contact, et retient qui est Marie |
-| « Chaque lundi à 8 h, fais-moi un point sur mes rendez-vous de la semaine » | planifie la tâche et vous envoie le résultat en notification |
-| « Compare ces 3 devis (PDF joints) et fais-moi un tableau Excel » | lit les PDF, calcule, produit le fichier à télécharger |
-| « Branche-toi sur mon Home Assistant » (admin) | ajoute le serveur MCP : ses outils deviennent les siens |
-| « Améliore-toi pour être plus rapide sur Doctolib » (admin) | analyse ses échecs, écrit une compétence ou corrige son propre code, teste, se redéploie |
+| "Book me an appointment with a GP on Thursday, late afternoon" | opens Doctolib in its browser (with your session), picks the slot, books, adds the appointment and address to your calendar |
+| "Post on LinkedIn about our new catalogue, with an image" | writes the post, generates the image, publishes (API or browser), checks it is live |
+| "Tell Paul Tuesday works for me" | finds Paul's email, writes the reply, sends it from your mailbox |
+| "Add Marie Leroy, +33 6 12 34 56 78, she's my physiotherapist" | creates the contact, and remembers who Marie is |
+| "Every Monday at 8 am, give me a rundown of my week's appointments" | schedules the task and sends you the result as a notification |
+| "Compare these 3 quotes (attached PDFs) and make me an Excel table" | reads the PDFs, calculates, produces the file to download |
+| "Connect to my Home Assistant" (admin) | adds the MCP server: its tools become Ely's own |
+| "Improve yourself to be faster on Doctolib" (admin) | analyses its failures, writes a skill or fixes its own code, tests, redeploys |
 
 ---
 
-## Démarrage (Mac Studio)
+## Getting started (Mac Studio)
 
 ```bash
 git clone https://github.com/franckolv-dev/ELY2.git
 cd ELY2
-./ely.sh            # installe tout au premier lancement (Python, dépendances, Chromium), puis démarre
+./ely.sh            # installs everything on first run (Python, dependencies, Chromium), then starts
 ```
 
-1. Ouvrez le fichier `.env` créé et mettez **au moins une clé d'API** (par exemple `ANTHROPIC_API_KEY`), ou lancez simplement LM Studio.
-   Plus tard, après toute modification du `.env`, Réglages → Modèles → « Actualiser » suffit : pas besoin de redémarrer.
-2. Relancez `./ely.sh`, ouvrez **http://localhost:8000** : le premier compte créé devient administrateur.
-3. Pour qu'Ely démarre toute seule avec le Mac : `./ely.sh service`.
+1. Open the generated `.env` file and add **at least one API key** (for example `ANTHROPIC_API_KEY`), or simply start LM Studio.
+   Later, after any change to `.env`, Settings → Models → "Refresh models" is enough: no restart needed.
+2. Run `./ely.sh` again and open **http://localhost:8000**: the first account created becomes the administrator.
+3. To start Ely automatically with the Mac: `./ely.sh service`.
 
-**Mettre Ely à jour** : `./ely.sh update`, puis relancez Ely (le service, lui, redémarre tout seul). Préférez-le à `git pull` :
-Ely modifie parfois son propre code (auto-amélioration), et `git pull` refuse alors de réunir les deux historiques ;
-`update` garde ses améliorations et les vôtres. La version qui tourne s'affiche au démarrage et dans le menu du compte.
+**Updating Ely**: `./ely.sh update`, then restart Ely (the service restarts on its own). Prefer it to `git pull`:
+Ely sometimes changes its own code (self-improvement), and `git pull` then refuses to reconcile the two histories;
+`update` keeps both its improvements and yours. The running version is shown at startup and in the account menu.
 
-Les autres commandes : `./ely.sh install` (dépendances), `./ely.sh test` (tests), `./ely.sh unservice`.
+Other commands: `./ely.sh install` (dependencies), `./ely.sh test` (tests), `./ely.sh unservice`.
 
-**« Le port 8000 est déjà utilisé »** : un autre programme l'occupe, souvent l'ancien Ely en Docker
-(`docker compose down` dans son dossier) ou une instance d'Ely déjà lancée en service. Ely affiche qui l'occupe ;
-vous pouvez aussi simplement choisir un autre port avec `ELY_PORT=8001` dans `.env`.
+**"Port 8000 is already in use"**: another program holds it, often the old Docker-based Ely
+(`docker compose down` in its folder) or an instance of Ely already running as a service. Ely shows which program it is;
+you can also simply pick another port with `ELY_PORT=8001` in `.env`.
 
 ### LM Studio
 
-Onglet **Développeur → Démarrer le serveur** (port 1234). Ely découvre seule les modèles installés.
-Sur un M1 Max 32 Go, ce qui marche bien :
+**Developer** tab → **Start server** (port 1234). Ely discovers the installed models on its own.
+On an M1 Max with 32 GB, these work well:
 
-- tâches de fond (mémoire, titres) et petites demandes : `google/gemma-4-26b-a4b` ou `qwen/qwen3.5-9b` ;
-- vecteurs de la mémoire : `text-embedding-nomic-embed-text-v1.5`.
+- background tasks (memory, titles) and small requests: `google/gemma-4-26b-a4b` or `qwen/qwen3.5-9b`;
+- memory embeddings: `text-embedding-nomic-embed-text-v1.5`.
 
-⚠️ **Réglez la longueur de contexte du modèle à 32 768 tokens au moins** dans LM Studio : la valeur par défaut, souvent
-4 096, est trop courte pour un agent. Ely le signale dans Réglages → Modèles si c'est le cas.
+⚠️ **Set the model's context length to at least 32,768 tokens** in LM Studio: the default, often 4,096, is too short
+for an agent. Ely flags it in Settings → Models if that's the case.
 
-Pour le travail d'agent lui-même (plusieurs outils, longues démarches), un modèle cloud reste nettement plus fiable :
-par défaut Ely prend **Claude Opus 5** si une clé Anthropic est présente, sinon le meilleur disponible parmi vos clés.
+For the agent work itself (several tools, long procedures), a cloud model remains far more reliable:
+by default Ely uses **Claude Opus 5** if an Anthropic key is present, otherwise the best model available among your keys.
 
 ---
 
-## Depuis le téléphone Android
+## From your Android phone
 
-Ely est une **application web installable** : cliquez sur votre nom en bas à gauche → **Installer** (sur Android, dans
-Chrome : menu ⋮ → **Installer l'application**).
-Vous obtenez une icône, le plein écran, les **notifications**, la **dictée vocale**, et Ely apparaît dans le menu
-**Partager** d'Android (partagez une page, un texte ou une photo avec Ely : « résume », « réponds », « ajoute au calendrier »).
+Ely is an **installable web app**: click your name at the bottom left → **Install** (on Android, in Chrome:
+menu ⋮ → **Install app**).
+You get an icon, full screen, **notifications**, **voice dictation**, and Ely appears in Android's **Share** menu
+(share a page, some text or a photo with Ely: "summarise", "reply", "add to calendar").
 
-Le micro, les notifications et l'installation exigent une adresse **HTTPS**. Le plus simple, gratuit et privé :
+The microphone, notifications and installation require an **HTTPS** address. The simplest option, free and private:
 **Tailscale**.
 
-1. Installez Tailscale sur le Mac Studio et sur le téléphone (même compte).
-2. Sur le Mac : `tailscale serve --bg 8000`. Vous obtenez une adresse du type `https://mac-studio.tailXXXX.ts.net`.
-3. Mettez cette adresse dans `ELY_PUBLIC_URL` du `.env`, puis ouvrez-la sur le téléphone.
+1. Install Tailscale on the Mac Studio and on the phone (same account).
+2. On the Mac: `tailscale serve --bg 8000`. You get an address like `https://mac-studio.tailXXXX.ts.net`.
+3. Put this address in `ELY_PUBLIC_URL` in `.env`, then open it on the phone.
 
-<p align="center"><img src="docs/images/mobile.png" width="320" alt="Ely sur Android"></p>
+<p align="center"><img src="docs/images/mobile.png" width="320" alt="Ely on Android"></p>
 
-Ça marche partout (4G, Wi-Fi d'hôtel…), sans ouvrir de port sur votre box. Sur le Wi-Fi de la maison, `http://<ip-du-mac>:8000`
-fonctionne aussi, mais sans micro ni notifications.
+It works everywhere (4G, hotel Wi-Fi…), without opening any port on your router. On your home Wi-Fi,
+`http://<mac-ip>:8000` works too, but without microphone or notifications.
 
-**Alternative sans rien installer : Telegram.** Créez un bot avec @BotFather, mettez `TELEGRAM_BOT_TOKEN` dans `.env`,
-puis Réglages → Connexions → Telegram. Vous parlez à Ely depuis Telegram, y compris en messages vocaux.
+**Alternative with nothing to install: Telegram.** Create a bot with @BotFather, put `TELEGRAM_BOT_TOKEN` in `.env`,
+then Settings → Connections → Telegram. You talk to Ely from Telegram, voice messages included.
 
 ---
 
-## Comment Ely ne lâche rien
+## How Ely never gives up
 
 ```
-votre demande ─▶ tâche de fond persistante ─▶ réfléchir ─▶ agir (outils, en parallèle) ─▶ réfléchir ─▶ … ─▶ réponse
-                                                                                             │
-                                            contrôleur d'objectif : « est-ce VRAIMENT fait ? » ◀┘
-                                                 non → « il manque X, continue » → Ely repart
-                                                 oui → fin, apprentissage, notification
+your request ─▶ persistent background task ─▶ think ─▶ act (tools, in parallel) ─▶ think ─▶ … ─▶ answer
+                                                                                              │
+                                                     goal controller: "is it REALLY done?" ◀──┘
+                                                         no  → "X is missing, keep going" → Ely resumes
+                                                         yes → done, learning, notification
 ```
 
-- **Le contrôleur d'objectif** relit la demande, les actions réellement effectuées et la réponse. Une intention
-  (« je vais le faire ») ou une question évitable ne suffit pas : Ely est relancée avec ce qui manque. Elle s'arrête
-  seulement quand c'est fait, ou quand plus aucun progrès n'est possible (pas de boucle infinie).
-- **Tâches de fond** : fermez l'application, la tâche continue. Vous recevez une notification à la fin.
-- **Reprise après redémarrage** : chaque étape est enregistrée ; au redémarrage, les tâches reprennent là où elles
-  étaient. Une action dont le résultat s'est perdu n'est jamais rejouée à l'aveugle : Ely vérifie d'abord.
-- **Messages en cours de route** : « ah, et ajoute aussi du pain » est intégré à la tâche en cours.
-- **Pannes de modèle** : bascule automatique sur le fournisseur suivant, puis nouveaux essais patients.
-  Si Ely piétine, elle passe au modèle d'escalade (`ELY_MODEL_STRONG`), si vous en avez configuré un.
-- **Questions à l'utilisateur** : seulement pour ce qu'elle ne peut vraiment pas deviner (code SMS, mot de passe
-  inconnu). Vous êtes notifié sur votre téléphone ; votre réponse relance la tâche.
-- **Efficacité** : une trentaine d'outils concis (~4 000 tokens au lieu de ~61 000), cache de prompt, lecture des pages
-  web sous forme compacte d'éléments numérotés, contexte élagué puis résumé pour les longues missions.
+- **The goal controller** rereads the request, the actions actually performed and the answer. An intention
+  ("I'll do it") or an avoidable question is not enough: Ely is sent back with what's missing. It stops
+  only when the job is done, or when no further progress is possible (no infinite loop).
+- **Background tasks**: close the app, the task keeps going. You get a notification at the end.
+- **Resume after restart**: every step is recorded; after a restart, tasks pick up where they left off.
+  An action whose result was lost is never blindly replayed: Ely checks first.
+- **Messages along the way**: "oh, and add bread too" is folded into the running task.
+- **Model outages**: automatic switch to the next provider, then patient retries.
+  If Ely gets stuck, it moves up to the escalation model (`ELY_MODEL_STRONG`), if you've configured one.
+- **Questions to the user**: only for what it truly can't guess (SMS code, unknown password).
+  You're notified on your phone; your answer resumes the task.
+- **Efficiency**: about thirty concise tools (~4,000 tokens instead of ~61,000), prompt caching, web pages read
+  as a compact list of numbered elements, context pruned then summarised for long missions.
 
-## Le navigateur d'Ely : votre Chrome
+## Ely's browser: your Chrome
 
-Avec l'extension **« Ely pour Chrome »** (dossier `extension/`), Ely agit **dans votre Chrome**, avec toutes vos sessions
-(messagerie, Doctolib, LinkedIn…), dans une fenêtre à part qui ne touche pas à vos onglets. Un site envoie un code
-de vérification par e-mail ? Ely ouvre votre messagerie web dans un autre onglet, lit le code et le saisit.
+With the **"Ely for Chrome"** extension (`extension/` folder), Ely acts **in your Chrome**, with all your sessions
+(email, Doctolib, LinkedIn…), in a separate window that leaves your tabs alone. A site sends a verification code
+by email? Ely opens your webmail in another tab, reads the code and types it in.
 
-1. Dans Ely, cliquez sur votre nom en bas à gauche → **Extension Chrome** → **Télécharger l'extension**, puis décompressez
-   `ely-chrome.zip` dans un dossier que vous garderez. Sur le Mac d'Ely, vous pouvez aussi utiliser directement le dossier
-   `extension/` du dépôt, qui se met à jour avec Ely.
-2. Chrome → `chrome://extensions` → activez le **Mode développeur** (en haut à droite).
-3. **Charger l'extension non empaquetée** → choisissez ce dossier.
+1. In Ely, click your name at the bottom left → **Chrome extension** → **Download the extension**, then unzip
+   `ely-chrome.zip` into a folder you'll keep. On Ely's Mac, you can also use the repository's `extension/` folder
+   directly, which is updated along with Ely.
+2. Chrome → `chrome://extensions` → turn on **Developer mode** (top right).
+3. **Load unpacked** → choose that folder.
 
-C'est tout : l'extension téléchargée connaît déjà l'adresse d'Ely (locale ou publique) et se relie seule dès que vous êtes
-connecté à Ely dans ce Chrome. L'icône Ely de la barre d'outils montre l'état de la liaison.
-Chrome n'installe en un clic que les extensions du Chrome Web Store, d'où ces trois étapes.
+That's it: the downloaded extension already knows Ely's address (local or public) and links up by itself as soon as
+you're signed in to Ely in that Chrome. The Ely icon in the toolbar shows the link status.
+Chrome only installs Chrome Web Store extensions in one click, hence these three steps.
 
-Pendant qu'Ely travaille, Chrome affiche « Ely a commencé le débogage de ce navigateur » : c'est normal, la barre
-disparaît quand elle a fini. Réglages → Connexions → Chrome permet de revenir au navigateur interne.
+While Ely is working, Chrome shows "Ely started debugging this browser": that's expected, the bar
+disappears when it's done. Settings → Connections → Chrome lets you switch back to the built-in browser.
 
-**Navigateur interne (secours)** : quand Chrome est fermé, Ely utilise un Chromium à elle, avec un profil persistant
-par utilisateur (vous vous y connectez une fois, la session reste). Le bouton globe affiche le navigateur **en direct** ; avec
-**« Prendre la main »**, vous cliquez et tapez vous-même dedans (captcha, première connexion). Les identifiants rangés dans
-Réglages → Identifiants servent aux deux navigateurs.
+**Built-in browser (fallback)**: when Chrome is closed, Ely uses its own Chromium, with a persistent profile
+per user (you sign in once, the session stays). The globe button shows the browser **live**; with
+**"Take control"**, you click and type in it yourself (captcha, first sign-in). Credentials stored in
+Settings → Credentials work in both browsers.
 
-## La mémoire : Ely vous connaît de mieux en mieux
+## Memory: Ely gets to know you better and better
 
-- **Profil** : un document court et vivant (identité, proches, travail, lieux, préférences, santé, comptes, style),
-  toujours présent dans son esprit, mis à jour automatiquement après chaque échange par un modèle local (gratuit).
-- **Souvenirs** : des faits précis (« le médecin traitant de Franck est le Dr Martin, sur Doctolib »), retrouvés par
-  recherche hybride mots-clés + sens (vecteurs LM Studio), injectés quand ils sont utiles.
-- **Historique** : recherche plein texte dans toutes les conversations passées.
-- **Compétences** : après une démarche difficile réussie, Ely écrit la procédure qui a marché ; elle la ressort
-  automatiquement la fois suivante.
+- **Profile**: a short, living document (identity, family, work, places, preferences, health, accounts, style),
+  always in its mind, updated automatically after each exchange by a local model (free).
+- **Memories**: precise facts ("Franck's GP is Dr Martin, on Doctolib"), retrieved by hybrid keyword + meaning
+  search (LM Studio embeddings), injected when useful.
+- **History**: full-text search across all past conversations.
+- **Skills**: after a difficult procedure succeeds, Ely writes down what worked; it brings it back
+  automatically the next time.
 
-Tout est visible et modifiable dans **Réglages → Mémoire**.
+Everything is visible and editable in **Settings → Memory**.
 
-![Ce qu'Ely sait de vous](docs/images/memoire.png)
+![What Ely knows about you](docs/images/memoire.png)
 
-## Auto-amélioration récursive
+## Recursive self-improvement
 
-Ely mesure ses performances (taux de réussite, durée, étapes, erreurs d'outils, relances du contrôleur, signes
-d'insatisfaction, coût) et s'améliore sur quatre niveaux, du plus léger au plus profond :
+Ely measures its own performance (success rate, duration, steps, tool errors, controller retries, signs
+of dissatisfaction, cost) and improves on four levels, from the lightest to the deepest:
 
-1. **Leçons** : consignes générales ajoutées à chaque tâche. Effet immédiat.
-2. **Compétences partagées** : procédures qui marchent, réutilisables par tous.
-3. **Nouveaux outils** : Ely écrit ses propres plugins Python, chargés à chaud, sans redémarrage. Un plugin qui
-   plante est refusé ou désactivé automatiquement.
-4. **Son propre code** : Ely lit et modifie son code dans une **copie git isolée**, lance la **suite de tests**,
-   puis valide, fusionne et **redémarre**. Le lanceur `ely.sh` vérifie la santé de la nouvelle version et **revient
-   automatiquement à la précédente** si elle ne démarre pas. Chaque changement est dans le journal, avec son diff et
-   un bouton « Annuler ».
+1. **Lessons**: general guidelines added to every task. Immediate effect.
+2. **Shared skills**: procedures that work, reusable by everyone.
+3. **New tools**: Ely writes its own Python plugins, hot-loaded, no restart. A plugin that
+   crashes is rejected or disabled automatically.
+4. **Its own code**: Ely reads and changes its code in an **isolated git copy**, runs the **test suite**,
+   then commits, merges and **restarts**. The `ely.sh` launcher checks the health of the new version and
+   **automatically rolls back** to the previous one if it doesn't start. Every change is in the log, with its diff and
+   an "Undo" button.
 
-C'est **récursif** : le processus d'amélioration (`ely/selfdev/`) fait lui-même partie du code qu'Ely peut améliorer.
-Une session tourne chaque nuit à 4 h s'il y a eu de l'activité (désactivable). L'administrateur peut en lancer une à
-la main (Réglages → Auto-amélioration), ou simplement demander dans le chat : « améliore-toi pour… ».
+It's **recursive**: the improvement process (`ely/selfdev/`) is itself part of the code Ely can improve.
+A session runs every night at 4 am if there was any activity (can be turned off). The administrator can start one
+by hand (Settings → Self-improvement), or simply ask in the chat: "improve yourself to…".
 
-> Pour que l'étape 4 soit active, lancez Ely avec `./ely.sh` (le superviseur) depuis un clone git.
+> For step 4 to be active, start Ely with `./ely.sh` (the supervisor) from a git clone.
 
-![Auto-amélioration](docs/images/auto-amelioration.png)
+![Self-improvement](docs/images/auto-amelioration.png)
 
-## Multi-modèles, multi-utilisateurs
+## Multi-model, multi-user
 
-- **Fournisseurs** : Anthropic (API native : cache de prompt, réflexion adaptative, repli serveur en cas de refus),
-  et tous les services compatibles OpenAI : OpenAI, Gemini, Mistral, DeepSeek, OpenRouter, Groq, xAI, Moonshot, Qwen,
-  Zhipu, Cerebras, Together, LM Studio, Ollama, ou toute adresse personnalisée.
-- **Abonnement ChatGPT** : GPT avec votre forfait, sans payer au token. Sur le Mac : `codex login` (CLI Codex
-  d'OpenAI), puis Réglages → Modèles → « Importer ». Mécanisme non officiel, soumis aux limites du forfait.
-- **Rôles** : agent principal, escalade, contrôleur rapide, tâches de fond locales, vecteurs. Tout est choisi
-  automatiquement, et modifiable dans Réglages → Modèles avec effet immédiat. Chaque conversation peut imposer son
-  modèle (menu en haut).
-- **Utilisateurs** : chacun a sa mémoire, ses connexions, ses fichiers, son navigateur et ses tâches. Premier compte
-  = admin ; les suivants s'inscrivent par lien d'invitation, ou sont créés par l'admin. Consommation et coût par
-  utilisateur dans Réglages → Consommation.
+- **Providers**: Anthropic (native API: prompt caching, adaptive thinking, server-side fallback on refusal),
+  and every OpenAI-compatible service: OpenAI, Gemini, Mistral, DeepSeek, OpenRouter, Groq, xAI, Moonshot, Qwen,
+  Zhipu, Cerebras, Together, LM Studio, Ollama, or any custom endpoint.
+- **ChatGPT subscription**: GPT on your plan, no per-token billing. On the Mac: `codex login` (OpenAI's Codex
+  CLI), then Settings → Models → "Import". Unofficial mechanism, subject to your plan's limits.
+- **Roles**: main agent, escalation, fast controller, local background tasks, embeddings. Everything is chosen
+  automatically, and can be changed in Settings → Models with immediate effect. Each conversation can pin its own
+  model (menu at the top).
+- **Users**: each has their own memory, connections, files, browser and tasks. First account
+  = admin; the following ones sign up with an invitation link, or are created by the admin. Usage and cost per
+  user in Settings → Usage.
 
-## Connexions
+## Connections
 
-| Service | Comment |
+| Service | How |
 |---|---|
-| **Gmail, Google Agenda, Contacts** | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (voir `.env.example`), puis chaque utilisateur clique « Connecter Google » |
-| **Toute autre boîte mail** | Réglages → Connexions → E-mail, avec un mot de passe d'application (Gmail, Outlook, iCloud, Free, Orange, SFR, OVH…) |
-| **Agenda & contacts sans Google** | intégrés à Ely, avec rappels en notification et un lien iCal pour s'abonner depuis le téléphone |
-| **LinkedIn** | par API (`LINKEDIN_CLIENT_ID/SECRET`) ou, sans rien configurer, par le navigateur d'Ely |
-| **Facebook** | page : jeton de page ; profil personnel : navigateur d'Ely |
-| **Telegram** | `TELEGRAM_BOT_TOKEN`, puis Réglages → Connexions |
-| **Serveurs MCP** | Réglages → Extensions MCP, ou demandez à Ely de se brancher dessus |
-| **Recherche web** | gratuite par défaut (DuckDuckGo & co) ; SearXNG, Serper, Exa, SearchCans, Google, Tavily ou Brave si vous les avez |
-| **Voix** | dictée du navigateur (Chrome Android) ; sinon transcription par Groq ou OpenAI si une clé existe. Lecture : voix Google de Chrome, ou voix Premium de macOS (Réglages Système → Accessibilité → Contenu énoncé → Voix du système → Gérer les voix), à écouter dans Réglages → Profil → Voix. **Voix clonée** : si le service vocal XTTS de l'ancienne version tourne sur le Mac (port 8020, ou `XTTS_URL`), ses voix enregistrées sont proposées en premier, lues phrase par phrase, avec repli sur la voix du navigateur |
+| **Gmail, Google Calendar, Contacts** | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (see `.env.example`), then each user clicks "Connect my Google account" |
+| **Any other mailbox** | Settings → Connections → Mailbox, with an app password (Gmail, Outlook, iCloud, and French providers such as Free, Orange, SFR, OVH…) |
+| **Calendar & contacts without Google** | built into Ely, with notification reminders and an iCal link to subscribe from your phone |
+| **LinkedIn** | via the API (`LINKEDIN_CLIENT_ID/SECRET`) or, with nothing to configure, through Ely's browser |
+| **Facebook** | page: page token; personal profile: Ely's browser |
+| **Telegram** | `TELEGRAM_BOT_TOKEN`, then Settings → Connections |
+| **MCP servers** | Settings → MCP extensions, or ask Ely to connect to one |
+| **Web search** | free by default (DuckDuckGo & co); SearXNG, Serper, Exa, SearchCans, Google, Tavily or Brave if you have them |
+| **Voice** | browser dictation (Chrome on Android); otherwise transcription by Groq or OpenAI if a key exists. Reading aloud: Chrome's Google voice, or macOS Premium voices (System Settings → Accessibility → Spoken Content → System Voice → Manage Voices), to try in Settings → Profile → Voice. **Cloned voice**: if the `voice/xtts` voice service runs on the Mac (port 8020, or `XTTS_URL`; see its `README.md`), its recorded voices come first, read sentence by sentence, falling back to the browser voice |
 
 ## Architecture
 
 ```
 ely/
-  agent/      loop.py (boucle + contrôleur + compaction), runner.py (tâches de fond, reprise, flux temps réel), prompts.py
-  llm/        anthropic_provider.py, openai_compat.py, registry.py (rôles, choix auto, repli)
-  tools/      web, browser, comms (e-mail), pim (agenda, contacts), social, files (+ Python/shell), memory,
-              planning (planification, questions, notifications, identifiants), media, delegate (sous-agents)
-  memory/     store.py (profil, souvenirs hybrides, historique, compétences), learner.py
-  selfdev/    metrics.py, plugins.py, pipeline.py (worktree, tests, déploiement), tools.py
+  agent/      loop.py (loop + controller + compaction), runner.py (background tasks, resume, live stream), prompts.py
+  llm/        anthropic_provider.py, openai_compat.py, registry.py (roles, automatic choice, fallback)
+  tools/      web, browser, comms (email), pim (calendar, contacts), social, files (+ Python/shell), memory,
+              planning (scheduling, questions, notifications, credentials), media, delegate (sub-agents)
+  memory/     store.py (profile, hybrid memories, history, skills), learner.py
+  selfdev/    metrics.py, plugins.py, pipeline.py (worktree, tests, deployment), tools.py
   integrations/ google.py, mail.py, social.py        channels/ telegram.py        mcp_client.py
-  browser.py  navigateur interne (Playwright)        chrome.py  pont vers l'extension Chrome
+  browser.py  built-in browser (Playwright)          chrome.py  bridge to the Chrome extension
   api/        app.py, chat.py, settings_routes.py, admin.py
-  web/        interface PWA bilingue français/anglais (Preact + htm, sans étape de compilation)
-extension/    « Ely pour Chrome » (MV3, sans compilation)
-tests/        93 tests : boucle, outils, navigateur réel, extension Chrome réelle, adaptateurs (faux serveurs OpenAI/Anthropic), API, MCP, auto-modification
-scripts/      mock_llm.py (faux modèle pour essayer sans tokens), e2e_ui.py (parcours complet de l'interface)
+  web/        bilingual English/French PWA (Preact + htm, no build step)
+extension/    "Ely for Chrome" (MV3, no build step)
+voice/xtts/   local voice service: XTTS-v2 and cloned voice, on the Mac (port 8020)
+tests/        loop, tools, real browser, real Chrome extension, adapters (fake OpenAI/Anthropic servers), API, MCP, self-modification
+scripts/      mock_llm.py (fake model to try without tokens), e2e_ui.py (full interface walkthrough)
 ```
 
-Données : `data/` (base `ely.db`, fichiers, profils de navigateur, plugins). Sauvegarder ce dossier suffit.
+Data: `data/` (`ely.db` database, files, browser profiles, plugins). Backing up this folder is enough.
 
-**Essayer l'interface sans dépenser de tokens** : `python scripts/mock_llm.py`, puis lancez Ely avec
+**Try the interface without spending tokens**: `python scripts/mock_llm.py`, then start Ely with
 `CUSTOM_OPENAI_BASE_URL=http://127.0.0.1:9100/v1 CUSTOM_OPENAI_API_KEY=x ELY_MODEL_MAIN=custom:mock-agent`.
 
-## Ce qui a été volontairement retiré
+## What was deliberately removed
 
-Anonymisation des données, validations humaines (HITL), couches RGPD et « souveraineté », superviseur multi-agents,
-200 outils redondants, routeurs de complexité, 9 conteneurs Docker, applications natives, avatar 3D.
-Les mesures de l'ancien projet l'ont montré : ces couches coûtaient plus qu'elles ne rapportaient. Il ne reste que ce
-qui fait avancer la tâche.
+Data anonymisation, human-in-the-loop approvals (HITL), GDPR and "sovereignty" layers, multi-agent supervisor,
+200 redundant tools, complexity routers, 9 Docker containers, native apps, 3D avatar.
+Measurements on the previous project showed it: these layers cost more than they returned. Only what moves
+the task forward remains.
 
-## Limites à connaître
+## Known limits
 
-- Certains sites détectent les robots (captcha, vérification) : Ely vous le signale et vous prenez la main quelques secondes.
-- Sans l'extension Chrome, la première connexion à un site (Doctolib, LinkedIn…) se fait une fois dans le navigateur d'Ely ou via le coffre d'identifiants.
-- Un petit modèle local seul ne mène pas bien une longue démarche : gardez au moins une clé cloud pour l'agent principal.
-- Sécurité minimale par choix : Ely a un accès complet (code, shell, identifiants). Gardez-la derrière Tailscale, pas sur Internet ouvert.
+- Some sites detect bots (captcha, verification): Ely tells you and you take over for a few seconds.
+- Without the Chrome extension, the first sign-in to a site (Doctolib, LinkedIn…) happens once in Ely's browser or through the credentials vault.
+- A small local model alone doesn't handle a long procedure well: keep at least one cloud key for the main agent.
+- Minimal security by design: Ely has full access (code, shell, credentials). Keep it behind Tailscale, not on the open Internet.
 
-## Licence
+## License
 
-Ely est distribué sous **licence MIT** (voir [`LICENSE`](LICENSE)) : vous pouvez l'utiliser, le modifier et le
-redistribuer librement, y compris à des fins commerciales, en conservant la mention de copyright.
+Ely is released under the **MIT license** (see [`LICENSE`](LICENSE)): you may use, modify and redistribute it
+freely, including for commercial purposes, as long as you keep the copyright notice.
 
-Les polices DM Sans et Newsreader, incluses dans `ely/web/fonts/`, relèvent de la SIL Open Font License
-(voir [`ely/web/fonts/OFL.txt`](ely/web/fonts/OFL.txt)).
+The DM Sans and Newsreader fonts, included in `ely/web/fonts/`, are under the SIL Open Font License
+(see [`ely/web/fonts/OFL.txt`](ely/web/fonts/OFL.txt)).
