@@ -6,13 +6,15 @@
 emails, adds a contact or an event, searches, compares, drafts documents… from your computer or your Android phone.
 And **it doesn't stop until the goal is reached.**
 
-![Ely books an appointment in its browser](docs/images/rdv.png)
+![Ely: home screen, with its live browser on the right](docs/images/en/home.png)
 
 Three watchwords: **efficiency, autonomy, performance.** Ely 2 is a complete rewrite: ~6,800 lines of Python and
 ~2,600 lines of interface, instead of the previous version's 240,000 lines and 9 Docker services.
 One process, one SQLite database, zero services to maintain.
 
 The interface is bilingual (English / French, formal "vous" by default), and Ely answers in your language.
+
+![Settings → Profile: theme, language and form of address](docs/images/en/profile.png)
 
 ---
 
@@ -84,7 +86,7 @@ The microphone, notifications and installation require an **HTTPS** address. The
 2. On the Mac: `tailscale serve --bg 8000`. You get an address like `https://mac-studio.tailXXXX.ts.net`.
 3. Put this address in `ELY_PUBLIC_URL` in `.env`, then open it on the phone.
 
-<p align="center"><img src="docs/images/mobile.png" width="320" alt="Ely on Android"></p>
+<p align="center"><img src="docs/images/en/mobile.png" width="320" alt="Ely on Android"></p>
 
 It works everywhere (4G, hotel Wi-Fi…), without opening any port on your router. On your home Wi-Fi,
 `http://<mac-ip>:8000` works too, but without microphone or notifications.
@@ -154,8 +156,6 @@ Settings → Credentials work in both browsers.
 
 Everything is visible and editable in **Settings → Memory**.
 
-![What Ely knows about you](docs/images/memoire.png)
-
 ## Recursive self-improvement
 
 Ely measures its own performance (success rate, duration, steps, tool errors, controller retries, signs
@@ -176,7 +176,7 @@ by hand (Settings → Self-improvement), or simply ask in the chat: "improve you
 
 > For step 4 to be active, start Ely with `./ely.sh` (the supervisor) from a git clone.
 
-![Self-improvement](docs/images/auto-amelioration.png)
+![Settings → Self-improvement](docs/images/en/self-improvement.png)
 
 ## Multi-model, multi-user
 
