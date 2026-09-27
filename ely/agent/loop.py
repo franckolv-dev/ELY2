@@ -440,7 +440,7 @@ class AgentLoop:
 
             last = db.one("SELECT data FROM messages WHERE run_id = ? AND role = 'assistant' ORDER BY id DESC LIMIT 1", (self.run_id,))
             text = message_text(json.loads(last["data"])) if last else "Tâche terminée."
-            await notify(self.user["id"], "Ely · tâche planifiée", text[:400], url=f"/?c={self.conv_id}")
+            await notify(self.user["id"], "Ely · tâche planifiée", text, url=f"/?c={self.conv_id}")  # coupé pour le push seulement
         try:
             await learn_from_run(self.user, self.conv_id, self.run_id)
         except Exception as e:

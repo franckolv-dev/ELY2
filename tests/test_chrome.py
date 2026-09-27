@@ -287,3 +287,14 @@ async def test_extension_window_shows_the_link_with_ely(ely_url, users_chrome, u
     await page.wait_for_selector("#dot.on")
     assert await page.input_value("#url") == ely_url
     await page.close()
+
+
+async def test_stale_element_number_in_chrome_gives_the_current_page(ely_url, users_chrome, user, caplog):
+    ctx = ToolContext(user=user, conversation_id=new_conversation(user), run_id=0, emit=lambda *a: asyncio.sleep(0))
+    r = await execute(ctx, "browser", {"action": "open", "url": f"{ely_url}/test/doctolib"})
+    old = int(next(line for line in r.content.splitlines() if 'bouton "Valider"' in line).split("]")[0][1:])
+    await execute(ctx, "browser", {"action": "eval", "js": "document.body.innerHTML = '<h1>Session expirée</h1><button>Se reconnecter</button>'"})
+    with caplog.at_level("ERROR", logger="ely.tools"):
+        r = await execute(ctx, "browser", {"action": "click", "ref": old})
+    assert r.is_error and f"[{old}] n'existe plus" in r.content and "Se reconnecter" in r.content, r.content
+    assert not [rec for rec in caplog.records if rec.levelname == "ERROR"]

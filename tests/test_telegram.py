@@ -99,3 +99,32 @@ async def test_polling_waits_after_a_refusal(monkeypatch):
     await _run_polling(monkeypatch, fake_call, 0.4)
     assert 2 <= count["getUpdates"] <= 12  # pas de boucle folle contre l'API
     assert count["deleteWebhook"] >= count["getUpdates"]
+
+
+async def test_scheduled_task_result_reaches_telegram_in_full(fake, user, monkeypatch):
+    """Le résumé du matin (tâche planifiée) arrive entier sur Telegram, pas coupé comme une notification de téléphone."""
+    import time
+
+    from conftest import new_conversation
+
+    from ely import notify
+    from ely.db import db, now
+    from ely.scheduler import run_due_schedules
+
+    sent: list[tuple] = []
+
+    async def fake_send(chat_id, text):
+        sent.append((chat_id, text))
+
+    monkeypatch.setattr(notify, "telegram_send", fake_send)
+    put(user["id"], "telegram", {"chat_id": 555})
+    summary = "Résumé du matin. " + "Trois e-mails importants, deux rendez-vous, cinq actualités. " * 20 + "FIN DU RÉSUMÉ"
+    fake.script = lambda model, system, messages, tools: summary
+    cid = new_conversation(user)
+    db.insert("schedules", user_id=user["id"], conversation_id=cid, instruction="Résumé du matin", cron="0 9 * * *",
+              next_run=time.time() - 1, enabled=1, created_at=now())
+    await run_due_schedules()
+    await wait_idle(cid)
+    await asyncio.sleep(0.2)
+    texts = [text for chat, text in sent if chat == 555]
+    assert texts and summary in texts[-1], texts

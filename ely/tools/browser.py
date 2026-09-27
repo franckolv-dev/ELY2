@@ -4,10 +4,22 @@ from __future__ import annotations
 import asyncio
 
 from ..browser import CONSENT_JS, manager
+from ..chrome import FIND_JS
 from . import ToolContext, ToolResult, tool
 
 ACTIONS = ["open", "snapshot", "click", "type", "select", "press", "scroll", "back", "screenshot", "wait",
            "text", "tabs", "switch_tab", "eval", "upload", "close_tab"]
+
+
+ELEMENT_ACTIONS = {"click", "type", "select", "upload"}
+
+
+async def _present(page, ref: int) -> bool:
+    """L'élément numéroté est-il toujours dans la page ? (il disparaît quand la page change après la lecture)"""
+    try:
+        return bool(await page.evaluate(f"(n) => !!({FIND_JS})(n)", str(ref)))
+    except Exception:
+        return True  # dans le doute, l'action elle-même dira ce qu'il en est
 
 
 async def _emit_frame(ctx: ToolContext, ub, page) -> None:
@@ -57,6 +69,13 @@ async def browser(ctx: ToolContext, action: str, url: str = "", ref: int | None 
             if ref is None:
                 raise ValueError("paramètre ref manquant")
             return page.locator(f'[data-ely-ref="{ref}"]').first
+
+        # numéro périmé : la page a changé depuis la dernière lecture ; on rend la page à jour plutôt qu'une erreur
+        if action in ELEMENT_ACTIONS and ref is not None and not await _present(page, ref):
+            snap = await ub.snapshot(page)
+            await _emit_frame(ctx, ub, page)
+            return ToolResult(f"L'élément [{ref}] n'existe plus : la page a changé depuis la dernière lecture. "
+                              f"Page actuelle, avec ses nouveaux numéros :\n\n{snap}", is_error=True)
 
         note = ""
         if action == "open":
