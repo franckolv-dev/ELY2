@@ -194,6 +194,24 @@ async def test_browser_fills_a_form(ctx, tmp_path):
     await manager.shutdown()
 
 
+@pytest.mark.skipif(not os.environ.get("ELY_BROWSER_EXECUTABLE") and not Path.home().joinpath(".cache/ms-playwright").exists(),
+                    reason="Chromium absent")
+async def test_stale_element_number_gives_the_current_page_not_an_error(ctx, tmp_path, caplog):
+    """La page change après la lecture (chargement, rafraîchissement) : cliquer sur un ancien numéro rend la page à jour."""
+    page = tmp_path / "liste.html"
+    page.write_text("<html><body><h1>Résultats</h1><button>Voir le créneau de 17 h 30</button></body></html>")
+    r = await execute(ctx, "browser", {"action": "open", "url": page.as_uri()})
+    old = int(next(l for l in r.content.splitlines() if 'bouton "Voir le créneau' in l).split("]")[0][1:])
+    await execute(ctx, "browser", {"action": "eval", "js": "document.body.innerHTML = '<h1>Créneaux mis à jour</h1><button>Réserver 18 h</button>'"})
+    with caplog.at_level("ERROR", logger="ely.tools"):
+        r = await execute(ctx, "browser", {"action": "click", "ref": old})
+    assert r.is_error and f"[{old}] n'existe plus" in r.content and "Réserver 18 h" in r.content, r.content
+    assert not [rec for rec in caplog.records if rec.levelname == "ERROR"]
+    from ely.browser import manager
+
+    await manager.shutdown()
+
+
 async def test_seed_skills_match_real_requests(ctx):
     from ely.memory.seed import seed_skills
     from ely.memory.store import relevant_skills
