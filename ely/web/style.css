@@ -394,11 +394,13 @@ label.field { display: grid; gap: 7px; font-size: 13px; font-weight: 500; color:
 .live-foot { padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); display: grid; gap: 10px; }
 .live-foot .btn { height: 32px; padding: 0 12px; font-size: 13px; }
 .live-mini {
-  position: absolute; right: 22px; bottom: 150px; width: 136px; border-radius: 10px; overflow: hidden; box-shadow: var(--shadow);
+  position: absolute; right: 22px; bottom: 150px; width: min(340px, 34%); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow);
   border: 1px solid var(--line); cursor: pointer; z-index: 5; background: var(--surface); animation: rise .25s;
+  transition: transform .15s;
 }
+.live-mini:hover { transform: translateY(-2px); }
 .live-mini img { width: 100%; display: block; }
-.live-mini span { position: absolute; left: 6px; top: 6px; font-size: 10px; font-weight: 600; letter-spacing: .06em; background: var(--primary); color: var(--primary-ink); border-radius: 5px; padding: 1px 6px; }
+.live-mini span { position: absolute; left: 10px; top: 10px; font-size: 11px; font-weight: 600; letter-spacing: .06em; background: var(--primary); color: var(--primary-ink); border-radius: 6px; padding: 2px 8px; }
 
 /* ------------------------------------------------------------ réglages */
 .sheet-scrim { position: fixed; inset: 0; z-index: 40; background: var(--scrim); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); display: grid; place-items: center; padding: 24px; animation: fade .15s; }
@@ -555,7 +557,7 @@ details[open] summary { margin-bottom: 10px; }
   .model-chip { max-width: 150px; }
   .hint { display: none; }
   .live { position: fixed; inset: 0; width: auto; z-index: 35; border: 0; padding-top: env(safe-area-inset-top); }
-  .live-mini { bottom: 130px; right: 12px; width: 112px; }
+  .live-mini { bottom: 130px; right: 12px; width: 168px; }
   .sheet-scrim { padding: 0; }
   .dialog { width: calc(100% - 32px); max-height: calc(100% - 32px); padding: 24px 20px 20px; }
   .dialog h2 { font-size: 26px; }
