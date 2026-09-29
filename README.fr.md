@@ -112,7 +112,8 @@ votre demande ─▶ tâche de fond persistante ─▶ réfléchir ─▶ agir (
   étaient. Une action dont le résultat s'est perdu n'est jamais rejouée à l'aveugle : Ely vérifie d'abord.
 - **Messages en cours de route** : « ah, et ajoute aussi du pain » est intégré à la tâche en cours.
 - **Pannes de modèle** : bascule automatique sur le fournisseur suivant, puis nouveaux essais patients.
-  Si Ely piétine, elle passe au modèle d'escalade (`ELY_MODEL_STRONG`), si vous en avez configuré un.
+  Dès que le contrôleur constate que l'objectif n'est pas atteint, ou si vous le demandez (« prenez le modèle fort »),
+  Ely passe au modèle d'escalade (`ELY_MODEL_STRONG`), si vous en avez configuré un.
 - **Questions à l'utilisateur** : seulement pour ce qu'elle ne peut vraiment pas deviner (code SMS, mot de passe
   inconnu). Vous êtes notifié sur votre téléphone ; votre réponse relance la tâche.
 - **Efficacité** : une trentaine d'outils concis (~4 000 tokens au lieu de ~61 000), cache de prompt, lecture des pages
@@ -172,7 +173,8 @@ d'insatisfaction, coût) et s'améliore sur quatre niveaux, du plus léger au pl
 
 C'est **récursif** : le processus d'amélioration (`ely/selfdev/`) fait lui-même partie du code qu'Ely peut améliorer.
 Une session tourne chaque nuit à 4 h s'il y a eu de l'activité (désactivable). L'administrateur peut en lancer une à
-la main (Réglages → Auto-amélioration), ou simplement demander dans le chat : « améliore-toi pour… ».
+la main (Réglages → Auto-amélioration), ou simplement demander dans le chat : « améliore-toi pour… ». Ces sessions
+utilisent leur propre modèle (Réglages → Modèles → Auto-amélioration ; automatique : le modèle d'escalade).
 
 > Pour que l'étape 4 soit active, lancez Ely avec `./ely.sh` (le superviseur) depuis un clone git.
 
@@ -185,7 +187,7 @@ la main (Réglages → Auto-amélioration), ou simplement demander dans le chat 
   Zhipu, Cerebras, Together, LM Studio, Ollama, ou toute adresse personnalisée.
 - **Abonnement ChatGPT** : GPT avec votre forfait, sans payer au token. Sur le Mac : `codex login` (CLI Codex
   d'OpenAI), puis Réglages → Modèles → « Importer ». Mécanisme non officiel, soumis aux limites du forfait.
-- **Rôles** : agent principal, escalade, contrôleur rapide, tâches de fond locales, vecteurs. Tout est choisi
+- **Rôles** : agent principal, escalade, auto-amélioration, contrôleur rapide, tâches de fond locales, vecteurs. Tout est choisi
   automatiquement, et modifiable dans Réglages → Modèles avec effet immédiat. Chaque conversation peut imposer son
   modèle (menu en haut).
 - **Utilisateurs** : chacun a sa mémoire, ses connexions, ses fichiers, son navigateur et ses tâches. Premier compte

@@ -275,7 +275,7 @@ function Files() {
 }
 
 // ---------------------------------------------------------------- administration : modèles
-const ROLES = ["main", "strong", "fast", "local", "embed"];
+const ROLES = ["main", "strong", "selfdev", "fast", "local", "embed"];
 
 function ChatGPTRow({ onChange }) {
   const [st, reload, error] = useLoad(() => get("/api/admin/chatgpt"));

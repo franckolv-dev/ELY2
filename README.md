@@ -115,7 +115,8 @@ your request ─▶ persistent background task ─▶ think ─▶ act (tools, i
   An action whose result was lost is never blindly replayed: Ely checks first.
 - **Messages along the way**: "oh, and add bread too" is folded into the running task.
 - **Model outages**: automatic switch to the next provider, then patient retries.
-  If Ely gets stuck, it moves up to the escalation model (`ELY_MODEL_STRONG`), if you've configured one.
+  As soon as the controller finds the goal isn't met, or when you ask for it ("use the strong model"), Ely moves up
+  to the escalation model (`ELY_MODEL_STRONG`), if you've configured one.
 - **Questions to the user**: only for what it truly can't guess (SMS code, unknown password).
   You're notified on your phone; your answer resumes the task.
 - **Efficiency**: about thirty concise tools (~4,000 tokens instead of ~61,000), prompt caching, web pages read
@@ -173,7 +174,8 @@ of dissatisfaction, cost) and improves on four levels, from the lightest to the 
 
 It's **recursive**: the improvement process (`ely/selfdev/`) is itself part of the code Ely can improve.
 A session runs every night at 4 am if there was any activity (can be turned off). The administrator can start one
-by hand (Settings → Self-improvement), or simply ask in the chat: "improve yourself to…".
+by hand (Settings → Self-improvement), or simply ask in the chat: "improve yourself to…". These sessions use their
+own model (Settings → Models → Self-improvement; automatic: the escalation model).
 
 > For step 4 to be active, start Ely with `./ely.sh` (the supervisor) from a git clone.
 
@@ -186,7 +188,7 @@ by hand (Settings → Self-improvement), or simply ask in the chat: "improve you
   Zhipu, Cerebras, Together, LM Studio, Ollama, or any custom endpoint.
 - **ChatGPT subscription**: GPT on your plan, no per-token billing. On the Mac: `codex login` (OpenAI's Codex
   CLI), then Settings → Models → "Import". Unofficial mechanism, subject to your plan's limits.
-- **Roles**: main agent, escalation, fast controller, local background tasks, embeddings. Everything is chosen
+- **Roles**: main agent, escalation, self-improvement, fast controller, local background tasks, embeddings. Everything is chosen
   automatically, and can be changed in Settings → Models with immediate effect. Each conversation can pin its own
   model (menu at the top).
 - **Users**: each has their own memory, connections, files, browser and tasks. First account

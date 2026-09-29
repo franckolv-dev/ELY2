@@ -349,3 +349,118 @@ async def test_vouvoiement_by_default_and_tutoiement_on_request(fake, user):
     await wait_idle(cid3)
     await asyncio.sleep(0.3)
     assert auth.get_user(user["id"])["settings"].get("address") == "vous"
+
+
+# ---------------------------------------------------------------- choix du modèle : escalade, demande explicite, auto-amélioration
+def with_strong_model(fake):
+    """Le faux fournisseur propose aussi un modèle « fort », choisi pour l'escalade (Astra chez Franck)."""
+    from ely.llm import registry
+    from ely.llm.base import ModelInfo
+
+    fake.models = [*fake.models, ModelInfo(id="fort", provider="fake", context=200_000)]
+    registry.catalog["fake"] = fake.models
+    db.set_setting("model_strong", "fake:fort")
+
+
+def routed(agent, verdicts=None):
+    """Comme script(), en notant le modèle de chaque appel de l'agent lui-même."""
+    used, cur = [], {}
+
+    def mark(messages, tools):
+        used.append(cur["model"])
+        return agent(messages, tools)
+
+    inner = script(mark, verdicts)
+
+    def fn(model, system, messages, tools):
+        cur["model"] = model
+        return inner(model, system, messages, tools)
+
+    return fn, used
+
+
+def model_notices(q) -> list[str]:
+    out = []
+    while not q.empty():
+        ev = q.get_nowait()
+        if ev["type"] == "model" and ev.get("reason"):
+            out.append(ev["reason"])
+    return out
+
+
+async def test_escalation_as_soon_as_the_goal_is_not_met(fake, user):
+    """Dès le premier rejet du contrôleur, la suite de la tâche passe au modèle d'escalade, et Ely le dit."""
+    with_strong_model(fake)
+
+    def agent(messages, tools):
+        if not tool_results(messages) and not any("Contrôle automatique" in str(m["content"]) for m in messages if m["role"] == "user"):
+            return "Je vais ajouter ce rendez-vous."
+        if not tool_results(messages):
+            return call("calendar_add", title="Ostéopathe", start="2030-05-06T09:00")
+        return "Rendez-vous ajouté le 6 mai à 9 h."
+
+    fake.script, used = routed(agent, verdicts=[{"done": False, "missing": "le rendez-vous n'est pas dans l'agenda"}, {"done": True}])
+    q = runner.subscribe(user["id"])
+    try:
+        cid = new_conversation(user)
+        await runner.submit(user, cid, "Ajoute l'ostéopathe le 6 mai 2030 à 9 h")
+        await wait_idle(cid)
+    finally:
+        runner.unsubscribe(user["id"], q)
+    assert used[0] == "agent" and set(used[1:]) == {"fort"}, used
+    assert any("objectif pas encore atteint" in r and "fake:fort" in r for r in model_notices(q))
+
+
+async def test_strong_model_on_request(fake, user):
+    """« Prenez le modèle fort » : Ely y passe dès le premier appel. Une simple question sur le modèle fort ne
+    change rien, et « utilise Opus » passe sur le modèle fort tant que Claude n'est pas relié."""
+    with_strong_model(fake)
+    q = runner.subscribe(user["id"])
+    try:
+        for text, expected, notice in (
+            ("Prenez le modèle fort pour me résumer la loi de finances", "fort", "modèle fort demandé"),
+            ("Le modèle fort répond-il vite ?", "agent", None),
+            ("Utilise Opus pour comparer ces deux devis", "fort", "Claude Opus n'est pas encore relié"),
+            ("use the strong model to plan my week", "fort", "modèle fort demandé"),
+        ):
+            fake.script, used = routed(lambda messages, tools: "Voici.")
+            cid = new_conversation(user)
+            await runner.submit(user, cid, text)
+            await wait_idle(cid)
+            notices = model_notices(q)
+            assert used == [expected], (text, used)
+            assert (notice is None and not notices) or any(notice in n for n in notices), (text, notices)
+    finally:
+        runner.unsubscribe(user["id"], q)
+
+
+async def test_self_improvement_uses_its_own_model(fake, user):
+    """Réglages → Modèles → Auto-amélioration : automatique = le modèle d'escalade ; un choix explicite s'applique
+    à la session suivante, sans redémarrage. Les conversations ordinaires restent sur le modèle principal."""
+    from ely.llm import registry
+    from ely.selfdev.tools import start_session
+
+    with_strong_model(fake)
+    assert registry.roles_view()["selfdev"] == {"configured": "auto", "effective": "fake:fort"}
+    fake.script, used = routed(lambda messages, tools: "Rien à améliorer aujourd'hui.")
+    cid = start_session(user, "Sois plus rapide sur Doctolib")
+    await wait_idle(cid)
+    assert used and set(used) == {"fort"}, used
+
+    db.set_setting("model_selfdev", "fake:agent")  # choisi dans les réglages
+    fake.script, used = routed(lambda messages, tools: "Rien à améliorer aujourd'hui.")
+    start_session(user, "Sois plus fiable sur LinkedIn")
+    await wait_idle(cid)
+    assert used and set(used) == {"agent"}, used
+    db.set_setting("model_selfdev", "auto")
+
+
+def test_model_requests_are_recognised_only_as_requests():
+    from ely.agent.loop import asked_model
+
+    assert asked_model("Passe sur le modèle le plus puissant, s'il te plaît") == "strong"
+    assert asked_model("Utilisez Claude Fable pour relire ce contrat") == "fable"
+    assert asked_model("switch to the strongest model") == "strong"
+    assert asked_model("Je n'utilise pas le modèle fort pour ça") is None
+    assert asked_model("Quel est le modèle fort configuré ?") is None
+    assert asked_model("Relis l'opus 3 de Chopin") is None
