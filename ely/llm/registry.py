@@ -6,7 +6,8 @@ Rôles :
   fast   : contrôles rapides (vérification d'objectif, compaction)
   local  : tâches de fond gratuites (mémoire, titres) — LM Studio de préférence
   embed  : vecteurs pour la mémoire
-  selfdev: auto-amélioration (par défaut le modèle d'escalade, sinon le principal)
+  selfdev: auto-amélioration (par défaut Claude Opus par l'Agent SDK si son jeton est présent, sinon le modèle
+           d'escalade, sinon le principal) ; les modèles « claude:… » sont confiés à claude_agent, pas à chat()
 
 Les choix de l'administrateur (base de données) priment sur le .env et sont relus
 à chaque appel : un réglage enregistré s'applique immédiatement.
@@ -21,6 +22,7 @@ from typing import Awaitable, Callable
 
 from ..config import settings
 from ..db import db, now
+from . import claude_agent
 from .anthropic_provider import AnthropicProvider
 from .chatgpt_provider import ChatGPTProvider
 from .base import DeltaCallback, LLMError, LLMResponse, ModelInfo
@@ -177,8 +179,8 @@ class Registry:
             return explicit
         if role == "strong":
             return None
-        if role == "selfdev":  # le plus capable disponible : l'escalade, sinon le principal
-            return self.resolve("strong") or self.resolve("main")
+        if role == "selfdev":  # le plus capable disponible : Claude Opus, l'escalade, sinon le principal
+            return claude_agent.auto_model() or self.resolve("strong") or self.resolve("main")
         pick = self._pick(role)
         if pick:
             return pick

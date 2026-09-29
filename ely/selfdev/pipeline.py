@@ -22,6 +22,7 @@ from ..db import db, now
 WORKTREE = settings.data_dir / "selfdev" / "worktree"
 BRANCH = "ely-self"
 RESTART_CODE = 42
+RESTART_DELAY = 4  # secondes laissées à la réponse en cours avant de redémarrer
 PROTECTED = {".git", ".env", "data", ".venv"}
 
 
@@ -93,7 +94,7 @@ async def run_tests(pattern: str = "", timeout: int = 900) -> tuple[bool, str]:
     # Pas de .pyc : une retouche de même taille dans la même seconde serait testée sur l'ancien bytecode
     env = {**os.environ, "ELY_DATA_DIR": tmp, "PYTHONPATH": str(WORKTREE), "PYTHONDONTWRITEBYTECODE": "1"}
     for k in list(env):  # les tests n'appellent jamais de vrais modèles
-        if k.endswith("_API_KEY"):
+        if k.endswith("_API_KEY") or k == "CLAUDE_CODE_OAUTH_TOKEN":
             env.pop(k)
     args = [sys.executable, "-m", "pytest", "-q", "-x", "--no-header", "-p", "no:cacheprovider"]
     if pattern:
@@ -111,7 +112,9 @@ async def run_tests(pattern: str = "", timeout: int = 900) -> tuple[bool, str]:
     return proc.returncode == 0, text[-6000:]
 
 
-async def deploy(summary: str) -> dict:
+async def deploy(summary: str, restart: bool = True) -> dict:
+    """Tests, commit, fusion dans la version active. Sous le lanceur, Ely redémarre aussitôt ; avec restart=False,
+    c'est à l'appelant de le demander (session Claude : à la fin de la mission, pas au milieu)."""
     ok, out = await run_tests()
     if not ok:
         return {"ok": False, "message": "Les tests échouent, déploiement refusé :\n" + out[-3000:]}
@@ -133,11 +136,15 @@ async def deploy(summary: str) -> dict:
     (settings.data_dir / "selfdev").mkdir(parents=True, exist_ok=True)
     (settings.data_dir / "selfdev" / "last_deploy.json").write_text(json.dumps({"prev": prev, "new": new_sha, "summary": summary, "at": now()}))
     supervised = os.environ.get("ELY_SUPERVISED") == "1"
-    if supervised:
-        asyncio.get_running_loop().call_later(4, request_restart)
-    return {"ok": True, "sha": new_sha, "restart": supervised,
-            "message": "Déployé. " + ("Redémarrage automatique dans quelques secondes (retour arrière automatique si problème)."
-                                       if supervised else "Redémarre Ely pour activer la nouvelle version.")}
+    if supervised and restart:
+        asyncio.get_running_loop().call_later(RESTART_DELAY, request_restart)
+    if not supervised:
+        after = "Redémarre Ely pour activer la nouvelle version."
+    elif restart:
+        after = "Redémarrage automatique dans quelques secondes (retour arrière automatique si problème)."
+    else:
+        after = "Ely redémarrera à la fin de cette session pour l'activer (retour arrière automatique si problème)."
+    return {"ok": True, "sha": new_sha, "restart": supervised, "message": "Déployé. " + after}
 
 
 def request_restart() -> None:

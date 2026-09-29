@@ -67,21 +67,6 @@ async def test_metrics_report(dev_ctx):
     assert "Performances d'Ely" in r.content
 
 
-@pytest.fixture
-def fake_repo(tmp_path, monkeypatch):
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    (repo / "app.py").write_text("def add(a, b):\n    return a - b\n")
-    (repo / "tests").mkdir()
-    (repo / "tests" / "test_app.py").write_text("from app import add\n\ndef test_add():\n    assert add(2, 2) == 4\n")
-    for cmd in (["git", "init", "-q", "-b", "main"], ["git", "add", "-A"],
-                ["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init"]):
-        subprocess.run(cmd, cwd=repo, check=True)
-    monkeypatch.setattr(pipeline, "ROOT", repo)
-    monkeypatch.setattr(pipeline, "WORKTREE", tmp_path / "wt")
-    return repo
-
-
 async def test_code_self_modification_pipeline(dev_ctx, fake_repo: Path):
     r = await execute(dev_ctx, "ely_code", {"action": "read", "path": "app.py"})
     assert "return a - b" in r.content

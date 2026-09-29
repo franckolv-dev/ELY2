@@ -18,6 +18,7 @@ l'interface est bilingue (français vouvoyé / anglais) : tout texte affiché pa
 - Garder la liste d'outils courte et les descriptions concises (coût en tokens à chaque tour)
 - Format de message canonique : voir l'en-tête de `ely/llm/base.py`
 - Auto-amélioration : `ely/selfdev/` (plugins à chaud dans `data/plugins/`, modifications du code via worktree + tests + `ely.sh`)
+- Claude par l'Agent SDK : `ely/llm/claude_agent.py` (SDK facultatif, extra `claude`) ; une session d'auto-amélioration dont le modèle est `claude:…` est confiée entière à Claude (`AgentLoop.run_with_claude`, mission dans `selfdev/tools.py` : outils natifs gardés par `claude_guard`, outils d'Ely par MCP, redémarrage différé)
 
 ## Règles
 - Toute correction s'accompagne d'un test de comportement (pas de test qui lit le code source).

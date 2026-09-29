@@ -267,3 +267,41 @@ async def chatgpt_disconnect(user=Depends(auth.admin_user)):
     registry.build_providers()
     await registry.refresh()
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------- Claude par l'Agent SDK
+@router.get("/api/admin/claude")
+def claude_state(user=Depends(auth.admin_user)):
+    from ..llm import claude_agent
+
+    return claude_agent.status()
+
+
+class ClaudeIn(BaseModel):
+    budget: float | None = None
+
+
+@router.put("/api/admin/claude")
+def claude_settings(body: ClaudeIn, user=Depends(auth.admin_user)):
+    from ..llm import claude_agent
+
+    if body.budget is not None:
+        db.set_setting("claude_budget", max(0.1, min(100.0, body.budget)))
+    return claude_agent.status()
+
+
+class ClaudeTestIn(BaseModel):
+    model: str = ""
+
+
+@router.post("/api/admin/claude/test")
+async def claude_test(body: ClaudeTestIn, user=Depends(auth.admin_user)):
+    from ..llm import claude_agent
+
+    st = claude_agent.status()
+    if not st["ready"]:
+        raise HTTPException(400, "Claude n'est pas prêt : installez le SDK et ajoutez ANTHROPIC_API_KEY dans .env")
+    try:
+        return await claude_agent.ping(body.model if claude_agent.is_claude(body.model) else claude_agent.DEFAULT)
+    except Exception as e:
+        return {"ok": False, "error": f"{e.__class__.__name__}: {e}"}

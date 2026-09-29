@@ -9,7 +9,7 @@ from pathlib import Path
 _TMP = tempfile.mkdtemp(prefix="ely-tests-")
 os.environ["ELY_DATA_DIR"] = _TMP
 for k in list(os.environ):
-    if k.endswith("_API_KEY") or k in ("LMSTUDIO_BASE_URL", "TELEGRAM_BOT_TOKEN", "GOOGLE_CLIENT_ID"):
+    if k.endswith("_API_KEY") or k in ("LMSTUDIO_BASE_URL", "TELEGRAM_BOT_TOKEN", "GOOGLE_CLIENT_ID", "CLAUDE_CODE_OAUTH_TOKEN"):
         os.environ.pop(k)
 os.environ["LMSTUDIO_BASE_URL"] = "http://127.0.0.1:9/v1"  # injoignable exprès
 os.environ["XTTS_URL"] = "http://127.0.0.1:9"  # idem : le vrai service vocal du Mac ne répond pas aux tests
@@ -108,6 +108,26 @@ def _tools():
     load_builtin_tools()
     yield
     shutil.rmtree(_TMP, ignore_errors=True)
+
+
+@pytest.fixture
+def fake_repo(tmp_path, monkeypatch):
+    """Petit dépôt git (une addition boguée et son test) à la place du code d'Ely, pour l'auto-modification."""
+    import subprocess
+
+    from ely.selfdev import pipeline
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "app.py").write_text("def add(a, b):\n    return a - b\n")
+    (repo / "tests").mkdir()
+    (repo / "tests" / "test_app.py").write_text("from app import add\n\ndef test_add():\n    assert add(2, 2) == 4\n")
+    for cmd in (["git", "init", "-q", "-b", "main"], ["git", "add", "-A"],
+                ["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init"]):
+        subprocess.run(cmd, cwd=repo, check=True)
+    monkeypatch.setattr(pipeline, "ROOT", repo)
+    monkeypatch.setattr(pipeline, "WORKTREE", tmp_path / "wt")
+    return repo
 
 
 def new_conversation(user) -> int:
