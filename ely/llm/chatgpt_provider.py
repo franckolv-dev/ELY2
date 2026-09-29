@@ -39,6 +39,8 @@ SETTING = "chatgpt_auth"
 INSTRUCTIONS = "Suis les messages système fournis dans la conversation."
 _lock = asyncio.Lock()
 log = logging.getLogger("ely.llm")
+# paramètres facultatifs retirés si le modèle les refuse (motif cherché dans le message d'erreur)
+OPTIONAL = {"parallel": r"parallel_tool_calls", "summary": r"reasoning\.summary|summary"}
 
 
 # ---------------------------------------------------------------------- jetons
@@ -247,8 +249,8 @@ class ChatGPTProvider:
     def convert(system: list[str], messages: list[dict], model_ref: str, keep_reasoning: bool = True) -> list[dict]:
         items: list[dict] = []
         sys_text = "\n\n".join(s for s in system if s)
-        if sys_text:
-            items.append({"type": "message", "role": "system", "content": [{"type": "input_text", "text": sys_text}]})
+        if sys_text:  # rôle « developer », comme Codex : GPT-6 refuse les messages « system »
+            items.append({"type": "message", "role": "developer", "content": [{"type": "input_text", "text": sys_text}]})
         pending_images: list[dict] = []
 
         def flush_images() -> None:
@@ -283,15 +285,24 @@ class ChatGPTProvider:
 
     async def chat(self, model: str, system: list[str], messages: list[dict], tools: list[dict] | None = None,
                    on_delta: DeltaCallback = None, max_tokens: int = 0, effort: str = "high") -> LLMResponse:
-        try:
-            return await self._chat(model, system, messages, tools, on_delta, effort, keep_reasoning=True)
-        except LLMError as e:
-            # raisonnement rejoué refusé (modèle changé, élément périmé) : on réessaie sans
-            if e.status in (400, 404) and re.search(r"reasoning|item", str(e), re.I):
-                return await self._chat(model, system, messages, tools, on_delta, effort, keep_reasoning=False)
-            raise
+        keep_reasoning, drop = True, set()
+        for _ in range(4):  # une requête refusée (400) n'a rien produit : la renvoyer ne refait rien deux fois
+            try:
+                return await self._chat(model, system, messages, tools, on_delta, effort, keep_reasoning, drop)
+            except LLMError as e:
+                if e.status not in (400, 404):
+                    raise
+                # paramètre facultatif que ce modèle refuse (les modèles changent de règles d'une génération à l'autre)
+                refused = {k for k, pat in OPTIONAL.items() if k not in drop and re.search(pat, str(e), re.I)}
+                if refused:
+                    drop |= refused
+                elif keep_reasoning and re.search(r"reasoning|item", str(e), re.I):
+                    keep_reasoning = False  # raisonnement rejoué refusé (modèle changé, élément périmé)
+                else:
+                    raise
+        raise LLMError(f"chatgpt : requête refusée par {model}", status=400)
 
-    async def _chat(self, model, system, messages, tools, on_delta, effort, keep_reasoning) -> LLMResponse:
+    async def _chat(self, model, system, messages, tools, on_delta, effort, keep_reasoning, drop=frozenset()) -> LLMResponse:
         ref = f"chatgpt:{model}"
         token, account = await access()
         body: dict = {"model": model, "instructions": INSTRUCTIONS, "input": self.convert(system, messages, ref, keep_reasoning),
@@ -302,6 +313,10 @@ class ChatGPTProvider:
                               "parameters": t["parameters"], "strict": False} for t in tools]
             body["tool_choice"] = "auto"
             body["parallel_tool_calls"] = True
+        if "summary" in drop:
+            del body["reasoning"]["summary"]
+        if "parallel" in drop:
+            body.pop("parallel_tool_calls", None)
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json", "Accept": "text/event-stream",
                    "OpenAI-Beta": "responses=experimental", "session_id": str(uuid.uuid4())}
         if account:
