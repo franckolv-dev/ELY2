@@ -4,6 +4,11 @@ Même mécanisme que la version précédente d'Ely (et que Hermes, ou le CLI Cod
 on se connecte une fois avec le CLI officiel (`codex login`), on importe ~/.codex/auth.json,
 puis Ely rafraîchit les jetons toute seule (la rotation du jeton de rafraîchissement est conservée).
 
+Codex et Ely partagent la même session (celle de ~/.codex/auth.json) et OpenAI remplace la clé de
+renouvellement à chaque renouvellement : l'ancienne ne vaut plus rien. Comme Codex entre ses propres
+processus, Ely relit donc ce fichier (Codex a-t-il renouvelé la session ?) et y réécrit la session
+qu'elle renouvelle. Sans cela, le premier renouvellement de Codex coupait Ely de l'abonnement.
+
 Contraintes du backend, validées en réel dans la version précédente : stream et store=false
 obligatoires, `instructions` obligatoire, max_output_tokens refusé, raisonnement renvoyé chiffré
 (include=reasoning.encrypted_content) pour pouvoir le rejouer sans stockage côté serveur.
@@ -12,7 +17,10 @@ Mécanisme non officiel : il peut changer, et l'usage compte dans les limites du
 from __future__ import annotations
 
 import asyncio
+import base64
+import datetime as dt
 import json
+import logging
 import os
 import re
 import time
@@ -30,6 +38,7 @@ CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 SETTING = "chatgpt_auth"
 INSTRUCTIONS = "Suis les messages système fournis dans la conversation."
 _lock = asyncio.Lock()
+log = logging.getLogger("ely.llm")
 
 
 # ---------------------------------------------------------------------- jetons
@@ -56,6 +65,8 @@ def stored() -> dict | None:
 
 def status() -> dict:
     st = stored()
+    if st and st.get("reconnect_required"):
+        st = _adopt_codex(st, spent=True) or st  # Codex s'est reconnecté depuis : Ely reprend sa session
     base = {"codex_file": codex_file_exists(), "codex_model": codex_config().get("model", ""),
             "keyring": codex_config().get("cli_auth_credentials_store", "") in ("keyring", "auto")}
     if not st:
@@ -96,6 +107,73 @@ def model_names() -> list[str]:
     return names
 
 
+# ---------------------------------------------------------------------- session partagée avec Codex
+def _jwt_exp(token: str) -> float:
+    """Échéance d'un jeton JWT (0 si illisible : il sera renouvelé)."""
+    try:
+        payload = token.split(".")[1]
+        return float(json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4))).get("exp") or 0)
+    except (IndexError, ValueError, TypeError, AttributeError):
+        return 0.0
+
+
+def _timestamp(value) -> float:
+    try:
+        return dt.datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return 0.0
+
+
+def codex_session() -> dict | None:
+    """La session ChatGPT de Codex (~/.codex/auth.json), au format d'Ely ; None si le fichier manque."""
+    try:
+        data = json.loads(codex_file().read_text())
+        tokens = data["tokens"]
+        refresh = tokens["refresh_token"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    access = tokens.get("access_token") or ""
+    return {"access_token": access, "refresh_token": refresh, "account_id": tokens.get("account_id") or "",
+            "expires_at": _jwt_exp(access), "refreshed_at": _timestamp(data.get("last_refresh"))}
+
+
+def _adopt_codex(state: dict, spent: bool = False) -> dict | None:
+    """Codex a renouvelé la session partagée (ou vous l'avez reconnecté) : Ely reprend ses jetons.
+    `spent` : la clé d'Ely vient d'être refusée, celle de Codex est la seule chance."""
+    f = codex_session()
+    if not f or f["refresh_token"] == state.get("refresh_token"):
+        return None
+    if f["account_id"] and state.get("account_id") and f["account_id"] != state["account_id"]:
+        return None  # Codex est connecté à un autre compte ChatGPT
+    if not spent and f["refreshed_at"] <= state.get("refreshed_at", 0):
+        return None  # la session d'Ely est la plus récente (jetons collés à la main)
+    new = {**f, "account_id": f["account_id"] or state.get("account_id", "")}
+    db.set_setting(SETTING, new)
+    log.info("chatgpt : session renouvelée par Codex reprise depuis %s", codex_file())
+    return new
+
+
+def _give_back_to_codex(spent_refresh: str, new: dict, id_token: str) -> None:
+    """Ely vient de renouveler la session de Codex : la clé que garde Codex ne vaut plus rien, on lui rend
+    la nouvelle. Seulement si le fichier porte bien la clé qu'Ely vient d'user (c'est la même session)."""
+    path = codex_file()
+    try:
+        data = json.loads(path.read_text())
+        tokens = data["tokens"]
+        if tokens.get("refresh_token") != spent_refresh:
+            return
+        tokens["access_token"], tokens["refresh_token"] = new["access_token"], new["refresh_token"]
+        if id_token:
+            tokens["id_token"] = id_token
+        data["last_refresh"] = dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
+        tmp = path.with_name(f"{path.name}.ely")
+        tmp.write_text(json.dumps(data, indent=2))
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        log.warning("chatgpt : session renouvelée non rendue à Codex (%s) : %s", path, e)
+
+
 async def _refresh(state: dict, force: bool = False) -> dict:
     if not force and state.get("expires_at", 0) - time.time() > 120 and state.get("access_token"):
         return state
@@ -103,17 +181,23 @@ async def _refresh(state: dict, force: bool = False) -> dict:
         r = await c.post(TOKEN_URL, json={"grant_type": "refresh_token", "client_id": CLIENT_ID,
                                           "refresh_token": state["refresh_token"]})
     if r.status_code != 200:
+        adopted = _adopt_codex(state, spent=True)  # Codex a usé la clé partagée avant Ely : sa session prend le relais
+        if adopted:
+            return await _refresh(adopted)
         if stored():
             db.set_setting(SETTING, {**state, "reconnect_required": True})
-        raise LLMError(f"chatgpt : renouvellement de la connexion refusé ({r.status_code}) — relance « codex login » puis "
-                       "réimporte dans Réglages → Modèles", kind="auth", status=r.status_code)
+        hint = ("reconnectez Codex (« codex login ») : Ely reprendra sa session d'elle-même" if codex_file_exists()
+                else "relancez « codex login » puis réimportez dans Réglages → Modèles")
+        raise LLMError(f"chatgpt : connexion à l'abonnement expirée ({r.status_code}) — {hint}", kind="auth", status=r.status_code)
     p = r.json()
     new = {"access_token": p.get("access_token", ""), "refresh_token": p.get("refresh_token") or state["refresh_token"],
            "account_id": p.get("account_id") or state.get("account_id", ""),
-           "expires_at": time.time() + float(p.get("expires_in") or 3600)}
+           "expires_at": time.time() + float(p.get("expires_in") or 3600), "refreshed_at": time.time()}
     if not new["access_token"]:
         raise LLMError("chatgpt : réponse sans access_token", kind="auth")
     db.set_setting(SETTING, new)  # la rotation remplace l'ancien jeton : on la conserve aussitôt
+    if new["refresh_token"] != state["refresh_token"]:
+        _give_back_to_codex(state["refresh_token"], new, p.get("id_token") or "")
     return new
 
 
@@ -141,7 +225,7 @@ async def access() -> tuple[str, str]:
         st = stored()
         if not st:
             raise LLMError("Abonnement ChatGPT non connecté (Réglages → Modèles)", kind="auth")
-        st = await _refresh(st)
+        st = await _refresh(_adopt_codex(st) or st)
         return st["access_token"], st.get("account_id", "")
 
 

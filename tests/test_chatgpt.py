@@ -1,6 +1,7 @@
 """Abonnement ChatGPT (backend Codex) contre un faux serveur ; rechargement du .env ; moteurs de recherche."""
 from __future__ import annotations
 
+import base64
 import json
 import os
 import socket
@@ -25,6 +26,9 @@ async def token(request: Request):
     seen["token_calls"].append(body)
     if body["refresh_token"] == "mort":
         return JSONResponse({"error": "invalid_grant"}, status_code=400)
+    if body["refresh_token"] in seen["spent"]:  # comme chez OpenAI : une clé de renouvellement ne sert qu'une fois
+        return JSONResponse({"error": {"code": "refresh_token_reused"}}, status_code=401)
+    seen["spent"].add(body["refresh_token"])
     return {"access_token": f"at-{len(seen['token_calls'])}", "refresh_token": f"rt-{len(seen['token_calls'])}", "expires_in": 3600}
 
 
@@ -71,9 +75,11 @@ def server():
 
 
 @pytest.fixture
-def chatgpt(server, monkeypatch):
+def chatgpt(server, monkeypatch, tmp_path):
     monkeypatch.setattr(cg, "BASE_URL", f"{server}/codex")
     monkeypatch.setattr(cg, "TOKEN_URL", f"{server}/oauth/token")
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))  # jamais le vrai ~/.codex
+    seen["spent"] = set()
     yield
     cg.disconnect()
 
@@ -194,3 +200,59 @@ async def test_missing_auth_file_explains_what_to_do(tmp_path, monkeypatch):
     with pytest.raises(LLMError) as e:
         await cg.import_auth()
     assert "trousseau" in str(e.value) and 'cli_auth_credentials_store = "file"' in str(e.value)
+
+
+def jwt(exp: float) -> str:
+    part = lambda d: base64.urlsafe_b64encode(json.dumps(d).encode()).decode().rstrip("=")
+    return f"{part({'alg': 'none'})}.{part({'exp': int(exp)})}.sig"
+
+
+def codex_logs_in(folder, refresh: str, access: str, when: str = "") -> None:
+    """Codex écrit sa session, comme après « codex login » ou un renouvellement."""
+    folder.mkdir(exist_ok=True)
+    (folder / "auth.json").write_text(json.dumps({
+        "auth_mode": "chatgpt", "OPENAI_API_KEY": None, "last_refresh": when or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "tokens": {"id_token": "idt", "access_token": access, "refresh_token": refresh, "account_id": "acc-42"}}))
+
+
+async def test_ely_and_codex_share_the_subscription_without_cutting_each_other_off(chatgpt, tmp_path):
+    """OpenAI remplace la clé de renouvellement à chaque renouvellement. Ely et Codex partagent la même session :
+    quand l'un renouvelle, l'autre doit reprendre la nouvelle clé, sinon il est déconnecté pour de bon."""
+    codex = tmp_path / "codex"
+    codex_logs_in(codex, "rt-codex", "vieux", when="2026-09-01T08:00:00Z")
+    await cg.import_auth()  # importée depuis ~/.codex/auth.json : Ely renouvelle aussitôt la session…
+    mine = db.get_setting(cg.SETTING)
+    shared = json.loads((codex / "auth.json").read_text())
+    assert shared["tokens"]["refresh_token"] == mine["refresh_token"] != "rt-codex"  # … et la rend à Codex
+    assert shared["tokens"]["access_token"] == mine["access_token"] and shared["auth_mode"] == "chatgpt"
+    assert shared["OPENAI_API_KEY"] is None and shared["last_refresh"] > "2026-09-01T08:00:00Z"
+
+    # quelques jours plus tard, Codex renouvelle la session avant Ely : la clé d'Ely ne vaut plus rien
+    codex_logs_in(codex, "rt-codex-2", jwt(time.time() + 86400))
+    seen["spent"].add(mine["refresh_token"])
+    db.set_setting(cg.SETTING, {**mine, "expires_at": 0})
+    r = await cg.ChatGPTProvider().chat("gpt-6-astra", [], [{"role": "user", "content": "Bonjour"}])
+    assert r.text == "Je regarde."
+    assert seen["headers"]["authorization"] == f"Bearer {jwt(time.time() + 86400)}"[:20] + seen["headers"]["authorization"][20:]
+    assert db.get_setting(cg.SETTING)["refresh_token"] == "rt-codex-2"
+
+
+async def test_ely_takes_over_codex_session_once_its_own_key_is_refused(chatgpt, tmp_path):
+    """La clé d'Ely est refusée (Codex l'a usée, ou vous vous êtes reconnecté dans Codex) : Ely reprend la session
+    de Codex au lieu de basculer sur un autre modèle à chaque appel, et l'écran Modèles la dit connectée."""
+    db.set_setting(cg.SETTING, {"access_token": "", "refresh_token": "mort", "account_id": "acc-42", "expires_at": 0,
+                                "refreshed_at": time.time() + 3600, "reconnect_required": True})
+    assert not cg.status()["connected"]
+    codex_logs_in(tmp_path / "codex", "rt-neuve", "vieux", when="2026-09-01T08:00:00Z")
+    assert cg.status()["connected"]
+    db.set_setting(cg.SETTING, {"access_token": "", "refresh_token": "mort", "account_id": "acc-42", "expires_at": 0,
+                                "refreshed_at": time.time() + 3600})
+    r = await cg.ChatGPTProvider().chat("gpt-6-astra", [], [{"role": "user", "content": "Bonjour"}])
+    assert r.text == "Je regarde." and seen["token_calls"][-1]["refresh_token"] == "rt-neuve"
+
+
+async def test_expired_subscription_says_how_to_reconnect(chatgpt):
+    db.set_setting(cg.SETTING, {"access_token": "", "refresh_token": "mort", "account_id": "acc-42", "expires_at": 0})
+    with pytest.raises(LLMError) as e:
+        await cg.ChatGPTProvider().chat("gpt-6-astra", [], [{"role": "user", "content": "Bonjour"}])
+    assert e.value.kind == "auth" and "expirée" in str(e.value) and "codex login" in str(e.value)

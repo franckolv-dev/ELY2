@@ -231,6 +231,7 @@ class Registry:
         errors = []
         transient = False
         for i, ref in enumerate(chain):
+            failure = ""
             try:
                 prov, mid = self.provider_for(ref)
             except LLMError as e:
@@ -245,6 +246,7 @@ class Registry:
                 except LLMError as e:
                     log.warning("modèle %s (essai %d) : %s", ref, attempt + 1, e)
                     errors.append(f"{ref}: {e}")
+                    failure = str(e)
                     if e.kind == "context":
                         raise  # la boucle condense l'historique et réessaie le même modèle, sans en changer
                     transient = transient or e.retryable
@@ -255,7 +257,8 @@ class Registry:
                         continue
                     break
             if i + 1 < len(chain) and on_switch:
-                await on_switch(chain[i + 1], f"{ref} indisponible, bascule sur {chain[i + 1]}")
+                why = f" ({failure[:160]})" if failure else ""
+                await on_switch(chain[i + 1], f"{ref} indisponible{why}, bascule sur {chain[i + 1]}")
         raise LLMError("Aucun modèle n'a pu répondre : " + " | ".join(errors[-4:]), retryable=transient)
 
     async def complete(self, prompt: str, *, role: str = "fast", system: str = "", max_tokens: int = 4000,
