@@ -105,3 +105,36 @@ async def test_recorded_voice_reads_sentence_by_sentence_and_falls_back(ely_url,
         await page.wait_for_function("window.spoken.length === 1")
         assert await page.evaluate("window.spoken") == [["Google français", "Le service vocal est en panne ce matin, désolée."]]
         await browser.close()
+
+
+async def test_claude_row_says_when_the_server_does_not_know_it(ely_url, user, fake, monkeypatch):
+    """Réglages → Modèles : la ligne Claude est toujours là. Ely encore sur l'ancien code (route inconnue) : elle dit
+    de redémarrer, au lieu de disparaître ; Claude prêt : Opus est proposé pour l'auto-amélioration."""
+    from playwright.async_api import async_playwright
+
+    from ely.config import settings
+    from ely.llm import claude_agent
+
+    monkeypatch.setattr(settings, "claude_code_oauth_token", "jeton-de-test")
+    monkeypatch.setattr(claude_agent, "sdk_version", lambda: "0.2.162")
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(executable_path=os.environ["ELY_BROWSER_EXECUTABLE"])
+        ctx = await browser.new_context(locale="fr-FR")
+        await ctx.add_cookies([{"name": "ely_token", "value": auth.create_session(user["id"]), "url": ely_url}])
+        page = await ctx.new_page()
+        await page.route("**/api/admin/claude", lambda route: route.fulfill(status=404, json={"detail": "Not Found"}))
+        await page.goto(ely_url)
+        await page.click(".settings-btn")
+        await page.click(".sheet nav button:has-text('Modèles')")
+        row = page.locator(".srow", has_text="Claude (Agent SDK)")
+        await row.wait_for()
+        assert "redémarrez Ely" in await row.inner_text()
+        await page.unroute("**/api/admin/claude")
+        await page.reload()
+        await page.click(".settings-btn")
+        await page.click(".sheet nav button:has-text('Modèles')")
+        await row.locator(".pill.ok").wait_for()
+        assert "Tester" in await row.inner_text()
+        selfdev = page.locator(".srow", has_text="Sessions d'auto-amélioration").locator("select option")
+        assert "claude:claude-opus-5-5 · Claude Opus 5.5" in await selfdev.all_inner_texts()
+        await browser.close()

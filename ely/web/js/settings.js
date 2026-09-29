@@ -312,6 +312,8 @@ function ClaudeRow({ st, onChange }) {
   const [busy, setBusy] = useState(false);
   const [budget, setBudget] = useState(null);
   if (!st) return null;
+  if (st.error) return html`<${Row} title=${t("claude.title")} hint=${t("claude.hint")}>
+    <p class="desc">${t("claude.unavailable", { e: /404|Not Found/i.test(st.error) ? t("gpt.restart") : st.error })}</p><//>`;
   async function test() {
     setBusy(true);
     try {
@@ -358,7 +360,7 @@ function FallbackRow({ fb, onSave }) {
 }
 
 function Models() {
-  const [data, reload] = useLoad(() => Promise.all([get("/api/models"), get("/api/admin/models/all"), get("/api/admin/claude").catch(() => null)])
+  const [data, reload] = useLoad(() => Promise.all([get("/api/models"), get("/api/admin/models/all"), get("/api/admin/claude").catch((e) => ({ error: e.message }))])
     .then(([a, b, claude]) => ({ ...a, all: b, claude })));
   const [busy, setBusy] = useState(false);
   if (!data) return html`<${Loading} />`;
