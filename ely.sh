@@ -43,7 +43,11 @@ deps_changed() {
   [ "$now" != "$(cat .venv/.deps 2>/dev/null)" ]
 }
 
-version() { git log -1 --format='%h (%cd)' --date=format:%d/%m/%Y 2>/dev/null; }
+version() {
+  local v
+  v=$(sed -n 's/^__version__ = "\([^"]*\)".*/\1/p' "$ROOT/ely/__init__.py" 2>/dev/null)
+  echo "${v:+$v · }$(git log -1 --format='%h (%cd)' --date=format:%d/%m/%Y 2>/dev/null)"
+}
 
 elyport() { local port="${ELY_PORT:-$(env_value ELY_PORT)}"; echo "${port:-8000}"; }
 

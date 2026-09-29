@@ -6,6 +6,7 @@ import asyncio
 import httpx
 import pytest
 
+from ely import __version__
 from ely.api.app import create_app
 from ely.db import db
 
@@ -143,6 +144,7 @@ async def test_after_an_update_the_browser_gets_the_new_interface(client):
     assert r2.status_code == 304  # inchangé : rien n'est retéléchargé
     version = (await client.get("/api/setup")).json()["version"]
     assert version and version == (await client.get("/api/health")).json()["code"]
+    assert version.startswith(f"{__version__} · "), version  # « 4.0.0 · a22ffa7 (26/09/2026) »
 
 
 async def test_recorded_voice_is_relayed_from_the_macs_voice_service(client, user, xtts, monkeypatch):

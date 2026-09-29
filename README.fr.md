@@ -8,8 +8,10 @@ téléphone Android. Et **il ne s'arrête pas tant que l'objectif n'est pas atte
 
 ![Ely réserve un rendez-vous dans son navigateur](docs/images/rdv.png)
 
-Trois mots d'ordre : **efficacité, autonomie, performance.** Ely 2 est une réécriture complète : ~6 800 lignes de
-Python et ~2 600 lignes d'interface, au lieu des 240 000 lignes et 9 services Docker de la version précédente.
+Trois mots d'ordre : **efficacité, autonomie, performance.** Ely 2 est une réécriture complète, en version 4.0.0 à la
+suite de la 3.1.0 d'[ElyAgent](https://github.com/franckolv-dev/ElyAgent) (voir le [journal des versions](CHANGELOG.md)) :
+~8 300 lignes de Python et ~2 900 lignes d'interface, au lieu des 240 000 lignes et 9 services Docker de la version
+précédente.
 Un seul processus, une seule base SQLite, zéro service à maintenir.
 
 ---
