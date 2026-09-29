@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import re
 import subprocess
+from pathlib import Path
 
 from ..db import db, now
-from ..tools import ToolContext, ToolResult, tool
+from ..tools import TOOLS, ToolContext, ToolResult, execute, tool
 from . import metrics, pipeline, plugins
 
 
@@ -34,6 +35,60 @@ Méthode :
 5. Termine par un compte rendu : problèmes trouvés, améliorations appliquées, effet attendu, idées pour la suite.
 Architecture : ely/agent (boucle, prompts, runner) · ely/llm (modèles) · ely/tools (outils) · ely/memory · ely/selfdev ·
 ely/api (HTTP) · ely/web (interface) · tests/ (pytest, modèle simulé)."""
+
+
+# ---------------------------------------------------------------------- mission confiée à Claude (Agent SDK)
+CLAUDE_GUIDE = """# Auto-amélioration d'Ely
+Ely (agent personnel autonome : FastAPI + SQLite + PWA) te confie l'amélioration de son propre code et de son
+fonctionnement. Le répertoire courant est une copie de travail isolée de son code (branche ely-self) : rien n'y est actif
+avant ely_deploy. Respecte les règles de CLAUDE.md.
+Outils :
+- Read, Glob, Grep, Edit, Write : la copie de travail uniquement (.env, data, .git, .venv et .claude sont refusés) ;
+- mcp__ely__ely_metrics : performances récentes (échecs, erreurs d'outils, lenteurs, refus du contrôleur, coûts) ;
+  mcp__ely__recall : souvenirs et conversations passées ; mcp__ely__ely_code : diff et reset de la copie ;
+- mcp__ely__ely_test : suite de tests sur la copie (pattern = filtre -k) ; tu n'as pas de terminal ;
+- mcp__ely__ely_deploy : tests, commit et fusion dans la version active ; Ely redémarre à la fin de ta mission, avec
+  retour arrière automatique si elle ne démarre pas ;
+- mcp__ely__ely_guidelines, mcp__ely__skill_save (shared=true), mcp__ely__ely_plugin : leçons, compétences, plugins à chaud.
+Méthode : diagnostique d'abord (ely_metrics, cas concrets), puis choisis le levier le plus simple et le plus sûr qui règle
+la cause (leçon, compétence, plugin, code). Pour le code : changements petits et ciblés, un test de comportement pour
+chaque correction, ely_test vert avant ely_deploy ; ne supprime ni n'affaiblis jamais un test.
+Termine par un compte rendu en français, en vouvoyant l'administrateur : problèmes trouvés, améliorations appliquées
+(déployées ou non), effet attendu, idées pour la suite."""
+CLAUDE_TOOLS = ["Read", "Glob", "Grep", "Edit", "Write"]
+CLAUDE_BRIDGE = ["ely_metrics", "recall", "ely_code", "ely_test", "ely_deploy", "ely_guidelines", "skill_save", "ely_plugin"]
+
+
+def claude_guard(name: str, args: dict) -> str | None:
+    """Outils natifs de Claude : la copie de travail seulement, hors zones protégées. Raison du refus, ou None."""
+    targets = [args.get("file_path") or args.get("path") or "."]
+    if name == "Glob":
+        targets.append(args.get("pattern") or "")
+    if name == "Grep" and args.get("glob"):
+        targets.append(args["glob"])
+    for target in filter(None, targets):
+        try:
+            if str(target).startswith("~"):
+                raise ValueError("chemin hors du code d'Ely")
+            rel = pipeline.resolve(str(target)).relative_to(pipeline.WORKTREE.resolve())
+            if rel.parts and rel.parts[0] == ".claude":  # réglages et crochets de Claude Code : hors de sa portée
+                raise ValueError("chemin protégé : .claude")
+        except ValueError as e:
+            return (f"{name} refusé ({target}) : {e}. Seule la copie de travail {pipeline.WORKTREE} est accessible, "
+                    "hors .env, data, .git, .venv et .claude.")
+    return None
+
+
+def claude_session(ctx: ToolContext, objective: str, model: str):
+    """Mission d'auto-amélioration pour Claude : outils natifs gardés, outils d'Ely par MCP, budget des réglages."""
+    from ..llm import claude_agent
+
+    async def call(name: str, args: dict) -> ToolResult:
+        return await execute(ctx, name, args)
+
+    return claude_agent.Session(prompt=objective, cwd=Path(pipeline.WORKTREE), model=model, system=CLAUDE_GUIDE,
+                                tools=list(CLAUDE_TOOLS), bridge=[TOOLS[n] for n in CLAUDE_BRIDGE if n in TOOLS],
+                                call=call, permit=claude_guard, budget_usd=claude_agent.budget())
 
 
 @tool("self_improve", """Lance une session d'auto-amélioration d'Ely en arrière-plan (analyse des performances, nouvelles
@@ -143,7 +198,9 @@ async def ely_test(ctx: ToolContext, pattern: str = "") -> ToolResult:
       {"summary": {"type": "string", "description": "Résumé de l'amélioration (message de commit)"}},
       ["summary"], label="Déploiement", icon="🚀", admin_only=True, available=_selfdev, timeout=1200)
 async def ely_deploy(ctx: ToolContext, summary: str) -> ToolResult:
-    res = await pipeline.deploy(summary)
+    res = await pipeline.deploy(summary, restart=not ctx.extra.get("defer_restart"))
+    if res["ok"]:
+        ctx.extra["deployed"] = True
     return ToolResult(res["message"], is_error=not res["ok"])
 
 

@@ -179,6 +179,20 @@ own model (Settings → Models → Self-improvement; automatic: the escalation m
 
 > For step 4 to be active, start Ely with `./ely.sh` (the supervisor) from a git clone.
 
+### Handing self-improvement to Claude (optional)
+
+Ely can hand each whole session to **Claude Code**, through the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview).
+Claude works on its own in the working copy: it reads and edits files, runs the tests and deploys with Ely's tools,
+without a terminal and without access outside the copy (`.env`, `data/`, `.git` are refused). Ely restarts at the end
+of the mission, never in the middle; if Claude doesn't answer, the session carries on with the escalation model.
+
+1. Put your key in `.env`: `ANTHROPIC_API_KEY=sk-ant-…`
+2. `./ely.sh install`: installs the SDK (about 250 MB with its CLI) as soon as a key is present.
+3. Settings → Models → "Refresh models", then **Self-improvement**: `claude:claude-opus-5-5`.
+   The "Claude (Agent SDK)" row checks the connection ("Test") and sets the budget per mission ($5 by default).
+
+With an API key, Claude is billed per token: Ely never picks it on its own, you choose it.
+
 ![Settings → Self-improvement](docs/images/en/self-improvement.png)
 
 ## Multi-model, multi-user

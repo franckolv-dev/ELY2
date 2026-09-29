@@ -18,6 +18,17 @@ leur historique est dans [son journal](https://github.com/franckolv-dev/ElyAgent
   aussi, en attendant que Claude soit relié par l'Agent SDK.
 - **Rôle « Auto-amélioration »** dans Réglages → Modèles : les sessions d'auto-amélioration, de nuit ou à la
   demande, ont leur propre modèle. En automatique, c'est le modèle d'escalade, et non plus le modèle principal.
+- **Auto-amélioration confiée à Claude** (Claude Opus 5.5 ou Fable 5.1, par le Claude Agent SDK, en option :
+  `./ely.sh install` l'installe quand une clé Anthropic est dans `.env`). Claude mène toute la session dans la copie
+  de travail :
+  - il lit et modifie les fichiers, sans terminal ni accès hors de la copie ;
+  - il teste, déploie, écrit leçons, compétences et plugins avec les outils d'Ely ;
+  - Ely redémarre une fois la mission close ;
+  - si Claude ne répond pas, la session continue sur le modèle d'escalade ;
+  - une mission coupée par un redémarrage n'est jamais relancée à l'aveugle.
+
+  Réglages → Modèles → « Claude (Agent SDK) » : état, essai de la connexion, budget par mission. La consommation
+  apparaît dans le tableau de bord. Avec une clé d'API, Claude est facturé au token et n'est jamais choisi d'office.
 
 ### Modifié
 - **Escalade dès le premier échec** constaté par le contrôleur d'objectif, au lieu du deuxième. Chaque bascule est

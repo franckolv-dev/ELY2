@@ -24,7 +24,10 @@ install() {
   fi
   [ -x "$PY" ] || uv venv .venv --python 3.12
   echo "→ dépendances…"
-  uv pip install --python "$PY" -q -e ".[dev]"
+  local extras="dev"
+  # Claude (Agent SDK, ~250 Mo avec son CLI) : seulement si une clé Anthropic ou un jeton Claude Code est dans .env
+  if [ -n "$(env_value ANTHROPIC_API_KEY)" ] || [ -n "$(env_value CLAUDE_CODE_OAUTH_TOKEN)" ]; then extras="dev,claude"; fi
+  uv pip install --python "$PY" -q -e ".[$extras]"
   if [ -z "$(env_value ELY_BROWSER_CHANNEL)" ] && [ -z "$(env_value ELY_BROWSER_EXECUTABLE)" ]; then
     echo "→ navigateur Chromium pour l'agent…"
     "$PY" -m playwright install chromium >/dev/null

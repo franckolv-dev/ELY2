@@ -189,6 +189,7 @@ async def test_anthropic_stream_via_sdk(server):
     await p.chat("claude-haiku-4-5", ["s"], [{"role": "user", "content": "x"}], None)
     body = received["anthropic"]
     assert "thinking" not in body and "output_config" not in body and "fallbacks" not in body
+    await p.client.close()  # sinon le ramasse-miettes le ferme pendant un autre test, sur une boucle déjà fermée
 
 
 def test_think_filter_split_tags():
@@ -225,3 +226,4 @@ async def test_anthropic_drops_rejected_optional_features(server):
     r = await p.chat("claude-opus-5", ["s"], [{"role": "user", "content": "x"}], None)
     assert r.text == "Je regarde." and "fallbacks" in p.disabled and len(calls) == 2
     assert anthropic  # le SDK reste la voie d'appel
+    await p.client.close()

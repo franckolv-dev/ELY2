@@ -5,6 +5,7 @@ Garanties :
   (ou qu'il n'y a plus aucun progrès possible), pas quand le modèle « pense » avoir fini ;
 - les pannes de modèle basculent sur le suivant, puis réessaient avec patience ;
 - l'agent piétine → on passe au modèle le plus fort (si configuré) ;
+- l'auto-amélioration peut être confiée entière à Claude (Agent SDK) : voir run_with_claude ;
 - le contexte est élagué/résumé pour les longues tâches ;
 - chaque étape est persistée : un redémarrage reprend là où on en était.
 """
@@ -13,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import unicodedata
 from dataclasses import replace
@@ -20,8 +22,8 @@ from dataclasses import replace
 from ..auth import tv
 from ..config import settings
 from ..db import db, now
-from ..llm import LLMError, parse_json_loose, registry
-from ..llm.base import estimate_tokens, message_text
+from ..llm import LLMError, claude_agent, parse_json_loose, registry
+from ..llm.base import LLMResponse, estimate_tokens, message_text
 from ..tools import TOOLS, ToolContext, execute, tools_for
 from .prompts import STABLE, dynamic_block
 from .runner import ConvState, Runner, public_message, save_message
@@ -42,6 +44,10 @@ ASKED_MODEL = [
                           r"(?:fort|puissant)\b|" + _VERB + r"\s+(?:the|a|your)?\s*(?:strong(?:est)?|powerful)\s+model\b")),
 ]
 CLAUDE_NAMES = {"opus": "Opus", "fable": "Fable"}
+# Outils natifs de Claude affichés pendant une mission (les outils d'Ely gardent leur libellé)
+CLAUDE_LABELS = {"Read": ("Lecture du code", "📖"), "Glob": ("Recherche de fichiers", "🔎"),
+                 "Grep": ("Recherche dans le code", "🔎"), "Edit": ("Modification du code", "✏️"),
+                 "Write": ("Écriture de fichier", "✏️")}
 
 
 def asked_model(text: str) -> str | None:
@@ -298,7 +304,9 @@ class AgentLoop:
             await self.emit("stream_reset", {})
             await self.emit("model", {"model": ref, "reason": reason})
 
-        if self.selfdev:
+        if self.selfdev and claude_agent.is_claude(registry.resolve("selfdev")):
+            role = "strong" if registry.resolve("strong") else "main"  # Claude a passé la main (panne, reprise)
+        elif self.selfdev:
             role = "selfdev"
         elif self.escalated and registry.resolve("strong"):
             role = "strong"
@@ -362,6 +370,9 @@ class AgentLoop:
 
     # ---------------------------------------------------------------- exécution
     async def run(self, resume: bool = False) -> None:
+        if self.selfdev and await self.delegate_to_claude(resume):
+            asyncio.create_task(self.after_run())
+            return
         user = self.user
         objective = self.run_row["objective"]
         pending = self.state.get("pending_ask") if resume else None
@@ -471,6 +482,83 @@ class AgentLoop:
 
         asyncio.create_task(self.after_run())
 
+    # ---------------------------------------------------------------- auto-amélioration confiée à Claude
+    async def delegate_to_claude(self, resume: bool) -> bool:
+        """True si la tâche a été traitée ici : mission Claude menée, ou interrompue par un redémarrage."""
+        if resume and self.state.get("claude"):
+            # Claude travaillait quand Ely s'est arrêtée : on ne sait pas où il en était, on ne relance pas (LOST)
+            note = {"role": "assistant", "kind": "note", "content": (
+                "⚠️ La mission confiée à Claude a été interrompue par un redémarrage d'Ely. Elle n'est pas relancée "
+                "automatiquement : ses modifications non déployées restent dans la copie de travail. Relancez "
+                "l'auto-amélioration pour la reprendre.")}
+            await self.publish_message(self.persist(note))
+            db.run("UPDATE runs SET status = 'stopped', updated_at = ? WHERE id = ?", (now(), self.run_id))
+            return True
+        ref = registry.resolve("selfdev")
+        if resume or not claude_agent.is_claude(ref):
+            return False
+        return await self.run_with_claude(ref, self.run_row["objective"])
+
+    async def run_with_claude(self, ref: str, objective: str) -> bool:
+        """Mission entière menée par Claude dans la copie de travail. Redémarrage éventuel à la fin seulement.
+        False : Claude n'a rien pu faire, la boucle habituelle prend le relais sur l'escalade ou le principal."""
+        from ..selfdev import pipeline
+        from ..selfdev.tools import claude_session
+
+        ctx = ToolContext(user=self.user, conversation_id=self.conv_id, run_id=self.run_id, emit=self.emit,
+                          extra={"selfdev": True, "defer_restart": True})
+        acted = False
+        result: dict = {}
+        await self.emit("status", {"status": "running"})
+        await self.emit("model", {"model": ref})
+        self.save_state(claude=ref)
+        try:
+            await pipeline.ensure_session()
+            async for ev in claude_agent.run(claude_session(ctx, objective, ref)):
+                if ev["type"] == "text":
+                    await self.emit("stream_reset", {})
+                    await self.emit("delta", {"kind": "text", "text": ev["text"]})
+                elif ev["type"] == "tool_start":
+                    acted = True
+                    name, label, icon = _claude_tool(ev["name"])
+                    args = {k: v.replace(f"{pipeline.WORKTREE}/", "") if isinstance(v, str) else v
+                            for k, v in (ev.get("input") or {}).items()}
+                    await self.emit("tool_start", {"id": ev["id"], "name": name, "label": label, "icon": icon,
+                                                   "args": _preview_args(args)})
+                elif ev["type"] == "tool_end":
+                    await self.emit("tool_end", {"id": ev["id"], "name": _claude_tool(ev["name"])[0], "ok": ev["ok"],
+                                                 "preview": (ev.get("content") or "")[:300]})
+                elif ev["type"] == "result":
+                    result = ev
+        except Exception as e:  # SDK absent, CLI introuvable, identifiants refusés, coupure…
+            log.warning("mission Claude : %s", e)
+            result = {"ok": False, "error": f"{e.__class__.__name__}: {e}"}
+        if result.get("input_tokens") or result.get("output_tokens"):
+            registry.record_usage(self.user["id"], LLMResponse(
+                text="", model=ref, input_tokens=result.get("input_tokens", 0), output_tokens=result.get("output_tokens", 0),
+                cached_tokens=result.get("cached_tokens", 0)), "selfdev")
+        error = result.get("error") or ("" if result.get("ok") else "réponse incomplète")
+        deployed = bool(ctx.extra.get("deployed"))
+        if not result.get("ok") and not acted and not deployed:
+            fallback = registry.resolve("strong") or registry.resolve("main")
+            self.save_state(claude="")
+            await self.emit("stream_reset", {})
+            await self.emit("model", {"model": fallback or "", "reason": f"{ref} indisponible ({error[:160]}), bascule sur {fallback or '—'}"})
+            return False
+        if result.get("ok"):
+            msg = {"role": "assistant", "content": result.get("text") or "Mission terminée.", "model": ref}
+        else:  # Claude a déjà agi : pas de reprise automatique par un autre modèle
+            msg = {"role": "assistant", "kind": "note", "model": ref, "content": (
+                f"⚠️ La mission confiée à Claude s'est arrêtée : {error}.\n"
+                + ("Ce qui a été déployé s'active au redémarrage d'Ely. " if deployed else "")
+                + "Les modifications non déployées restent dans la copie de travail ; relancez l'auto-amélioration pour reprendre.")}
+        await self.publish_message(self.persist(msg))
+        db.run("UPDATE runs SET status = ?, error = ?, updated_at = ? WHERE id = ?",
+               ("done" if result.get("ok") else "error", None if result.get("ok") else error[:1000], now(), self.run_id))
+        if deployed and os.environ.get("ELY_SUPERVISED") == "1":  # la nouvelle version s'active une fois la mission close
+            asyncio.get_running_loop().call_later(pipeline.RESTART_DELAY, pipeline.request_restart)
+        return True
+
     async def after_run(self) -> None:
         """Titre de la conversation + apprentissage (en arrière-plan, sans bloquer)."""
         from ..memory.learner import learn_from_run, make_title
@@ -493,6 +581,15 @@ class AgentLoop:
             await learn_from_run(self.user, self.conv_id, self.run_id)
         except Exception as e:
             log.info("apprentissage : %s", e)
+
+
+def _claude_tool(name: str) -> tuple[str, str, str]:
+    """Nom, libellé et icône d'un outil utilisé par Claude."""
+    short = name.removeprefix(f"mcp__{claude_agent.BRIDGE}__")
+    if short != name and short in TOOLS:
+        return short, TOOLS[short].label, TOOLS[short].icon
+    label, icon = CLAUDE_LABELS.get(name, (name, "⚙️"))
+    return name, label, icon
 
 
 def _preview_args(args: dict) -> str:

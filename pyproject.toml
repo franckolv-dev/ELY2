@@ -34,6 +34,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+claude = ["claude-agent-sdk>=0.2"]  # auto-amélioration par Claude (ely/llm/claude_agent.py)
 
 [project.scripts]
 ely = "ely.__main__:main"

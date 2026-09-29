@@ -178,6 +178,20 @@ utilisent leur propre modèle (Réglages → Modèles → Auto-amélioration ; a
 
 > Pour que l'étape 4 soit active, lancez Ely avec `./ely.sh` (le superviseur) depuis un clone git.
 
+### Confier l'auto-amélioration à Claude (facultatif)
+
+Ely peut confier chaque session entière à **Claude Code**, par le [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview).
+Claude y travaille seul dans la copie de travail : il lit et modifie les fichiers, lance les tests et déploie avec les
+outils d'Ely, sans terminal et sans accès hors de la copie (`.env`, `data/`, `.git` refusés). Ely redémarre à la fin de
+la mission, jamais au milieu ; si Claude ne répond pas, la session continue sur le modèle d'escalade.
+
+1. Mettez votre clé dans `.env` : `ANTHROPIC_API_KEY=sk-ant-…`
+2. `./ely.sh install` : installe le SDK (environ 250 Mo avec son CLI) dès qu'une clé est présente.
+3. Réglages → Modèles → « Actualiser les modèles », puis **Auto-amélioration** : `claude:claude-opus-5-5`.
+   La ligne « Claude (Agent SDK) » vérifie la connexion (« Tester ») et fixe le budget par mission (5 $ par défaut).
+
+Avec une clé d'API, Claude est facturé au token : Ely ne le choisit jamais d'elle-même, c'est à vous de le faire.
+
 ![Auto-amélioration](docs/images/auto-amelioration.png)
 
 ## Multi-modèles, multi-utilisateurs

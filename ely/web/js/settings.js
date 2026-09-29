@@ -307,6 +307,42 @@ function ChatGPTRow({ onChange }) {
   <//>`;
 }
 
+// Claude par l'Agent SDK : moteur des missions d'auto-amélioration
+function ClaudeRow({ st, onChange }) {
+  const [busy, setBusy] = useState(false);
+  const [budget, setBudget] = useState(null);
+  if (!st) return null;
+  async function test() {
+    setBusy(true);
+    try {
+      const r = await post("/api/admin/claude/test", {});
+      toast(r.ok ? t("claude.testOk", { cost: (r.cost || 0).toFixed(3) }) : t("claude.testFail", { e: r.error || "?" }), 7000);
+    } catch (e) { toast(e.message, 7000); }
+    setBusy(false);
+  }
+  async function saveBudget() {
+    if (budget === null) return;
+    const v = parseFloat(budget);
+    setBudget(null);
+    if (v > 0) { await put("/api/admin/claude", { budget: v }); onChange(); toast(t("common.saved")); }
+  }
+  const badge = st.ready ? html` <span class="pill ok">${t("claude.ready")}</span>` : null;
+  return html`<${Row} title=${t("claude.title")} hint=${t("claude.hint")} badge=${badge}>
+    <p class="desc">${t("claude.desc")}</p>
+    ${st.ready ? html`
+        <p class="desc">${t("claude.status", { v: st.version, source: t(`claude.source.${st.source}`) })}
+          ${st.source === "api_key" ? " " + t("claude.apiKey") : ""}</p>
+        <label class="meta-text">${t("claude.budget")} <input class="input" type="number" min="0.1" step="0.5" style="width:88px;min-height:34px"
+          value=${budget ?? st.budget} onInput=${(e) => setBudget(e.target.value)} onBlur=${saveBudget}
+          onKeyDown=${(e) => { if (e.key === "Enter") e.target.blur(); }} /> $</label>
+        <div><button class="btn" disabled=${busy} onClick=${test}>${busy ? t("claude.testing") : t("claude.test")}</button></div>`
+      : html`<ol>
+          ${st.source ? null : html`<li>${t("claude.step1")}</li>`}
+          ${st.installed ? null : html`<li>${t("claude.step2")}</li>`}
+          <li>${t("claude.step3")}</li></ol>`}
+  <//>`;
+}
+
 // Modèles essayés dans l'ordre quand le modèle choisi ne répond pas
 function FallbackRow({ fb, onSave }) {
   const [text, setText] = useState(null);
@@ -322,11 +358,14 @@ function FallbackRow({ fb, onSave }) {
 }
 
 function Models() {
-  const [data, reload] = useLoad(() => Promise.all([get("/api/models"), get("/api/admin/models/all")]).then(([a, b]) => ({ ...a, all: b })));
+  const [data, reload] = useLoad(() => Promise.all([get("/api/models"), get("/api/admin/models/all"), get("/api/admin/claude").catch(() => null)])
+    .then(([a, b, claude]) => ({ ...a, all: b, claude })));
   const [busy, setBusy] = useState(false);
   if (!data) return html`<${Loading} />`;
   const llms = data.all.filter((m) => m.kind === "llm");
   const embeds = data.all.filter((m) => m.kind === "embeddings" || /embed/i.test(m.id));
+  const claudeModels = data.claude?.models || []; // confiés à l'Agent SDK : pour l'auto-amélioration seulement
+  const known = (ref) => data.all.some((m) => m.ref === ref) || claudeModels.some((m) => m.ref === ref);
   async function setRole(role, value) {
     if (value === "__autre__") {
       value = (prompt(t("models.otherPrompt"), "") || "").trim();
@@ -338,14 +377,16 @@ function Models() {
     ${ROLES.map((role) => html`<${Row} title=${t(`role.${role}`)} hint=${t(`role.${role}Desc`)}>
       <select class="input" value=${data.roles[role]?.configured} onChange=${(e) => setRole(role, e.target.value)}>
         <option value="auto">${t("common.automatic")}</option>
+        ${role === "selfdev" ? claudeModels.map((m) => html`<option value=${m.ref}>${m.ref} · ${m.name}</option>`) : null}
         ${(role === "embed" ? embeds : llms).map((m) => html`<option value=${m.ref}>${m.ref}${m.reachable ? "" : t("models.unreachable")}</option>`)}
-        ${data.roles[role]?.configured !== "auto" && !data.all.some((m) => m.ref === data.roles[role]?.configured) ? html`<option value=${data.roles[role]?.configured}>${data.roles[role]?.configured}</option>` : null}
+        ${data.roles[role]?.configured !== "auto" && !known(data.roles[role]?.configured) ? html`<option value=${data.roles[role]?.configured}>${data.roles[role]?.configured}</option>` : null}
         <option value="__autre__">${t("models.other")}</option>
       </select>
       <span class="meta-text">${t("common.current", { v: data.roles[role]?.effective || "—" })}</span>
     <//>`)}
     <${FallbackRow} fb=${data.roles.fallbacks} onSave=${async (v) => { await put("/api/admin/models", { fallbacks: v || "auto" }); reload(); toast(t("models.fallbackSaved")); }} />
     <${ChatGPTRow} onChange=${reload} />
+    <${ClaudeRow} st=${data.claude} onChange=${reload} />
     <${Row} title=${t("models.providers")} hint=${t("models.providersHint")}>
       <div class="list">${Object.entries(data.providers).map(([p, s]) => html`<div class="list-item center" key=${p}><div class="grow"><b>${p}</b><div class="sub">${s}</div></div>
         <span class=${"pill " + (s.startsWith("ok") ? "ok" : "err")}>${s.startsWith("ok") ? t("common.ok") : t("common.offline")}</span></div>`)}</div>
