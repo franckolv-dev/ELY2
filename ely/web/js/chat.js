@@ -22,6 +22,7 @@ function buildItems(messages) {
     if (m.role === "user") {
       if (m.kind === "control") items.push({ type: "control", msg: m });
       else if (m.kind === "scheduled") items.push({ type: "scheduled", msg: m });
+      else if (m.kind === "relaunch") items.push({ type: "relaunch", msg: m });
       else items.push({ type: "user", msg: m });
       continue;
     }
@@ -42,7 +43,7 @@ function buildBlocks(items) {
   const blocks = [];
   let turn = null;
   for (const it of items) {
-    if (it.type === "user" || it.type === "scheduled") { blocks.push(it); turn = null; continue; }
+    if (it.type === "user" || it.type === "scheduled" || it.type === "relaunch") { blocks.push(it); turn = null; continue; }
     if (it.type === "control") {
       // le contrôleur d'objectif clôt le tour qu'il juge ; la suite ouvre un nouveau tour
       if (turn) { turn.items.push(it); turn.closed = true; turn = null; } else blocks.push(it);
@@ -186,6 +187,7 @@ export function Thread({ messages, live, onSend, onImage, onCancel }) {
     ${blocks.map((b, i) => {
       if (b.type === "user") return html`<${UserMsg} key=${b.msg.id} msg=${b.msg} onImage=${onImage} />`;
       if (b.type === "scheduled") return html`<${Trace} key=${b.msg.id} tag=${t("thread.scheduled")}>${contentText(b.msg).replace(/^\[Tâche planifiée #\d+\]\s*/, "")}<//>`;
+      if (b.type === "relaunch") return html`<${Trace} key=${b.msg.id} tag=${t("thread.relaunch")}>${contentText(b.msg).split("\n")[0]}<//>`;
       if (b.type === "control") return renderItem(b);
       return html`<div class="turn msg" key=${b.key}>
         <${Meta} ts=${b.ts} />

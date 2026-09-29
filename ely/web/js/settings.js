@@ -454,7 +454,10 @@ function SelfDev({ openConversation }) {
     </div>
     <${Row} title=${t("self.session")} hint=${t("self.sessionHint")}>
       <div class="row nowrap"><input class="input" placeholder=${t("self.goalPh")} value=${goal} onInput=${(e) => setGoal(e.target.value)} />
-        <button class="btn primary" onClick=${async () => { const r = await post("/api/admin/selfdev/run", { goal }); toast(t("self.launched")); openConversation(r.conversation_id); }}>${t("self.launch")}</button></div>
+        <button class="btn primary" onClick=${async () => {
+          try { const r = await post("/api/admin/selfdev/run", { goal }); toast(t("self.launched")); openConversation(r.conversation_id); }
+          catch (e) { toast(t("self.launchFailed", { e: e.message }), 7000); }
+        }}>${t("self.launch")}</button></div>
       <label class="toggle small"><${Switch} checked=${data.auto} onChange=${async (v) => { await put("/api/admin/selfdev", { auto: v }); reload(); }} />
         ${t("self.nightly")} <input class="input" type="number" min="0" max="23" style="width:72px;min-height:34px" value=${data.hour}
           onChange=${async (e) => { await put("/api/admin/selfdev", { hour: parseInt(e.target.value) }); reload(); }} /> ${t("self.hour")}</label>

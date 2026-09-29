@@ -243,6 +243,7 @@ function App() {
   const handsRef = useRef(handsFree);
   const liveClosedByUser = useRef(false);
   const deltaBuf = useRef({});
+  const codeRef = useRef(null); // version du serveur au chargement de la page
   curRef.current = cur;
   handsRef.current = handsFree;
 
@@ -339,6 +340,13 @@ function App() {
     const cid = ev.conversation_id;
     switch (ev.type) {
       case "hello": {
+        // Ely a redémarré sur une autre version (mise à jour, auto-amélioration) : cette page porte l'ancienne interface
+        if (ev.code && codeRef.current && ev.code !== codeRef.current) {
+          const draft = document.querySelector(".composer textarea")?.value.trim() || document.querySelector(".sheet");
+          if (draft) toast(t("app.newVersion"), 15000);
+          else location.reload();
+        }
+        if (ev.code) codeRef.current = ev.code;
         // (re)connexion : l'état du serveur fait foi ; ce qui n'y figure plus est terminé
         const active = new Set(ev.states.map((s) => s.conversation_id));
         setLive((l) => {

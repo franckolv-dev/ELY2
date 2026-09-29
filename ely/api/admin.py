@@ -172,7 +172,7 @@ class GoalIn(BaseModel):
 
 
 @router.post("/api/admin/selfdev/run")
-def selfdev_run(body: GoalIn, user=Depends(auth.admin_user)):
+async def selfdev_run(body: GoalIn, user=Depends(auth.admin_user)):  # async : la session démarre dans la boucle du serveur
     from ..selfdev.tools import start_session
 
     return {"conversation_id": start_session(user, body.goal)}

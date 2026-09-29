@@ -26,10 +26,20 @@ leur historique est dans [son journal](https://github.com/franckolv-dev/ElyAgent
   - Ely redémarre une fois la mission close ;
   - si Claude ne répond pas (quota du forfait atteint, jeton refusé…), la session continue sur le modèle
     d'escalade, et Ely en donne la raison ;
+  - si son quota tombe en pleine mission, Ely s'arrête et consigne ce qu'il a fait dans un fichier markdown
+    (Fichiers → `auto-amelioration/`). Elle recommence ensuite la mission avec le modèle d'escalade, en lui disant
+    ce qui est déjà en place ;
   - une mission coupée par un redémarrage n'est jamais relancée à l'aveugle.
 
   Réglages → Modèles → « Claude (Agent SDK) » : état, essai de la connexion, budget par mission. La consommation
   apparaît dans le tableau de bord. Avec une clé d'API, Claude est facturé au token et n'est jamais choisi d'office.
+
+- **Rechargement automatique de l'interface** quand Ely redémarre sur une nouvelle version (mise à jour,
+  auto-amélioration). Si un message est en cours d'écriture, Ely le garde et propose de recharger.
+
+### Corrigé
+- Réglages → Auto-amélioration → « Lancer » ne démarrait pas la session (erreur « no running event loop » dans le
+  terminal). Une erreur de lancement s'affiche désormais au lieu de rien.
 
 ### Modifié
 - **Escalade dès le premier échec** constaté par le contrôleur d'objectif, au lieu du deuxième. Chaque bascule est

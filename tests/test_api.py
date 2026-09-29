@@ -172,3 +172,17 @@ async def test_downloaded_extension_leaves_out_the_store_notes(client, user):
     names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
     assert "ely-chrome/manifest.json" in names and "ely-chrome/config.json" in names
     assert not [n for n in names if n.endswith(".md") or "/." in n], names
+
+
+async def test_self_improvement_session_starts_from_settings(client, user, fake):
+    """Réglages → Auto-amélioration → « Lancer » : la session démarre vraiment et la conversation est renvoyée."""
+    from conftest import wait_idle
+
+    fake.script = lambda model, system, messages, tools: "Rien à améliorer aujourd'hui."
+    h = await login(client, user["email"], "motdepasse")
+    r = await client.post("/api/admin/selfdev/run", headers=h, json={"goal": "Sois plus rapide sur Doctolib"})
+    assert r.status_code == 200, r.text
+    cid = r.json()["conversation_id"]
+    await wait_idle(cid)
+    run = db.one("SELECT * FROM runs WHERE conversation_id = ? ORDER BY id DESC LIMIT 1", (cid,))
+    assert run and run["objective"] == "Sois plus rapide sur Doctolib" and run["status"] == "done"

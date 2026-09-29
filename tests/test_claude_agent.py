@@ -280,3 +280,45 @@ async def test_usage_limit_reached_hands_over_to_the_strong_model(fake, user, fa
     notices = model_notices(q)
     assert any(limit in n and "bascule sur fake:fort" in n for n in notices), notices
     assert last_run(cid)["status"] == "done"
+    # le même quota en pleine mission est reconnu comme tel par l'adaptateur
+    events = [ev async for ev in claude_agent._real_run_sdk(claude_agent.Session(prompt="x", cwd=fake_repo))]
+    assert events[-1]["type"] == "result" and events[-1]["limit"] and not events[-1]["ok"]
+
+
+async def test_quota_reached_mid_mission_restarts_it_without_claude(fake, user, fake_repo, claude):
+    """Le quota tombe alors que Claude a déjà modifié le code : Ely s'arrête, consigne son travail dans un fichier
+    markdown, puis recommence la mission avec le modèle d'escalade, qui sait ce que Claude a déjà mis en place."""
+    with_strong_model(fake)
+
+    async def mission(s):
+        yield {"type": "text", "text": "L'addition est fausse, je la corrige."}
+        yield {"type": "tool_start", "id": "t1", "name": "Edit", "input": {"file_path": str(s.cwd / "app.py")}}
+        (s.cwd / "app.py").write_text("def add(a, b):\n    return a + b\n")
+        yield {"type": "tool_end", "id": "t1", "name": "Edit", "ok": True, "content": "ok"}
+        yield {"type": "result", "ok": False, "limit": True, "text": "", "error": "Claude AI usage limit reached · resets 6pm",
+               "input_tokens": 5000, "output_tokens": 300, "cached_tokens": 0}
+
+    seen = {}
+
+    def astra(messages, tools):
+        seen["mission"] = next(m["content"] for m in messages if m["role"] == "user" and "Mission relancée" in str(m["content"]))
+        return "Le correctif de Claude était bon ; tests verts, rien d'autre à faire."
+
+    claude["script"] = mission
+    fake.script, used = routed(astra)
+    cid = start_session(user, "Corrige l'addition")
+    for _ in range(200):
+        await asyncio.sleep(0.05)
+        runs = db.all("SELECT * FROM runs WHERE conversation_id = ? ORDER BY id", (cid,))
+        if len(runs) == 2 and runs[1]["status"] == "done":
+            break
+    assert [r["status"] for r in runs] == ["stopped", "done"]
+    assert len(claude["sessions"]) == 1 and used == ["fort"]  # Claude n'est pas rappelé, Astra refait la mission
+    note = next(m for m in messages(cid) if m.get("kind") == "note")["content"]
+    report = note.split("Fichiers → ")[1].split(". ")[0]
+    text = (settings.user_dir(user["id"]) / "files" / report).read_text()
+    assert "Corrige l'addition" in text and "usage limit reached" in text and "Modification du code" in text
+    assert "app.py" in text and "+    return a + b" in text  # modifications non déployées, diff compris
+    assert "Corrige l'addition" in seen["mission"] and report in seen["mission"] and "ely_code action=diff" in seen["mission"]
+    assert next(m for m in messages(cid) if m.get("kind") == "relaunch")["content"] == seen["mission"]
+    assert "a - b" in (fake_repo / "app.py").read_text()  # rien n'a été déployé

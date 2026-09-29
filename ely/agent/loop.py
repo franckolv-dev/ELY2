@@ -495,7 +495,7 @@ class AgentLoop:
             db.run("UPDATE runs SET status = 'stopped', updated_at = ? WHERE id = ?", (now(), self.run_id))
             return True
         ref = registry.resolve("selfdev")
-        if resume or not claude_agent.is_claude(ref):
+        if resume or self.state.get("without_claude") or not claude_agent.is_claude(ref):
             return False
         return await self.run_with_claude(ref, self.run_row["objective"])
 
@@ -509,6 +509,8 @@ class AgentLoop:
                           extra={"selfdev": True, "defer_restart": True})
         acted = False
         result: dict = {}
+        actions: list[dict] = []  # pour le compte rendu si la mission doit être relancée sans Claude
+        texts: list[str] = []
         await self.emit("status", {"status": "running"})
         await self.emit("model", {"model": ref})
         self.save_state(claude=ref)
@@ -516,6 +518,7 @@ class AgentLoop:
             await pipeline.ensure_session()
             async for ev in claude_agent.run(claude_session(ctx, objective, ref)):
                 if ev["type"] == "text":
+                    texts.append(ev["text"])
                     await self.emit("stream_reset", {})
                     await self.emit("delta", {"kind": "text", "text": ev["text"]})
                 elif ev["type"] == "tool_start":
@@ -525,7 +528,11 @@ class AgentLoop:
                             for k, v in (ev.get("input") or {}).items()}
                     await self.emit("tool_start", {"id": ev["id"], "name": name, "label": label, "icon": icon,
                                                    "args": _preview_args(args)})
+                    actions.append({"id": ev["id"], "label": label, "icon": icon, "args": _preview_args(args)})
                 elif ev["type"] == "tool_end":
+                    for a in actions:
+                        if a["id"] == ev["id"]:
+                            a.update(ok=ev["ok"], preview=ev.get("content") or "")
                     await self.emit("tool_end", {"id": ev["id"], "name": _claude_tool(ev["name"])[0], "ok": ev["ok"],
                                                  "preview": (ev.get("content") or "")[:300]})
                 elif ev["type"] == "result":
@@ -545,6 +552,9 @@ class AgentLoop:
             await self.emit("stream_reset", {})
             await self.emit("model", {"model": fallback or "", "reason": f"{ref} indisponible ({error[:160]}), bascule sur {fallback or '—'}"})
             return False
+        if result.get("limit"):  # quota atteint en pleine mission : on arrête, on consigne, on recommence sans Claude
+            await self.relaunch_without_claude(ref, objective, error, actions, texts, deployed)
+            return True
         if result.get("ok"):
             msg = {"role": "assistant", "content": result.get("text") or "Mission terminée.", "model": ref}
         else:  # Claude a déjà agi : pas de reprise automatique par un autre modèle
@@ -558,6 +568,40 @@ class AgentLoop:
         if deployed and os.environ.get("ELY_SUPERVISED") == "1":  # la nouvelle version s'active une fois la mission close
             asyncio.get_running_loop().call_later(pipeline.RESTART_DELAY, pipeline.request_restart)
         return True
+
+    async def relaunch_without_claude(self, ref: str, objective: str, error: str, actions: list[dict], texts: list[str],
+                                      deployed: bool) -> None:
+        """Claude a agi puis son quota est tombé : son travail est consigné dans un fichier markdown, la tâche s'arrête,
+        et la mission recommence sur le modèle d'escalade (sinon le principal) avec ce contexte. Rien n'est repris au
+        vol : le nouveau modèle repart de la mission, en sachant ce qui est déjà en place."""
+        from ..selfdev import pipeline
+        from ..selfdev.tools import claude_report, relaunch_objective
+
+        try:
+            diff = await pipeline.diff()
+        except Exception as e:
+            diff = f"(état de la copie de travail illisible : {e})"
+        report = claude_report(self.user, objective, ref, error, actions, texts, diff, deployed)
+        fallback = registry.resolve("strong") or registry.resolve("main") or "—"
+        note = {"role": "assistant", "kind": "note", "model": ref, "content": (
+            f"⚠️ Quota de Claude atteint en pleine mission ({error[:200]}). Ce qu'il a fait est consigné dans Fichiers → "
+            f"{report}. La mission recommence avec {fallback}, qui en tient compte.")}
+        await self.publish_message(self.persist(note))
+        db.run("UPDATE runs SET status = 'stopped', error = ?, updated_at = ? WHERE id = ?", (error[:1000], now(), self.run_id))
+        await self.emit("model", {"model": fallback, "reason": f"quota de Claude atteint : mission relancée avec {fallback}"})
+        text = relaunch_objective(objective, report, actions, diff, deployed)
+        task = self.st.task
+
+        async def relaunch() -> None:  # une fois la tâche de Claude close
+            if task and task is not asyncio.current_task():
+                await asyncio.wait({task})
+            if not self.runner.shutting_down:
+                await self.runner.submit(self.user, self.conv_id, text, channel="selfdev", kind="relaunch",
+                                         state={"without_claude": True})
+
+        asyncio.get_running_loop().create_task(relaunch())
+        if deployed and os.environ.get("ELY_SUPERVISED") == "1":
+            asyncio.get_running_loop().call_later(pipeline.RESTART_DELAY, pipeline.request_restart)
 
     async def after_run(self) -> None:
         """Titre de la conversation + apprentissage (en arrière-plan, sans bloquer)."""

@@ -91,6 +91,62 @@ def claude_session(ctx: ToolContext, objective: str, model: str):
                                 call=call, permit=claude_guard, budget_usd=claude_agent.budget())
 
 
+def claude_report(user: dict, objective: str, model: str, error: str, actions: list[dict], texts: list[str],
+                  diff: str, deployed: bool) -> str:
+    """Consigne dans un fichier markdown (Fichiers de l'administrateur) ce que Claude a fait avant d'être arrêté.
+    Renvoie son chemin dans l'espace de fichiers."""
+    import time
+
+    from ..config import settings
+
+    rel = f"auto-amelioration/{time.strftime('%Y-%m-%d-%H%M%S')}-mission-claude.md"
+    steps = "\n".join(f"{i}. {a['icon']} {a['label']}" + (f" ({a['args']})" if a.get("args") else "")
+                      + {True: " : ok", False: " : ÉCHEC"}.get(a.get("ok"), " : sans résultat")
+                      + (f"\n   > {a['preview'][:300]}".replace("\n", " ") if a.get("preview") else "")
+                      for i, a in enumerate(actions, 1)) or "(aucune action)"
+    said = "\n\n".join(t.strip() for t in texts if t.strip())[-6000:] or "(rien)"
+    body = f"""# Mission d'auto-amélioration interrompue : quota de Claude atteint
+
+- **Date** : {time.strftime('%d/%m/%Y %H:%M')}
+- **Modèle** : {model}
+- **Arrêt** : {error}
+- **Déploiement** : {"oui, une partie du travail est déjà active" if deployed else "aucun"}
+
+## Mission
+{objective}
+
+## Ce que Claude a fait
+{steps}
+
+## Ce que Claude a expliqué
+{said}
+
+## Modifications non déployées dans la copie de travail
+```diff
+{diff.strip()[:40000] or "(aucune)"}
+```
+"""
+    path = settings.user_dir(user["id"]) / "files" / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8")
+    return rel
+
+
+def relaunch_objective(objective: str, report: str, actions: list[dict], diff: str, deployed: bool) -> str:
+    """Nouvelle mission pour le modèle d'escalade : la même, plus ce que Claude a déjà fait."""
+    done = "\n".join(f"- {a['label']}" + (f" ({a['args']})" if a.get("args") else "")
+                      + {True: " : ok", False: " : échec"}.get(a.get("ok"), " : sans résultat") for a in actions[-40:])
+    stat = diff.split("\n\n", 1)[0].strip() or "aucune"
+    return (f"Mission relancée : Claude a commencé cette mission mais son quota a été atteint avant la fin.\n\n"
+            f"Mission d'origine :\n{objective}\n\n"
+            f"Ce que Claude a déjà fait (détail complet dans le fichier {report}, lisible avec file_read) :\n{done}\n\n"
+            f"Modifications non déployées dans la copie de travail :\n{stat}\n"
+            + ("Une partie du travail a déjà été déployée.\n" if deployed else "")
+            + "\nRecommence la mission en tenant compte de ce travail : vérifie ce qui est en place (ely_code action=diff), "
+              "garde ce qui est bon, corrige ou termine le reste. L'objectif restant peut donc différer un peu de la "
+              "mission d'origine.")
+
+
 @tool("self_improve", """Lance une session d'auto-amélioration d'Ely en arrière-plan (analyse des performances, nouvelles
 compétences, plugins, corrections de son propre code avec tests et redéploiement). Précise l'objectif (ex. « sois plus rapide
 pour les RDV Doctolib ») ou laisse vide pour une amélioration générale.""",
