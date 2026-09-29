@@ -30,7 +30,7 @@ def running_ely(port: int) -> bool:
 
     try:
         data = httpx.get(f"http://127.0.0.1:{port}/api/health", timeout=2).json()
-        return "tools" in data and str(data.get("version", "")).startswith("2.")
+        return "tools" in data and "code" in data  # ce qu'Ely renvoie, quelle que soit sa version (l'ancienne : {"status"})
     except Exception:
         return False
 

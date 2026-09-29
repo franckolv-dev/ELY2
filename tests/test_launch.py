@@ -46,7 +46,7 @@ def test_port_taken_by_a_running_ely():
 
     @app.get("/api/health")
     def health():
-        return {"ok": True, "version": "2.0.0", "tools": 37}
+        return {"ok": True, "version": "4.0.0", "code": "4.0.0 · 537d416 (29/09/2026)", "tools": 37}
 
     s, port = busy_socket()
     s.close()
