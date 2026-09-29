@@ -1,4 +1,4 @@
-# Ely 2 — your autonomous personal agent
+# Ely — your autonomous personal agent
 
 **English** · [Français](README.fr.md)
 
@@ -8,7 +8,7 @@ And **it doesn't stop until the goal is reached.**
 
 ![Ely: home screen, with its live browser on the right](docs/images/en/home.png)
 
-Three watchwords: **efficiency, autonomy, performance.** Ely 2 is a complete rewrite, released as version 4.0.0 after
+Three watchwords: **efficiency, autonomy, performance.** Version 4.0.0 is a complete rewrite, following
 [ElyAgent](https://github.com/franckolv-dev/ElyAgent)'s 3.1.0 (see the [changelog](CHANGELOG.md), in French): ~8,300
 lines of Python and ~2,900 lines of interface, instead of the previous version's 240,000 lines and 9 Docker services.
 One process, one SQLite database, zero services to maintain.
