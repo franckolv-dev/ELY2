@@ -1,0 +1,32 @@
+# Publie la release GitHub d'une version dès que son tag est poussé (git tag v4.1.0 && git push origin v4.1.0),
+# avec pour notes la section correspondante de CHANGELOG.md.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Notes tirées du CHANGELOG
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '
+            index($0, "## [" v "]") == 1 { on = 1; next }
+            on && /^## \[/ { exit }
+            on && !/^\[[^]]+\]: http/ { print }
+          ' CHANGELOG.md > notes.md
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "::error::Pas de section [$version] dans CHANGELOG.md"
+            exit 1
+          fi
+      - name: Release GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --title "Ely ${GITHUB_REF_NAME#v}" --notes-file notes.md
