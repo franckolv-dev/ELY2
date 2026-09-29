@@ -38,6 +38,10 @@ async def responses(request: Request):
     seen["body"], seen["headers"] = body, dict(request.headers)
     if body["model"] == "refuse":
         return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+    if any(i.get("role") == "system" for i in body["input"]):  # comme le vrai backend depuis GPT-6
+        return JSONResponse({"detail": "System messages are not allowed"}, status_code=400)
+    if body["model"].startswith("gpt-6") and "parallel_tool_calls" in body:
+        return JSONResponse({"detail": "Unsupported parameter: parallel_tool_calls"}, status_code=400)
     events = [
         {"type": "response.reasoning_summary_text.delta", "delta": "Je vérifie la météo."},
         {"type": "response.output_item.done", "item": {"type": "reasoning", "id": "rs_1", "summary": [], "encrypted_content": "CHIFFRE"}},
@@ -125,7 +129,7 @@ async def test_chat_streams_text_tools_and_encrypted_reasoning(chatgpt):
     assert headers["chatgpt-account-id"] == "acc-42" and headers["authorization"].startswith("Bearer at-")
     types = [i["type"] for i in body["input"]]
     assert types == ["message", "message", "reasoning", "function_call", "function_call_output"]
-    assert body["input"][0]["role"] == "system" and body["input"][2]["encrypted_content"] == "ANCIEN"
+    assert body["input"][0]["role"] == "developer" and body["input"][2]["encrypted_content"] == "ANCIEN"
     assert body["input"][4] == {"type": "function_call_output", "call_id": "call_1", "output": "12 °C"}
     assert body["tools"][0]["name"] == "weather" and body["tools"][0]["type"] == "function"
 
@@ -256,3 +260,15 @@ async def test_expired_subscription_says_how_to_reconnect(chatgpt):
     with pytest.raises(LLMError) as e:
         await cg.ChatGPTProvider().chat("gpt-6-astra", [], [{"role": "user", "content": "Bonjour"}])
     assert e.value.kind == "auth" and "expirée" in str(e.value) and "codex login" in str(e.value)
+
+
+async def test_gpt6_accepts_elys_instructions_and_tools(chatgpt):
+    """GPT-6 refuse les messages « system » et, ici, les appels d'outils en parallèle : Ely s'adapte au lieu de
+    basculer sur un autre modèle à chaque appel."""
+    await cg.import_auth(AUTH_JSON)
+    tools = [{"name": "browser", "description": "Navigateur", "parameters": {"type": "object", "properties": {}}}]
+    r = await cg.ChatGPTProvider().chat("gpt-6-astra", ["Tu es Ely."], [{"role": "user", "content": "Bonjour"}], tools)
+    assert r.text == "Je regarde." and r.tool_calls
+    body = seen["body"]
+    assert body["input"][0] == {"type": "message", "role": "developer", "content": [{"type": "input_text", "text": "Tu es Ely."}]}
+    assert "parallel_tool_calls" not in body and body["tools"][0]["name"] == "browser"

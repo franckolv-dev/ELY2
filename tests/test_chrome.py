@@ -37,6 +37,9 @@ DOCTOLIB = """<html><head><title>Doctolib</title></head><body>
 OUTLOOK = """<html><head><title>Outlook</title></head><body><h1>Boîte de réception</h1>
   <p>Doctolib — Votre code de vérification est 482913</p></body></html>"""
 AIDE = "<html><head><title>Aide Doctolib</title></head><body><h1>Centre d'aide</h1></body></html>"
+TENACE = "<html><head><title>Résultats</title></head><body data-tenace><h1>Résultats d'analyse</h1></body></html>"
+# une page où l'extension « Coffre » ouvre sa page dans un cadre sans adresse visible (comme le lecteur PDF de Chrome)
+LECTEUR = "<html><head><title>Ordonnance</title></head><body data-lecteur><h1>Ordonnance du 12 septembre</h1></body></html>"
 ENVOI = """<html><head><title>Envoi</title></head><body><h1>Joindre le dossier</h1>
   <input type="file" id="f" aria-label="Pièce jointe" onchange="const f = this.files[0];
     f.text().then(t => document.getElementById('r').textContent = 'reçu ' + f.name + ' (' + f.size + ' o) : ' + t)">
@@ -53,7 +56,8 @@ def free_port() -> int:
 
 async def start_ely(port: int):
     app = create_app()
-    for path, body in (("/test/doctolib", DOCTOLIB), ("/test/outlook", OUTLOOK), ("/test/aide", AIDE), ("/test/envoi", ENVOI)):
+    for path, body in (("/test/doctolib", DOCTOLIB), ("/test/outlook", OUTLOOK), ("/test/aide", AIDE), ("/test/envoi", ENVOI),
+                       ("/test/lecteur", LECTEUR), ("/test/tenace", TENACE)):
         app.add_api_route(path, lambda body=body: HTMLResponse(body), methods=["GET"])
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, lifespan="off", log_level="error"))
     task = asyncio.create_task(server.serve())
@@ -318,6 +322,17 @@ const show = () => {
 };
 show();
 document.addEventListener("focusin", show);
+const load = () => {  // cadre chargé par script : son attribut src reste vide
+  const frame = document.createElement("iframe");
+  document.body.append(frame);
+  frame.contentWindow.location.href = chrome.runtime.getURL("menu.html");
+  return frame;
+};
+if (document.body.hasAttribute("data-lecteur")) load();
+if (document.body.hasAttribute("data-tenace")) {  // remet son cadre dès qu'on le retire
+  let frame = load();
+  new MutationObserver(() => { if (!frame.isConnected) frame = load(); }).observe(document.body, { childList: true });
+}
 """
 
 
@@ -387,3 +402,21 @@ async def test_ely_leaves_alone_a_tab_another_extension_opened_in_its_window(ely
     assert not r.is_error and "Code reçu par e-mail" in r.content, r.content
     tabs = await sw.evaluate("async () => (await chrome.tabs.query({})).map((t) => t.url)")
     assert page in tabs, tabs  # l'onglet de l'autre extension est resté tel quel
+
+
+async def test_ely_removes_an_extension_frame_loaded_by_script(ely_url, chrome_with_password_manager, user):
+    """Le cadre d'une autre extension chargé par script n'a pas d'adresse dans la page (son attribut src reste vide) :
+    Chrome le signale quand même à Ely, qui le retire et lit la page."""
+    ctx = ToolContext(user=user, conversation_id=new_conversation(user), run_id=0, emit=lambda *a: asyncio.sleep(0))
+    r = await execute(ctx, "browser", {"action": "open", "url": f"{ely_url}/test/lecteur"})
+    assert not r.is_error and "Ordonnance du 12 septembre" in r.content, r.content
+
+
+async def test_ely_is_never_stuck_on_a_page_it_cannot_drive(ely_url, chrome_with_password_manager, user):
+    """Une extension remet son cadre dès qu'on le retire (ou Chrome affiche un PDF, page de son lecteur intégré) :
+    l'onglet ne se pilote plus. Ely le dit clairement, et peut toujours ouvrir une autre page dans le même onglet."""
+    ctx = ToolContext(user=user, conversation_id=new_conversation(user), run_id=0, emit=lambda *a: asyncio.sleep(0))
+    r = await execute(ctx, "browser", {"action": "open", "url": f"{ely_url}/test/tenace"})
+    assert "une autre extension" in r.content and "Cannot access" not in r.content, r.content
+    r = await execute(ctx, "browser", {"action": "open", "url": f"{ely_url}/test/doctolib"})
+    assert not r.is_error and "Code reçu par e-mail" in r.content, r.content
