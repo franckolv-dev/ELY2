@@ -3,7 +3,9 @@ reliée à un vrai serveur Ely, pilotée par l'outil `browser` comme le ferait l
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import io
+import json
 import os
 import socket
 import zipfile
@@ -69,11 +71,13 @@ async def ely_url():
     await task
 
 
-async def launch_chrome(p, profile, url: str, token: str, ext: Path = EXT, type_url: bool = True):
-    """Chrome de l'utilisateur avec l'extension, connecté à Ely (cookie de session) et réglé sur l'adresse `url`."""
+async def launch_chrome(p, profile, url: str, token: str, ext: Path = EXT, type_url: bool = True, others: tuple = ()):
+    """Chrome de l'utilisateur avec l'extension, connecté à Ely (cookie de session) et réglé sur l'adresse `url`.
+    `others` : ses autres extensions."""
+    exts = ",".join(str(e) for e in (ext, *others))
     ctx = await p.chromium.launch_persistent_context(
         str(profile), executable_path=os.environ["ELY_BROWSER_EXECUTABLE"], headless=True,
-        args=[f"--disable-extensions-except={ext}", f"--load-extension={ext}"])
+        args=[f"--disable-extensions-except={exts}", f"--load-extension={exts}"])
     await ctx.add_cookies([{"name": "ely_token", "value": token, "url": url}])
     sw = ctx.service_workers[0] if ctx.service_workers else await ctx.wait_for_event("serviceworker")
     if type_url:
@@ -298,3 +302,88 @@ async def test_stale_element_number_in_chrome_gives_the_current_page(ely_url, us
         r = await execute(ctx, "browser", {"action": "click", "ref": old})
     assert r.is_error and f"[{old}] n'existe plus" in r.content and "Se reconnecter" in r.content, r.content
     assert not [rec for rec in caplog.records if rec.levelname == "ERROR"]
+
+
+# un gestionnaire de mots de passe comme Passbolt : il glisse son menu, une page de l'extension cachée dans une
+# racine fantôme fermée, dans chaque page qui a un champ de saisie, et le recrée à chaque focus, près du champ
+MENU_JS = """
+const show = () => {
+  document.querySelector("coffre-menu")?.remove();
+  if (!document.querySelector("input")) return;
+  const host = document.createElement("coffre-menu");
+  const frame = document.createElement("iframe");
+  frame.src = chrome.runtime.getURL("menu.html");
+  host.attachShadow({ mode: "closed" }).append(frame);
+  document.body.append(host);
+};
+show();
+document.addEventListener("focusin", show);
+"""
+
+
+def password_manager(folder: Path) -> Path:
+    folder.mkdir()
+    (folder / "manifest.json").write_text(json.dumps({
+        "manifest_version": 3, "name": "Coffre", "version": "1.0",
+        "content_scripts": [{"matches": ["<all_urls>"], "js": ["menu.js"], "run_at": "document_idle"}],
+        "web_accessible_resources": [{"resources": ["menu.html"], "matches": ["<all_urls>"]}]}))
+    (folder / "menu.js").write_text(MENU_JS)
+    (folder / "menu.html").write_text("<p>Remplir avec Coffre</p>")
+    return folder
+
+
+def unpacked_id(folder: Path) -> str:
+    """Identifiant que Chrome donne à une extension chargée depuis un dossier."""
+    return "".join(chr(ord("a") + int(c, 16)) for c in hashlib.sha256(str(folder).encode()).hexdigest()[:32])
+
+
+@pytest.fixture
+async def chrome_with_password_manager(ely_url, user, tmp_path):
+    from playwright.async_api import async_playwright
+
+    async with async_playwright() as p:
+        ctx = await launch_chrome(p, tmp_path / "profil", ely_url, auth.create_session(user["id"]),
+                                  others=(password_manager(tmp_path / "coffre"),))
+        assert await wait_bridge(user["id"], 10), "l'extension ne s'est pas connectée à Ely"
+        yield ctx
+        await ctx.close()
+        chrome.bridges.pop(user["id"], None)
+        chrome.browsers.pop(user["id"], None)
+
+
+async def test_ely_keeps_control_when_another_extension_slips_its_menu_into_the_page(ely_url, chrome_with_password_manager, user):
+    """Chrome interdit à une extension de piloter un onglet où se trouve une page d'une autre extension
+    (« Cannot access a chrome-extension:// URL of different extension ») : le menu du gestionnaire de mots de passe
+    ne doit pas priver Ely de l'onglet, ni au chargement de la page, ni quand il revient au focus d'un champ."""
+    ctx = ToolContext(user=user, conversation_id=new_conversation(user), run_id=0, emit=lambda *a: asyncio.sleep(0))
+
+    async def browser(**args):
+        r = await execute(ctx, "browser", args)
+        assert not r.is_error, r.content
+        return r
+
+    r = await browser(action="open", url=f"{ely_url}/test/doctolib")
+    assert "Code reçu par e-mail" in r.content
+    field = int(next(line for line in r.content.splitlines() if 'champ(text) "Code reçu par e-mail"' in line).split("]")[0][1:])
+    await browser(action="type", ref=field, text="482913")
+    r = await browser(action="snapshot")
+    button = int(next(line for line in r.content.splitlines() if 'bouton "Valider"' in line).split("]")[0][1:])
+    r = await browser(action="click", ref=button)
+    assert "Prochain rendez-vous : jeudi 2 octobre" in r.content and "clic réel" in r.content, r.content
+
+
+async def test_ely_leaves_alone_a_tab_another_extension_opened_in_its_window(ely_url, chrome_with_password_manager, user, tmp_path):
+    """Une extension ouvre sa page (nouveautés après une mise à jour…) dans la fenêtre d'Ely, puis Ely redémarre :
+    Ely ne doit pas prendre cet onglet, qu'il ne peut pas piloter, pour le sien."""
+    ctx = ToolContext(user=user, conversation_id=new_conversation(user), run_id=0, emit=lambda *a: asyncio.sleep(0))
+    r = await execute(ctx, "browser", {"action": "open", "url": f"{ely_url}/test/aide"})
+    assert not r.is_error, r.content
+    sw = chrome_with_password_manager.service_workers[0]
+    page = f"chrome-extension://{unpacked_id(tmp_path / 'coffre')}/menu.html"
+    await sw.evaluate(f"""async () => {{ const {{ win }} = await chrome.storage.session.get("win");
+      await chrome.tabs.create({{ windowId: win, index: 0, url: "{page}", active: true }}); }}""")
+    chrome.browsers.pop(user["id"], None)  # redémarrage d'Ely : il ne sait plus quel onglet était le sien
+    r = await execute(ctx, "browser", {"action": "open", "url": f"{ely_url}/test/doctolib"})
+    assert not r.is_error and "Code reçu par e-mail" in r.content, r.content
+    tabs = await sw.evaluate("async () => (await chrome.tabs.query({})).map((t) => t.url)")
+    assert page in tabs, tabs  # l'onglet de l'autre extension est resté tel quel

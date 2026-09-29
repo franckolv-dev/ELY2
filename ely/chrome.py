@@ -396,6 +396,9 @@ class ChromePage:
         return base64.b64decode(r["data"])
 
 
+DRIVABLE = ("http://", "https://", "about:", "file:", "data:", "blob:")
+
+
 class ChromeUserBrowser(BaseUserBrowser):
     """Les onglets d'Ely dans le Chrome de l'utilisateur."""
 
@@ -408,7 +411,9 @@ class ChromeUserBrowser(BaseUserBrowser):
         self._no_frames_until = 0.0
 
     async def _tabs(self) -> list[dict]:
-        return await self.bridge.call("tabs") or []
+        # un onglet qu'une autre extension ouvre dans la fenêtre d'Ely (ses nouveautés après une mise à jour…) :
+        # Chrome en interdit le pilotage ; le prendre pour celui d'Ely bloquerait toutes ses actions
+        return [t for t in await self.bridge.call("tabs") or [] if not t.get("url") or t["url"].startswith(DRIVABLE)]
 
     async def page(self, key: str = "main") -> ChromePage:
         self.last_used = time.time()

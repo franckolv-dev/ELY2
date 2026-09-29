@@ -281,6 +281,22 @@ async def test_auto_fallbacks_never_use_an_unchosen_paid_model(fake, user):
     db.set_setting("model_fallbacks", "auto")
 
 
+async def test_switching_model_says_why(fake, user):
+    """« Astra indisponible » ne suffit pas pour agir : la raison du basculement est dite dans la conversation."""
+    from ely.llm import registry
+
+    provs = _three_providers(fake)
+    provs["lmstudio"].script = lambda **k: LLMError("chatgpt : connexion à l'abonnement expirée (401)", kind="auth")
+    notices = []
+
+    async def on_switch(ref, reason):
+        notices.append(reason)
+
+    await registry.chat(role="main", system=[], messages=[{"role": "user", "content": "Bonjour"}], on_switch=on_switch)
+    assert notices == ["lmstudio:google/gemma-4-26b-a4b indisponible (chatgpt : connexion à l'abonnement expirée (401)), "
+                       "bascule sur chatgpt:gpt-6-astra"], notices
+
+
 async def test_context_overflow_condenses_instead_of_switching_model(fake, user):
     provs = _three_providers(fake)
     state = {"overflowed": False}
