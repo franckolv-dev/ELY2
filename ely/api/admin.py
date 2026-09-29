@@ -42,6 +42,7 @@ async def all_models(user=Depends(auth.admin_user)):
 class RolesIn(BaseModel):
     main: str | None = None
     strong: str | None = None
+    selfdev: str | None = None
     fast: str | None = None
     local: str | None = None
     embed: str | None = None

@@ -6,6 +6,7 @@ Rôles :
   fast   : contrôles rapides (vérification d'objectif, compaction)
   local  : tâches de fond gratuites (mémoire, titres) — LM Studio de préférence
   embed  : vecteurs pour la mémoire
+  selfdev: auto-amélioration (par défaut le modèle d'escalade, sinon le principal)
 
 Les choix de l'administrateur (base de données) priment sur le .env et sont relus
 à chaque appel : un réglage enregistré s'applique immédiatement.
@@ -27,7 +28,7 @@ from .openai_compat import OpenAICompatProvider
 
 log = logging.getLogger("ely.llm")
 
-ROLES = ("main", "strong", "fast", "local", "embed")
+ROLES = ("main", "strong", "selfdev", "fast", "local", "embed")
 
 # Préférences de choix automatique (motifs appliqués aux modèles découverts)
 PREFS: dict[str, list[tuple[str, list[str]]]] = {
@@ -176,6 +177,8 @@ class Registry:
             return explicit
         if role == "strong":
             return None
+        if role == "selfdev":  # le plus capable disponible : l'escalade, sinon le principal
+            return self.resolve("strong") or self.resolve("main")
         pick = self._pick(role)
         if pick:
             return pick

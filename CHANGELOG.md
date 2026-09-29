@@ -10,6 +10,19 @@ leur historique est dans [son journal](https://github.com/franckolv-dev/ElyAgent
 
 ---
 
+## [Non publié]
+
+### Ajouté
+- **Modèle fort sur demande** : « prenez le modèle fort », « utilise le modèle fort » (ou « use the strong model »)
+  font passer la tâche au modèle d'escalade dès le premier appel. « Utilise Opus » ou « utilise Fable » y passent
+  aussi, en attendant que Claude soit relié par l'Agent SDK.
+- **Rôle « Auto-amélioration »** dans Réglages → Modèles : les sessions d'auto-amélioration, de nuit ou à la
+  demande, ont leur propre modèle. En automatique, c'est le modèle d'escalade, et non plus le modèle principal.
+
+### Modifié
+- **Escalade dès le premier échec** constaté par le contrôleur d'objectif, au lieu du deuxième. Chaque bascule est
+  annoncée dans la conversation, avec sa raison.
+
 ## [4.0.0] — 2026-09-29
 
 > **Ely repart de zéro.** Réécriture complète, avec trois mots d'ordre : efficacité, autonomie, performance.

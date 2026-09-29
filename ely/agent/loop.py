@@ -14,6 +14,7 @@ import asyncio
 import json
 import logging
 import re
+import unicodedata
 from dataclasses import replace
 
 from ..auth import tv
@@ -30,6 +31,23 @@ log = logging.getLogger("ely.agent")
 TRIVIAL = re.compile(r"^\W*(salut|bonjour|bonsoir|coucou|hello|hi|hey|merci|thanks|ok|okay|d'accord|dac|super|parfait|top|génial|cool|bravo|bonne nuit|à plus)\b[^?]{0,30}$", re.I)
 LOST = "[Résultat perdu (Ely a redémarré pendant l'action) : vérifie si elle a eu lieu avant de la refaire.]"
 RETRY_DELAYS = [20, 60, 120, 300, 600]
+
+# Modèle demandé dans le message : « prends / utilise le modèle fort » (rôle d'escalade), « utilise Opus / Fable »
+# (Claude). Un verbe d'ordre est exigé : « le modèle fort ne répond pas ? » ne demande rien.
+_VERB = r"\b(?:prends|prenez|utilise|utilisez|passe|passez|bascule|basculez|use|switch to|with|avec)\b(?:\s+(?:sur|au|vers|a|to))?"
+ASKED_MODEL = [
+    ("opus", re.compile(_VERB + r"\s+(?:claude\s+)?opus\b")),
+    ("fable", re.compile(_VERB + r"\s+(?:claude\s+)?fable\b")),
+    ("strong", re.compile(_VERB + r"\s+(?:le|un|ton|votre|the|a|your)?\s*(?:modele|model)\s+(?:le\s+plus\s+)?"
+                          r"(?:fort|puissant)\b|" + _VERB + r"\s+(?:the|a|your)?\s*(?:strong(?:est)?|powerful)\s+model\b")),
+]
+CLAUDE_NAMES = {"opus": "Opus", "fable": "Fable"}
+
+
+def asked_model(text: str) -> str | None:
+    """« strong », « opus » ou « fable » si le message demande ce modèle, sinon None."""
+    plain = "".join(c for c in unicodedata.normalize("NFKD", text or "") if not unicodedata.combining(c)).lower()
+    return next((name for name, pat in ASKED_MODEL if pat.search(plain)), None)
 
 
 # ---------------------------------------------------------------------- historique
@@ -169,6 +187,8 @@ class AgentLoop:
         self.state = json.loads(run["state"] or "{}")
         self.conv = db.one("SELECT * FROM conversations WHERE id = ?", (self.conv_id,))
         self.escalated = bool(self.state.get("escalated"))
+        # session d'auto-amélioration : son propre modèle (Réglages → Modèles → Auto-amélioration)
+        self.selfdev = self.conv.get("channel") == "selfdev" and user.get("role") == "admin"
         self.ask_lock = asyncio.Lock()
 
     async def emit(self, type_: str, data: dict | None = None) -> None:
@@ -247,6 +267,28 @@ class AgentLoop:
                                      "preview": content[:300], "files": res.files})
         return msg
 
+    # ---------------------------------------------------------------- choix du modèle
+    async def escalate(self, reason: str) -> None:
+        """Passe au modèle d'escalade jusqu'à la fin de la tâche, en le disant."""
+        strong = registry.resolve("strong")
+        if self.escalated or self.selfdev:
+            return
+        if not strong:
+            await self.emit("model", {"model": registry.resolve("main"),
+                                      "reason": "aucun modèle d'escalade n'est choisi (Réglages → Modèles) : je continue avec le modèle principal"})
+            return
+        self.escalated = True
+        self.save_state(escalated=True)
+        await self.emit("model", {"model": strong, "reason": f"{reason} : bascule sur {strong}"})
+
+    async def honor_request(self, text: str) -> None:
+        """« Prends le modèle fort », « utilise Opus »… dans un message de l'utilisateur."""
+        asked = asked_model(text)
+        if asked == "strong":
+            await self.escalate("modèle fort demandé")
+        elif asked in CLAUDE_NAMES:  # Claude par l'Agent SDK n'est pas encore relié : le modèle fort le remplace
+            await self.escalate(f"Claude {CLAUDE_NAMES[asked]} n'est pas encore relié à Ely, modèle fort à la place")
+
     # ---------------------------------------------------------------- appel modèle
     async def call_model(self, system: list[str], history: list[dict], schemas: list[dict] | None, model: str | None):
         async def on_delta(kind: str, text: str) -> None:
@@ -256,12 +298,17 @@ class AgentLoop:
             await self.emit("stream_reset", {})
             await self.emit("model", {"model": ref, "reason": reason})
 
-        role = "strong" if self.escalated and registry.resolve("strong") else "main"
+        if self.selfdev:
+            role = "selfdev"
+        elif self.escalated and registry.resolve("strong"):
+            role = "strong"
+        else:
+            role = "main"
         for attempt in range(len(RETRY_DELAYS) + 1):
             try:
                 self.st.partial = ""
                 self.st.thinking = ""
-                resp = await registry.chat(role=role, model=None if role == "strong" else model, system=system,
+                resp = await registry.chat(role=role, model=model if role == "main" else None, system=system,
                                            messages=[{k: v for k, v in m.items() if not k.startswith("_")} for m in history],
                                            tools=schemas, on_delta=on_delta, user_id=self.user["id"], purpose="agent",
                                            on_switch=on_switch)
@@ -320,7 +367,7 @@ class AgentLoop:
         pending = self.state.get("pending_ask") if resume else None
         history = load_history(self.conv_id, {pending["tool_call_id"]} if pending else set())
 
-        selfdev = self.conv.get("channel") == "selfdev" and user.get("role") == "admin"
+        selfdev = self.selfdev
         ctx = ToolContext(user=user, conversation_id=self.conv_id, run_id=self.run_id, emit=self.emit, extra={"selfdev": selfdev})
         tools = tools_for(ctx)
         schemas = [t.schema() for t in tools]
@@ -331,6 +378,7 @@ class AgentLoop:
         system = [stable, await dynamic_block(user, objective, self.state.get("channel", self.conv.get("channel") or "web"))]
         model = self.conv.get("model") or None
         await self.emit("status", {"status": "running"})
+        await self.honor_request(objective)
 
         steps = int(self.run_row["steps"] or 0)
         rejections = int(self.state.get("rejections", 0))
@@ -353,6 +401,8 @@ class AgentLoop:
             if self.st.queue:  # messages ajoutés pendant la tâche
                 for q in self.st.queue:
                     history.append({k: v for k, v in q.items()})
+                    if q.get("role") == "user" and isinstance(q.get("content"), str):
+                        await self.honor_request(q["content"])
                 self.st.queue.clear()
                 objective = db.val("SELECT objective FROM runs WHERE id = ?", (self.run_id,)) or objective
 
@@ -408,10 +458,8 @@ class AgentLoop:
                     successes = 0
                     self.save_state(rejections=rejections, no_progress=no_progress)
                     if rejections < settings.max_verify_retries and no_progress < 3:
-                        if rejections >= 2 and not self.escalated and registry.resolve("strong"):
-                            self.escalated = True
-                            self.save_state(escalated=True)
-                            await self.emit("model", {"model": registry.resolve("strong"), "reason": "escalade vers le modèle le plus fort"})
+                        if registry.resolve("strong"):  # dès le premier échec, sans attendre de piétiner
+                            await self.escalate("objectif pas encore atteint, escalade vers le modèle le plus fort")
                         note = {"role": "user", "kind": "control",
                                 "content": f"[Contrôle automatique] L'objectif n'est pas encore atteint : {missing}\n"
                                            "Continue sans t'arrêter : agis avec tes outils, change de stratégie si besoin."}
