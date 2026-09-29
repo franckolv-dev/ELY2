@@ -112,7 +112,8 @@ async def test_claude_stays_in_the_working_copy(user, fake_repo):
     wt = pipeline.WORKTREE
     for name, args in (("Edit", {"file_path": str(wt / "ely" / "loop.py")}), ("Write", {"file_path": "tests/test_neuf.py"}),
                        ("Read", {"file_path": "app.py"}), ("Grep", {"pattern": "def ", "path": "ely"}),
-                       ("Glob", {"pattern": "**/*.py"}), ("mcp__ely__ely_test", {}), ("mcp__ely__ely_deploy", {})):
+                       ("Glob", {"pattern": "**/*.py"}), ("mcp__ely__ely_test", {}), ("mcp__ely__ely_deploy", {}),
+                       ("mcp__ely__ely_journal", {"action": "list"})):
         assert claude_agent.check(s, name, args) is None, (name, args)
     for name, args in (("Edit", {"file_path": str(fake_repo / "app.py")}),  # la version active
                        ("Edit", {"file_path": "../repo/app.py"}), ("Read", {"file_path": str(wt / ".env")}),

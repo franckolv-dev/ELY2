@@ -34,6 +34,10 @@ leur historique est dans [son journal](https://github.com/franckolv-dev/ElyAgent
   Réglages → Modèles → « Claude (Agent SDK) » : état, essai de la connexion, budget par mission. La consommation
   apparaît dans le tableau de bord. Avec une clé d'API, Claude est facturé au token et n'est jamais choisi d'office.
 
+- **Journal des tâches pour l'auto-amélioration** (`ely_journal`, pour Claude comme pour le modèle d'escalade).
+  Il retrouve une tâche passée par quelques mots, puis en donne le déroulé complet : demandes, actions avec leurs
+  arguments et résultats, erreurs exactes, refus du contrôleur. Les mots de passe restent masqués. Une session peut
+  ainsi diagnostiquer précisément un échec, par exemple une commande en ligne qui n'a pas abouti.
 - **Rechargement automatique de l'interface** quand Ely redémarre sur une nouvelle version (mise à jour,
   auto-amélioration). Si un message est en cours d'écriture, Ely le garde et propose de recharger.
 

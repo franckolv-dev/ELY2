@@ -23,7 +23,7 @@ SELFDEV_GUIDE = """# Mode auto-amélioration
 Tu travailles sur TON PROPRE fonctionnement (Ely) pour devenir plus efficace, rapide, fiable et économe.
 Méthode :
 1. Diagnostique : ely_metrics (échecs, erreurs d'outils, lenteurs, refus du contrôleur, insatisfactions, coûts),
-   puis examine les cas concrets (recall, lecture du code concerné).
+   puis examine les cas concrets : ely_journal (list pour trouver la tâche, read pour son déroulé complet), recall, code concerné.
 2. Choisis le levier le plus simple et le plus sûr qui règle la cause :
    a) une leçon générale de comportement → ely_guidelines (effet immédiat, pour tous)
    b) une procédure qui marche → skill_save avec shared=true
@@ -45,18 +45,20 @@ avant ely_deploy. Respecte les règles de CLAUDE.md.
 Outils :
 - Read, Glob, Grep, Edit, Write : la copie de travail uniquement (.env, data, .git, .venv et .claude sont refusés) ;
 - mcp__ely__ely_metrics : performances récentes (échecs, erreurs d'outils, lenteurs, refus du contrôleur, coûts) ;
+  mcp__ely__ely_journal : tâches passées (list, filtrable par texte) et déroulé complet d'une tâche (read : demandes,
+  actions avec arguments et résultats, erreurs, refus du contrôleur) : le point de départ pour comprendre un échec ;
   mcp__ely__recall : souvenirs et conversations passées ; mcp__ely__ely_code : diff et reset de la copie ;
 - mcp__ely__ely_test : suite de tests sur la copie (pattern = filtre -k) ; tu n'as pas de terminal ;
 - mcp__ely__ely_deploy : tests, commit et fusion dans la version active ; Ely redémarre à la fin de ta mission, avec
   retour arrière automatique si elle ne démarre pas ;
 - mcp__ely__ely_guidelines, mcp__ely__skill_save (shared=true), mcp__ely__ely_plugin : leçons, compétences, plugins à chaud.
-Méthode : diagnostique d'abord (ely_metrics, cas concrets), puis choisis le levier le plus simple et le plus sûr qui règle
+Méthode : diagnostique d'abord (ely_metrics, puis ely_journal sur les cas concrets), puis choisis le levier le plus simple et le plus sûr qui règle
 la cause (leçon, compétence, plugin, code). Pour le code : changements petits et ciblés, un test de comportement pour
 chaque correction, ely_test vert avant ely_deploy ; ne supprime ni n'affaiblis jamais un test.
 Termine par un compte rendu en français, en vouvoyant l'administrateur : problèmes trouvés, améliorations appliquées
 (déployées ou non), effet attendu, idées pour la suite."""
 CLAUDE_TOOLS = ["Read", "Glob", "Grep", "Edit", "Write"]
-CLAUDE_BRIDGE = ["ely_metrics", "recall", "ely_code", "ely_test", "ely_deploy", "ely_guidelines", "skill_save", "ely_plugin"]
+CLAUDE_BRIDGE = ["ely_metrics", "ely_journal", "recall", "ely_code", "ely_test", "ely_deploy", "ely_guidelines", "skill_save", "ely_plugin"]
 
 
 def claude_guard(name: str, args: dict) -> str | None:
@@ -177,6 +179,21 @@ def start_session(user: dict, goal: str = "") -> int:
       admin_only=True, available=_selfdev)
 async def ely_metrics(ctx: ToolContext, days: float = 7) -> ToolResult:
     return ToolResult(metrics.report(days))
+
+
+@tool("ely_journal", """Journal des tâches passées d'Ely, pour comprendre un échec précis. action=list(query?, days?) : tâches
+récentes, filtrables par mots (titre, demande, déroulé) · read(run_id, offset?) : déroulé complet d'une tâche (demandes, textes,
+actions avec arguments et résultats, erreurs, refus du contrôleur).""",
+      {"action": {"type": "string", "enum": ["list", "read"]}, "query": {"type": "string"},
+       "days": {"type": "number", "description": "Période en jours (défaut 30)"}, "run_id": {"type": "integer"},
+       "offset": {"type": "integer"}},
+      ["action"], label="Journal des tâches", icon="📜", admin_only=True, available=_selfdev, timeout=60)
+async def ely_journal(ctx: ToolContext, action: str, query: str = "", days: float = 30, run_id: int = 0, offset: int = 0) -> ToolResult:
+    if action == "read":
+        if not run_id:
+            return ToolResult("run_id manquant : action=list pour trouver la tâche.", is_error=True)
+        return ToolResult(metrics.journal_read(run_id, offset))
+    return ToolResult(metrics.journal_list(query, days))
 
 
 @tool("ely_code", """Lit le code source d'Ely dans la copie de travail. action=list(path?) · read(path, offset?) · search(pattern regex, path?)

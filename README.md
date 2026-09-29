@@ -172,6 +172,9 @@ of dissatisfaction, cost) and improves on four levels, from the lightest to the 
    **automatically rolls back** to the previous one if it doesn't start. Every change is in the log, with its diff and
    an "Undo" button.
 
+To understand a failure, the session reads back the full course of past tasks (requests, actions, exact errors,
+controller refusals): "work out why you failed to order on that site" is enough.
+
 It's **recursive**: the improvement process (`ely/selfdev/`) is itself part of the code Ely can improve.
 A session runs every night at 4 am if there was any activity (can be turned off). The administrator can start one
 by hand (Settings → Self-improvement), or simply ask in the chat: "improve yourself to…". These sessions use their

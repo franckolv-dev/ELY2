@@ -171,6 +171,9 @@ d'insatisfaction, coût) et s'améliore sur quatre niveaux, du plus léger au pl
    automatiquement à la précédente** si elle ne démarre pas. Chaque changement est dans le journal, avec son diff et
    un bouton « Annuler ».
 
+Pour comprendre un échec, la session relit le déroulé complet des tâches passées (demandes, actions, erreurs exactes,
+refus du contrôleur) : « analyse pourquoi tu as échoué à commander sur tel site » suffit.
+
 C'est **récursif** : le processus d'amélioration (`ely/selfdev/`) fait lui-même partie du code qu'Ely peut améliorer.
 Une session tourne chaque nuit à 4 h s'il y a eu de l'activité (désactivable). L'administrateur peut en lancer une à
 la main (Réglages → Auto-amélioration), ou simplement demander dans le chat : « améliore-toi pour… ». Ces sessions
