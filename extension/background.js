@@ -135,16 +135,64 @@ async function getElyWindow() {
   return elyWindow;
 }
 
-async function attach(tabId) {
-  if (attached.has(tabId)) return;
+// Chrome refuse de piloter un onglet où se trouve une page d'une autre extension, et lâche l'onglet dès qu'il en
+// apparaît une : le menu qu'un gestionnaire de mots de passe (Passbolt…) glisse dans un champ, par exemple. Ces
+// cadres n'appartiennent pas au site : avant de reprendre l'onglet, on les retire (onglets d'Ely seulement).
+// Fonction exécutée dans chaque cadre de la page, racines fantômes fermées comprises ; rend les extensions retirées.
+const FOREIGN_FRAME = /chrome-extension:\/\/ URL of different extension/i;
+
+function removeForeignFrames(own) {
+  const found = [];
+  const visit = (root) => {
+    for (const el of root.querySelectorAll("*")) {
+      if (el instanceof HTMLIFrameElement && el.src.startsWith("chrome-extension://") && !el.src.startsWith(own)) {
+        found.push(new URL(el.src).host);
+        el.remove(); // le vider (src = about:blank) ne suffit pas : Chrome poursuivrait son chargement
+      }
+      const shadow = chrome.dom.openOrClosedShadowRoot(el);
+      if (shadow) visit(shadow);
+    }
+  };
+  visit(document);
+  return found;
+}
+
+async function clearForeignFrames(tabId) {
   try {
-    await chrome.debugger.attach({ tabId }, "1.3");
-  } catch (e) {
-    if (!/already attached/i.test(String(e && e.message))) throw e; // déjà attaché avant un redémarrage du service worker
+    const frames = await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, injectImmediately: true,
+      func: removeForeignFrames, args: [chrome.runtime.getURL("")] });
+    return frames.flatMap((f) => f.result || []);
+  } catch {
+    return []; // about:blank, page d'une autre extension, lecteur PDF… : rien à retirer
+  }
+}
+
+async function attach(tabId, focus = true) {
+  if (attached.has(tabId)) return;
+  const foreign = new Set();
+  for (let attempt = 0; ; attempt++) {
+    for (const id of await clearForeignFrames(tabId)) foreign.add(id);
+    try {
+      await chrome.debugger.attach({ tabId }, "1.3");
+      break;
+    } catch (e) {
+      const msg = String(e && e.message);
+      if (/already attached/i.test(msg)) break; // déjà attaché avant un redémarrage du service worker
+      if (!FOREIGN_FRAME.test(msg)) throw e;
+      if (attempt === 3) {
+        const ids = [...foreign];
+        throw new Error("Chrome refuse de laisser Ely piloter cet onglet : une autre extension y a placé une de ses pages"
+          + (ids.length ? ` (chrome://extensions/?id=${ids[0]}). Réglez son « Accès aux sites » sur « Lorsque vous cliquez sur l'extension »`
+            : " (page PDF ou page d'extension)") + ", ou ouvrez la page dans un autre onglet.");
+      }
+      await new Promise((ok) => setTimeout(ok, 150)); // un menu a pu resurgir entre-temps
+    }
   }
   attached.add(tabId);
   await chrome.debugger.sendCommand({ tabId }, "Page.enable");
-  await chrome.debugger.sendCommand({ tabId }, "Emulation.setFocusEmulationEnabled", { enabled: true }).catch(() => {});
+  // page réputée au premier plan, même fenêtre en arrière-plan ; sauf quand Chrome vient de lâcher l'onglet à cause d'un
+  // menu d'extension : le focus rendu au champ ferait resurgir le menu, et Chrome lâcherait l'onglet aussitôt
+  if (focus) await chrome.debugger.sendCommand({ tabId }, "Emulation.setFocusEmulationEnabled", { enabled: true }).catch(() => {});
 }
 
 // tous les onglets attachés, y compris avant un redémarrage du service worker (cache vide) ;
@@ -196,6 +244,21 @@ const COMMANDS = {
   },
   async cdp({ tab_id, method, params }) {
     await attach(tab_id);
-    return await chrome.debugger.sendCommand({ tabId: tab_id }, method, params || {});
+    const send = () => chrome.debugger.sendCommand({ tabId: tab_id }, method, params || {});
+    try {
+      return await send();
+    } catch (e) {
+      const msg = String(e && e.message);
+      const during = /Detached while handling command/i.test(msg);
+      if (!during && !/is not attached/i.test(msg)) throw e;
+      // Chrome a lâché l'onglet : un cadre d'une autre extension y est apparu (voir removeForeignFrames). On le reprend.
+      attached.delete(tab_id);
+      await attach(tab_id, false);
+      if (!during) return await send(); // lâché avant la commande : elle n'était pas partie
+      // lâché pendant la commande : issue incertaine, jamais renvoyée. Un clic ou une frappe est arrivé (c'est lui
+      // qui fait surgir le menu d'un champ) ; toute autre commande échoue, et Ely relit la page.
+      if (method.startsWith("Input.")) return {};
+      throw e;
+    }
   },
 };

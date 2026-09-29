@@ -1,6 +1,6 @@
 # Fiche Chrome Web Store : Ely pour Chrome
 
-> Dernière mise à jour : 2026-09-26
+> Dernière mise à jour : 2026-09-29
 
 Source unique des informations à saisir dans le tableau de bord développeur du Chrome Web Store
 (gabarit de la compétence `chrome-extensions` de Modern Web Guidance). À tenir à jour à chaque
@@ -49,6 +49,7 @@ formulaire de rendez-vous à côté de la conversation avec Ely.
 | Permission | Type | Justification |
 |------------|------|---------------|
 | `debugger` | permissions | Ely agit dans les onglets qu'elle ouvre (clics et saisie réels, lecture du contenu, captures d'écran, envoi d'un fichier choisi par l'utilisateur). Les simples scripts de contenu ne produisent pas de clics reconnus par les sites de rendez-vous et de messagerie. L'onglet est libéré 1 min 30 après la dernière action d'Ely. |
+| `scripting` | permissions | Dans les onglets d'Ely seulement, et seulement quand Chrome refuse de les piloter : retirer les cadres qu'une autre extension y a insérés (menu d'un gestionnaire de mots de passe dans un champ, par exemple). Chrome interdit le protocole DevTools sur un onglet qui contient une page d'une autre extension ; sans ce retrait, Ely ne peut plus ni lire ni remplir la page. Aucun script n'est injecté dans les onglets de l'utilisateur. |
 | `tabs` | permissions | Lister les onglets de la fenêtre d'Ely avec leur titre et leur adresse, pour qu'Ely sache sur quelle page elle se trouve et puisse passer d'un onglet à l'autre (par exemple d'un site de rendez-vous à la messagerie qui a reçu le code). |
 | `cookies` | permissions | Lire uniquement le cookie de session d'Ely (`ely_token`) à l'adresse d'Ely choisie, pour relier l'extension au compte connecté sans redemander d'identifiants, et se reconnecter quand ce cookie change. |
 | `storage` | permissions | Retenir l'adresse d'Ely saisie dans la fenêtre de l'extension et l'identifiant de la fenêtre d'Ely pendant la session. |
@@ -98,6 +99,7 @@ formulaire de rendez-vous à côté de la conversation avec Ely.
 
 | Version | Date | Changements | État |
 |---------|------|-------------|------|
+| 1.2.2 | 2026-09-29 | Ely garde la main sur ses onglets quand une autre extension (gestionnaire de mots de passe…) y glisse son menu : les cadres de cette extension sont retirés et l'onglet repris ; message clair si Chrome refuse malgré tout | Brouillon |
 | 1.2.1 | 2026-09-26 | Onglets libérés de façon fiable après une période sans action, même si Chrome a mis l'extension en veille ; focus clavier visible dans la fenêtre de l'icône | Brouillon |
 | 1.2.0 | 2026-09-26 | Extension téléchargeable depuis Ely, déjà réglée sur son adresse | Brouillon |
 
@@ -112,6 +114,9 @@ formulaire de rendez-vous à côté de la conversation avec Ely.
   d'où la distribution actuelle hors Store.
 - Les boîtes de dialogue JavaScript des pages ouvertes par Ely sont acceptées automatiquement
   (sinon la page resterait bloquée).
+- Dans les onglets d'Ely, l'extension retire les cadres insérés par d'autres extensions quand ils
+  empêchent le pilotage (`scripting`). Elle ne touche ni aux autres extensions ni aux onglets de
+  l'utilisateur ; l'examen peut y voir une interférence avec d'autres extensions, à expliquer.
 
 ### Refus
 Aucun envoi pour l'instant.
