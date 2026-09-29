@@ -41,6 +41,7 @@ def claude(monkeypatch):
         async for ev in box["script"](session):
             yield ev
 
+    monkeypatch.setattr(claude_agent, "_real_run_sdk", claude_agent._run_sdk, raising=False)
     monkeypatch.setattr(claude_agent, "_run_sdk", fake_sdk)
     return box
 
@@ -252,3 +253,30 @@ async def test_claude_settings_api(user, claude):
         assert (await c.put("/api/admin/claude", headers=h, json={"budget": 2.5})).json()["budget"] == 2.5
         assert claude_agent.budget() == 2.5
         await c.put("/api/admin/claude", headers=h, json={"budget": claude_agent.DEFAULT_BUDGET})
+
+
+async def test_usage_limit_reached_hands_over_to_the_strong_model(fake, user, fake_repo, claude, monkeypatch):
+    """Quota du forfait atteint dès le départ : le CLI renvoie une erreur d'API (429) sans avoir rien fait. La
+    session passe sur le modèle d'escalade, avec la raison lisible dans l'annonce."""
+    sdk = pytest.importorskip("claude_agent_sdk")
+    limit = "Claude AI usage limit reached · resets 6pm"
+
+    async def query(prompt, options):
+        yield sdk.AssistantMessage(content=[sdk.TextBlock(text=f"API Error: 429 {limit}")], model="<synthetic>", error="rate_limit")
+        yield sdk.ResultMessage(subtype="success", duration_ms=5, duration_api_ms=0, is_error=True, num_turns=1,
+                                session_id="s1", result=f"API Error: 429 {limit}", api_error_status=429, total_cost_usd=0)
+
+    monkeypatch.setattr(claude_agent, "_run_sdk", claude_agent._real_run_sdk)  # le vrai adaptateur, SDK simulé
+    monkeypatch.setattr(sdk, "query", query)
+    with_strong_model(fake)
+    fake.script, used = routed(lambda m, t: "Leçon ajoutée : vérifier l'adresse du cabinet.")
+    q = runner.subscribe(user["id"])
+    try:
+        cid = start_session(user, "Améliore-toi")
+        await wait_idle(cid)
+    finally:
+        runner.unsubscribe(user["id"], q)
+    assert used == ["fort"], used
+    notices = model_notices(q)
+    assert any(limit in n and "bascule sur fake:fort" in n for n in notices), notices
+    assert last_run(cid)["status"] == "done"

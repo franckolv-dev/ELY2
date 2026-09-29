@@ -24,7 +24,8 @@ leur historique est dans [son journal](https://github.com/franckolv-dev/ElyAgent
   - il lit et modifie les fichiers, sans terminal ni accès hors de la copie ;
   - il teste, déploie, écrit leçons, compétences et plugins avec les outils d'Ely ;
   - Ely redémarre une fois la mission close ;
-  - si Claude ne répond pas, la session continue sur le modèle d'escalade ;
+  - si Claude ne répond pas (quota du forfait atteint, jeton refusé…), la session continue sur le modèle
+    d'escalade, et Ely en donne la raison ;
   - une mission coupée par un redémarrage n'est jamais relancée à l'aveugle.
 
   Réglages → Modèles → « Claude (Agent SDK) » : état, essai de la connexion, budget par mission. La consommation
