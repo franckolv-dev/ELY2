@@ -23,7 +23,7 @@ SELFDEV_GUIDE = """# Mode auto-amélioration
 Tu travailles sur TON PROPRE fonctionnement (Ely) pour devenir plus efficace, rapide, fiable et économe.
 Méthode :
 1. Diagnostique : ely_metrics (échecs, erreurs d'outils, lenteurs, refus du contrôleur, insatisfactions, coûts),
-   puis examine les cas concrets (recall, lecture du code concerné).
+   puis examine les cas concrets : ely_journal (list pour trouver la tâche, read pour son déroulé complet), recall, code concerné.
 2. Choisis le levier le plus simple et le plus sûr qui règle la cause :
    a) une leçon générale de comportement → ely_guidelines (effet immédiat, pour tous)
    b) une procédure qui marche → skill_save avec shared=true
@@ -45,18 +45,20 @@ avant ely_deploy. Respecte les règles de CLAUDE.md.
 Outils :
 - Read, Glob, Grep, Edit, Write : la copie de travail uniquement (.env, data, .git, .venv et .claude sont refusés) ;
 - mcp__ely__ely_metrics : performances récentes (échecs, erreurs d'outils, lenteurs, refus du contrôleur, coûts) ;
+  mcp__ely__ely_journal : tâches passées (list, filtrable par texte) et déroulé complet d'une tâche (read : demandes,
+  actions avec arguments et résultats, erreurs, refus du contrôleur) : le point de départ pour comprendre un échec ;
   mcp__ely__recall : souvenirs et conversations passées ; mcp__ely__ely_code : diff et reset de la copie ;
 - mcp__ely__ely_test : suite de tests sur la copie (pattern = filtre -k) ; tu n'as pas de terminal ;
 - mcp__ely__ely_deploy : tests, commit et fusion dans la version active ; Ely redémarre à la fin de ta mission, avec
   retour arrière automatique si elle ne démarre pas ;
 - mcp__ely__ely_guidelines, mcp__ely__skill_save (shared=true), mcp__ely__ely_plugin : leçons, compétences, plugins à chaud.
-Méthode : diagnostique d'abord (ely_metrics, cas concrets), puis choisis le levier le plus simple et le plus sûr qui règle
+Méthode : diagnostique d'abord (ely_metrics, puis ely_journal sur les cas concrets), puis choisis le levier le plus simple et le plus sûr qui règle
 la cause (leçon, compétence, plugin, code). Pour le code : changements petits et ciblés, un test de comportement pour
 chaque correction, ely_test vert avant ely_deploy ; ne supprime ni n'affaiblis jamais un test.
 Termine par un compte rendu en français, en vouvoyant l'administrateur : problèmes trouvés, améliorations appliquées
 (déployées ou non), effet attendu, idées pour la suite."""
 CLAUDE_TOOLS = ["Read", "Glob", "Grep", "Edit", "Write"]
-CLAUDE_BRIDGE = ["ely_metrics", "recall", "ely_code", "ely_test", "ely_deploy", "ely_guidelines", "skill_save", "ely_plugin"]
+CLAUDE_BRIDGE = ["ely_metrics", "ely_journal", "recall", "ely_code", "ely_test", "ely_deploy", "ely_guidelines", "skill_save", "ely_plugin"]
 
 
 def claude_guard(name: str, args: dict) -> str | None:
@@ -91,6 +93,62 @@ def claude_session(ctx: ToolContext, objective: str, model: str):
                                 call=call, permit=claude_guard, budget_usd=claude_agent.budget())
 
 
+def claude_report(user: dict, objective: str, model: str, error: str, actions: list[dict], texts: list[str],
+                  diff: str, deployed: bool) -> str:
+    """Consigne dans un fichier markdown (Fichiers de l'administrateur) ce que Claude a fait avant d'être arrêté.
+    Renvoie son chemin dans l'espace de fichiers."""
+    import time
+
+    from ..config import settings
+
+    rel = f"auto-amelioration/{time.strftime('%Y-%m-%d-%H%M%S')}-mission-claude.md"
+    steps = "\n".join(f"{i}. {a['icon']} {a['label']}" + (f" ({a['args']})" if a.get("args") else "")
+                      + {True: " : ok", False: " : ÉCHEC"}.get(a.get("ok"), " : sans résultat")
+                      + (f"\n   > {a['preview'][:300]}".replace("\n", " ") if a.get("preview") else "")
+                      for i, a in enumerate(actions, 1)) or "(aucune action)"
+    said = "\n\n".join(t.strip() for t in texts if t.strip())[-6000:] or "(rien)"
+    body = f"""# Mission d'auto-amélioration interrompue : quota de Claude atteint
+
+- **Date** : {time.strftime('%d/%m/%Y %H:%M')}
+- **Modèle** : {model}
+- **Arrêt** : {error}
+- **Déploiement** : {"oui, une partie du travail est déjà active" if deployed else "aucun"}
+
+## Mission
+{objective}
+
+## Ce que Claude a fait
+{steps}
+
+## Ce que Claude a expliqué
+{said}
+
+## Modifications non déployées dans la copie de travail
+```diff
+{diff.strip()[:40000] or "(aucune)"}
+```
+"""
+    path = settings.user_dir(user["id"]) / "files" / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8")
+    return rel
+
+
+def relaunch_objective(objective: str, report: str, actions: list[dict], diff: str, deployed: bool) -> str:
+    """Nouvelle mission pour le modèle d'escalade : la même, plus ce que Claude a déjà fait."""
+    done = "\n".join(f"- {a['label']}" + (f" ({a['args']})" if a.get("args") else "")
+                      + {True: " : ok", False: " : échec"}.get(a.get("ok"), " : sans résultat") for a in actions[-40:])
+    stat = diff.split("\n\n", 1)[0].strip() or "aucune"
+    return (f"Mission relancée : Claude a commencé cette mission mais son quota a été atteint avant la fin.\n\n"
+            f"Mission d'origine :\n{objective}\n\n"
+            f"Ce que Claude a déjà fait (détail complet dans le fichier {report}, lisible avec file_read) :\n{done}\n\n"
+            f"Modifications non déployées dans la copie de travail :\n{stat}\n"
+            + ("Une partie du travail a déjà été déployée.\n" if deployed else "")
+            + "\nRecommence la mission en tenant compte de ce travail : vérifie ce qui est en place (ely_code action=diff), "
+              "garde ce qui est bon, corrige ou termine le reste. L'objectif restant peut donc différer un peu de la "
+              "mission d'origine.")
+
+
 @tool("self_improve", """Lance une session d'auto-amélioration d'Ely en arrière-plan (analyse des performances, nouvelles
 compétences, plugins, corrections de son propre code avec tests et redéploiement). Précise l'objectif (ex. « sois plus rapide
 pour les RDV Doctolib ») ou laisse vide pour une amélioration générale.""",
@@ -121,6 +179,21 @@ def start_session(user: dict, goal: str = "") -> int:
       admin_only=True, available=_selfdev)
 async def ely_metrics(ctx: ToolContext, days: float = 7) -> ToolResult:
     return ToolResult(metrics.report(days))
+
+
+@tool("ely_journal", """Journal des tâches passées d'Ely, pour comprendre un échec précis. action=list(query?, days?) : tâches
+récentes, filtrables par mots (titre, demande, déroulé) · read(run_id, offset?) : déroulé complet d'une tâche (demandes, textes,
+actions avec arguments et résultats, erreurs, refus du contrôleur).""",
+      {"action": {"type": "string", "enum": ["list", "read"]}, "query": {"type": "string"},
+       "days": {"type": "number", "description": "Période en jours (défaut 30)"}, "run_id": {"type": "integer"},
+       "offset": {"type": "integer"}},
+      ["action"], label="Journal des tâches", icon="📜", admin_only=True, available=_selfdev, timeout=60)
+async def ely_journal(ctx: ToolContext, action: str, query: str = "", days: float = 30, run_id: int = 0, offset: int = 0) -> ToolResult:
+    if action == "read":
+        if not run_id:
+            return ToolResult("run_id manquant : action=list pour trouver la tâche.", is_error=True)
+        return ToolResult(metrics.journal_read(run_id, offset))
+    return ToolResult(metrics.journal_list(query, days))
 
 
 @tool("ely_code", """Lit le code source d'Ely dans la copie de travail. action=list(path?) · read(path, offset?) · search(pattern regex, path?)

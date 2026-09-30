@@ -171,6 +171,9 @@ d'insatisfaction, coût) et s'améliore sur quatre niveaux, du plus léger au pl
    automatiquement à la précédente** si elle ne démarre pas. Chaque changement est dans le journal, avec son diff et
    un bouton « Annuler ».
 
+Pour comprendre un échec, la session relit le déroulé complet des tâches passées (demandes, actions, erreurs exactes,
+refus du contrôleur) : « analyse pourquoi tu as échoué à commander sur tel site » suffit.
+
 C'est **récursif** : le processus d'amélioration (`ely/selfdev/`) fait lui-même partie du code qu'Ely peut améliorer.
 Une session tourne chaque nuit à 4 h s'il y a eu de l'activité (désactivable). L'administrateur peut en lancer une à
 la main (Réglages → Auto-amélioration), ou simplement demander dans le chat : « améliore-toi pour… ». Ces sessions
@@ -183,7 +186,9 @@ utilisent leur propre modèle (Réglages → Modèles → Auto-amélioration ; a
 Ely peut confier chaque session entière à **Claude Code**, par le [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview).
 Claude y travaille seul dans la copie de travail : il lit et modifie les fichiers, lance les tests et déploie avec les
 outils d'Ely, sans terminal et sans accès hors de la copie (`.env`, `data/`, `.git` refusés). Ely redémarre à la fin de
-la mission, jamais au milieu ; si Claude ne répond pas, la session continue sur le modèle d'escalade.
+la mission, jamais au milieu ; si Claude ne répond pas, la session continue sur le modèle d'escalade. Si son quota tombe
+en pleine mission, Ely consigne ce qu'il a fait (Fichiers → `auto-amelioration/`) et recommence la mission avec le
+modèle d'escalade, en lui donnant ce contexte.
 
 1. Mettez votre clé dans `.env` : `ANTHROPIC_API_KEY=sk-ant-…`
 2. `./ely.sh install` : installe le SDK (environ 250 Mo avec son CLI) dès qu'une clé est présente.

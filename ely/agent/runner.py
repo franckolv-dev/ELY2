@@ -128,7 +128,8 @@ class Runner:
         self.publish(st.user_id, {"type": type_, "conversation_id": st.conversation_id, "run_id": st.run_id, **data})
 
     # ------------------------------------------------------------------ soumission
-    async def submit(self, user: dict, conversation_id: int, content, *, channel: str = "web", kind: str = "") -> dict:
+    async def submit(self, user: dict, conversation_id: int, content, *, channel: str = "web", kind: str = "",
+                     state: dict | None = None) -> dict:
         """Ajoute un message de l'utilisateur ; démarre une tâche ou l'intègre à celle en cours."""
         msg = {"role": "user", "content": content}
         if kind:
@@ -147,7 +148,8 @@ class Runner:
             await self.emit(st, "queued", {"message_id": mid})
             return {"message_id": mid, "run_id": st.run_id, "mode": "queued"}
         run_id = db.insert("runs", conversation_id=conversation_id, user_id=user["id"], status="running", objective=text or "(pièce jointe)",
-                           state=json.dumps({"channel": channel, "start_message": mid}), created_at=now(), updated_at=now())
+                           state=json.dumps({"channel": channel, "start_message": mid, **(state or {})}),
+                           created_at=now(), updated_at=now())
         db.run("UPDATE messages SET run_id = ? WHERE id = ?", (run_id, mid))
         self._start(st, run_id, user, resume=False)
         return {"message_id": mid, "run_id": run_id, "mode": "started"}

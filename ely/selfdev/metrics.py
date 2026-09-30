@@ -84,3 +84,90 @@ def report(days: float = 7) -> str:
         lines += [f"- {u['model']} [{u['purpose']}] : {u['calls']} appels, {u['inp']} entrée ({u['cached']} en cache), {u['out']} sortie"
                   for u in d["usage"][:15]]
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------- journal des tâches (diagnostic d'un échec précis)
+SECRET_ARGS = {"password", "passwd", "secret", "token", "card_number", "cvv", "cvc"}
+
+
+def _fold(text: str) -> str:
+    import unicodedata
+
+    return "".join(c for c in unicodedata.normalize("NFKD", text or "") if not unicodedata.combining(c)).lower()
+
+
+def _when(ts: float) -> str:
+    return time.strftime("%d/%m/%Y %H:%M", time.localtime(ts))
+
+
+def journal_list(query: str = "", days: float = 30, limit: int = 30) -> str:
+    """Tâches récentes, les plus récentes d'abord ; `query` : mots cherchés dans le titre, la demande et le déroulé."""
+    rows = db.all("SELECT r.id, r.status, r.objective, r.steps, r.state, r.error, r.created_at, c.title, u.name "
+                  "FROM runs r JOIN conversations c ON c.id = r.conversation_id LEFT JOIN users u ON u.id = r.user_id "
+                  "WHERE r.created_at > ? ORDER BY r.id DESC LIMIT 2000", (time.time() - days * 86400,))
+    words = [w for w in _fold(query).split() if len(w) > 2]
+    out = []
+    for r in rows:
+        if words:
+            hay = _fold(f"{r['title']} {r['objective']}")
+            if not all(w in hay for w in words):
+                hay += " " + _fold(" ".join(m["d"] for m in db.all(
+                    "SELECT substr(data, 1, 4000) AS d FROM messages WHERE run_id = ?", (r["id"],))))
+                if not all(w in hay for w in words):
+                    continue
+        errors = db.val("SELECT COUNT(*) FROM tool_log WHERE run_id = ? AND ok = 0", (r["id"],)) or 0
+        rejections = json.loads(r["state"] or "{}").get("rejections", 0)
+        out.append(f"- run {r['id']} · {_when(r['created_at'])} · {r['name'] or '?'} · « {r['title']} » · {r['status']} "
+                   f"({r['steps'] or 0} étapes, {errors} erreur(s) d'outil, {rejections} refus du contrôleur)"
+                   f"{' · ' + r['error'][:120] if r['error'] else ''}\n  {' '.join(r['objective'].split())[:200]}")
+        if len(out) >= limit:
+            break
+    head = f"# Tâches des {days:g} derniers jours" + (f" contenant « {query} »" if words else "")
+    return head + "\n" + ("\n".join(out) if out else "(aucune)") + "\nDéroulé complet : action=read run_id=…"
+
+
+def _args(args: dict) -> str:
+    shown = {k: ("••••" if k.lower() in SECRET_ARGS else v) for k, v in (args or {}).items()}
+    return json.dumps(shown, ensure_ascii=False)[:600]
+
+
+def journal_read(run_id: int, offset: int = 0, budget: int = 15000) -> str:
+    """Déroulé complet d'une tâche : demandes, textes d'Ely, actions (arguments, résultats, erreurs), contrôles."""
+    r = db.one("SELECT r.*, c.title, u.name FROM runs r JOIN conversations c ON c.id = r.conversation_id "
+               "LEFT JOIN users u ON u.id = r.user_id WHERE r.id = ?", (run_id,))
+    if not r:
+        return f"Tâche {run_id} introuvable (action=list pour les numéros)."
+    state = json.loads(r["state"] or "{}")
+    entries = []
+    for row in db.all("SELECT data, created_at FROM messages WHERE run_id = ? ORDER BY id", (run_id,)):
+        m = json.loads(row["data"])
+        at = time.strftime("%H:%M:%S", time.localtime(row["created_at"]))
+        text = m.get("content") if isinstance(m.get("content"), str) else " ".join(
+            p.get("text", "") for p in m.get("content") or [] if isinstance(p, dict))
+        if m["role"] == "user":
+            who = {"control": "Contrôle", "relaunch": "Mission relancée", "scheduled": "Tâche planifiée"}.get(m.get("kind"), "Utilisateur")
+            entries.append(f"{at} {who} : {text.strip()[:3000]}")
+        elif m["role"] == "assistant":
+            label = "Note" if m.get("kind") == "note" else f"Ely ({m.get('model') or '?'})"
+            if text.strip():
+                entries.append(f"{at} {label} : {text.strip()[:3000]}")
+            for tc in m.get("tool_calls") or []:
+                entries.append(f"{at} → {tc['name']}({_args(tc.get('arguments'))})")
+        elif m["role"] == "tool":
+            body = (m.get("content") or "").strip()
+            mark = "✗ ÉCHEC" if m.get("is_error") else "✓"
+            extra = " [capture d'écran jointe]" if m.get("images") else ""
+            entries.append(f"{at}   {mark} {m.get('name')} : {body[:3000 if m.get('is_error') else 1500]}{extra}")
+    head = (f"# Tâche {run_id} · « {r['title']} » · {r['name'] or '?'} · {_when(r['created_at'])} → {_when(r['updated_at'])}\n"
+            f"Statut : {r['status']} · {r['steps'] or 0} étapes · refus du contrôleur : {state.get('rejections', 0)} · "
+            f"escalade : {'oui' if state.get('escalated') else 'non'}" + (f"\nErreur finale : {r['error']}" if r["error"] else "")
+            + f"\nDemande : {r['objective'][:3000]}\n\n## Déroulé ({len(entries)} entrées)")
+    lines, size = [], 0
+    for i in range(max(0, offset), len(entries)):
+        line = f"[{i}] {entries[i]}"
+        if lines and size + len(line) > budget:
+            lines.append(f"[… suite : action=read run_id={run_id} offset={i}]")
+            break
+        lines.append(line)
+        size += len(line)
+    return head + "\n" + ("\n".join(lines) or "(rien après cet offset)")

@@ -24,11 +24,26 @@ leur historique est dans [son journal](https://github.com/franckolv-dev/ElyAgent
   - il lit et modifie les fichiers, sans terminal ni accès hors de la copie ;
   - il teste, déploie, écrit leçons, compétences et plugins avec les outils d'Ely ;
   - Ely redémarre une fois la mission close ;
-  - si Claude ne répond pas, la session continue sur le modèle d'escalade ;
+  - si Claude ne répond pas (quota du forfait atteint, jeton refusé…), la session continue sur le modèle
+    d'escalade, et Ely en donne la raison ;
+  - si son quota tombe en pleine mission, Ely s'arrête et consigne ce qu'il a fait dans un fichier markdown
+    (Fichiers → `auto-amelioration/`). Elle recommence ensuite la mission avec le modèle d'escalade, en lui disant
+    ce qui est déjà en place ;
   - une mission coupée par un redémarrage n'est jamais relancée à l'aveugle.
 
   Réglages → Modèles → « Claude (Agent SDK) » : état, essai de la connexion, budget par mission. La consommation
   apparaît dans le tableau de bord. Avec une clé d'API, Claude est facturé au token et n'est jamais choisi d'office.
+
+- **Journal des tâches pour l'auto-amélioration** (`ely_journal`, pour Claude comme pour le modèle d'escalade).
+  Il retrouve une tâche passée par quelques mots, puis en donne le déroulé complet : demandes, actions avec leurs
+  arguments et résultats, erreurs exactes, refus du contrôleur. Les mots de passe restent masqués. Une session peut
+  ainsi diagnostiquer précisément un échec, par exemple une commande en ligne qui n'a pas abouti.
+- **Rechargement automatique de l'interface** quand Ely redémarre sur une nouvelle version (mise à jour,
+  auto-amélioration). Si un message est en cours d'écriture, Ely le garde et propose de recharger.
+
+### Corrigé
+- Réglages → Auto-amélioration → « Lancer » ne démarrait pas la session (erreur « no running event loop » dans le
+  terminal). Une erreur de lancement s'affiche désormais au lieu de rien.
 
 ### Modifié
 - **Escalade dès le premier échec** constaté par le contrôleur d'objectif, au lieu du deuxième. Chaque bascule est

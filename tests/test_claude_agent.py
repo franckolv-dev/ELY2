@@ -41,6 +41,7 @@ def claude(monkeypatch):
         async for ev in box["script"](session):
             yield ev
 
+    monkeypatch.setattr(claude_agent, "_real_run_sdk", claude_agent._run_sdk, raising=False)
     monkeypatch.setattr(claude_agent, "_run_sdk", fake_sdk)
     return box
 
@@ -111,7 +112,8 @@ async def test_claude_stays_in_the_working_copy(user, fake_repo):
     wt = pipeline.WORKTREE
     for name, args in (("Edit", {"file_path": str(wt / "ely" / "loop.py")}), ("Write", {"file_path": "tests/test_neuf.py"}),
                        ("Read", {"file_path": "app.py"}), ("Grep", {"pattern": "def ", "path": "ely"}),
-                       ("Glob", {"pattern": "**/*.py"}), ("mcp__ely__ely_test", {}), ("mcp__ely__ely_deploy", {})):
+                       ("Glob", {"pattern": "**/*.py"}), ("mcp__ely__ely_test", {}), ("mcp__ely__ely_deploy", {}),
+                       ("mcp__ely__ely_journal", {"action": "list"})):
         assert claude_agent.check(s, name, args) is None, (name, args)
     for name, args in (("Edit", {"file_path": str(fake_repo / "app.py")}),  # la version active
                        ("Edit", {"file_path": "../repo/app.py"}), ("Read", {"file_path": str(wt / ".env")}),
@@ -252,3 +254,72 @@ async def test_claude_settings_api(user, claude):
         assert (await c.put("/api/admin/claude", headers=h, json={"budget": 2.5})).json()["budget"] == 2.5
         assert claude_agent.budget() == 2.5
         await c.put("/api/admin/claude", headers=h, json={"budget": claude_agent.DEFAULT_BUDGET})
+
+
+async def test_usage_limit_reached_hands_over_to_the_strong_model(fake, user, fake_repo, claude, monkeypatch):
+    """Quota du forfait atteint dès le départ : le CLI renvoie une erreur d'API (429) sans avoir rien fait. La
+    session passe sur le modèle d'escalade, avec la raison lisible dans l'annonce."""
+    sdk = pytest.importorskip("claude_agent_sdk")
+    limit = "Claude AI usage limit reached · resets 6pm"
+
+    async def query(prompt, options):
+        yield sdk.AssistantMessage(content=[sdk.TextBlock(text=f"API Error: 429 {limit}")], model="<synthetic>", error="rate_limit")
+        yield sdk.ResultMessage(subtype="success", duration_ms=5, duration_api_ms=0, is_error=True, num_turns=1,
+                                session_id="s1", result=f"API Error: 429 {limit}", api_error_status=429, total_cost_usd=0)
+
+    monkeypatch.setattr(claude_agent, "_run_sdk", claude_agent._real_run_sdk)  # le vrai adaptateur, SDK simulé
+    monkeypatch.setattr(sdk, "query", query)
+    with_strong_model(fake)
+    fake.script, used = routed(lambda m, t: "Leçon ajoutée : vérifier l'adresse du cabinet.")
+    q = runner.subscribe(user["id"])
+    try:
+        cid = start_session(user, "Améliore-toi")
+        await wait_idle(cid)
+    finally:
+        runner.unsubscribe(user["id"], q)
+    assert used == ["fort"], used
+    notices = model_notices(q)
+    assert any(limit in n and "bascule sur fake:fort" in n for n in notices), notices
+    assert last_run(cid)["status"] == "done"
+    # le même quota en pleine mission est reconnu comme tel par l'adaptateur
+    events = [ev async for ev in claude_agent._real_run_sdk(claude_agent.Session(prompt="x", cwd=fake_repo))]
+    assert events[-1]["type"] == "result" and events[-1]["limit"] and not events[-1]["ok"]
+
+
+async def test_quota_reached_mid_mission_restarts_it_without_claude(fake, user, fake_repo, claude):
+    """Le quota tombe alors que Claude a déjà modifié le code : Ely s'arrête, consigne son travail dans un fichier
+    markdown, puis recommence la mission avec le modèle d'escalade, qui sait ce que Claude a déjà mis en place."""
+    with_strong_model(fake)
+
+    async def mission(s):
+        yield {"type": "text", "text": "L'addition est fausse, je la corrige."}
+        yield {"type": "tool_start", "id": "t1", "name": "Edit", "input": {"file_path": str(s.cwd / "app.py")}}
+        (s.cwd / "app.py").write_text("def add(a, b):\n    return a + b\n")
+        yield {"type": "tool_end", "id": "t1", "name": "Edit", "ok": True, "content": "ok"}
+        yield {"type": "result", "ok": False, "limit": True, "text": "", "error": "Claude AI usage limit reached · resets 6pm",
+               "input_tokens": 5000, "output_tokens": 300, "cached_tokens": 0}
+
+    seen = {}
+
+    def astra(messages, tools):
+        seen["mission"] = next(m["content"] for m in messages if m["role"] == "user" and "Mission relancée" in str(m["content"]))
+        return "Le correctif de Claude était bon ; tests verts, rien d'autre à faire."
+
+    claude["script"] = mission
+    fake.script, used = routed(astra)
+    cid = start_session(user, "Corrige l'addition")
+    for _ in range(200):
+        await asyncio.sleep(0.05)
+        runs = db.all("SELECT * FROM runs WHERE conversation_id = ? ORDER BY id", (cid,))
+        if len(runs) == 2 and runs[1]["status"] == "done":
+            break
+    assert [r["status"] for r in runs] == ["stopped", "done"]
+    assert len(claude["sessions"]) == 1 and used == ["fort"]  # Claude n'est pas rappelé, Astra refait la mission
+    note = next(m for m in messages(cid) if m.get("kind") == "note")["content"]
+    report = note.split("Fichiers → ")[1].split(". ")[0]
+    text = (settings.user_dir(user["id"]) / "files" / report).read_text()
+    assert "Corrige l'addition" in text and "usage limit reached" in text and "Modification du code" in text
+    assert "app.py" in text and "+    return a + b" in text  # modifications non déployées, diff compris
+    assert "Corrige l'addition" in seen["mission"] and report in seen["mission"] and "ely_code action=diff" in seen["mission"]
+    assert next(m for m in messages(cid) if m.get("kind") == "relaunch")["content"] == seen["mission"]
+    assert "a - b" in (fake_repo / "app.py").read_text()  # rien n'a été déployé

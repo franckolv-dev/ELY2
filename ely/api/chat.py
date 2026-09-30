@@ -234,7 +234,8 @@ async def events(request: Request, user=Depends(auth.current_user)):
 
     async def stream():
         try:
-            yield f"data: {json.dumps({'type': 'hello', 'states': runner.snapshots(user['id'])}, ensure_ascii=False)}\n\n"
+            hello = {"type": "hello", "states": runner.snapshots(user["id"]), "code": CODE_VERSION}
+            yield f"data: {json.dumps(hello, ensure_ascii=False)}\n\n"
             while True:
                 if await request.is_disconnected():
                     break

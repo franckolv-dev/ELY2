@@ -172,6 +172,9 @@ of dissatisfaction, cost) and improves on four levels, from the lightest to the 
    **automatically rolls back** to the previous one if it doesn't start. Every change is in the log, with its diff and
    an "Undo" button.
 
+To understand a failure, the session reads back the full course of past tasks (requests, actions, exact errors,
+controller refusals): "work out why you failed to order on that site" is enough.
+
 It's **recursive**: the improvement process (`ely/selfdev/`) is itself part of the code Ely can improve.
 A session runs every night at 4 am if there was any activity (can be turned off). The administrator can start one
 by hand (Settings → Self-improvement), or simply ask in the chat: "improve yourself to…". These sessions use their
@@ -184,7 +187,9 @@ own model (Settings → Models → Self-improvement; automatic: the escalation m
 Ely can hand each whole session to **Claude Code**, through the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview).
 Claude works on its own in the working copy: it reads and edits files, runs the tests and deploys with Ely's tools,
 without a terminal and without access outside the copy (`.env`, `data/`, `.git` are refused). Ely restarts at the end
-of the mission, never in the middle; if Claude doesn't answer, the session carries on with the escalation model.
+of the mission, never in the middle; if Claude doesn't answer, the session carries on with the escalation model. If its
+quota runs out mid-mission, Ely records what it did (Files → `auto-amelioration/`) and restarts the mission with the
+escalation model, giving it that context.
 
 1. Put your key in `.env`: `ANTHROPIC_API_KEY=sk-ant-…`
 2. `./ely.sh install`: installs the SDK (about 250 MB with its CLI) as soon as a key is present.

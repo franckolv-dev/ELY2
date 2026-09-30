@@ -106,7 +106,7 @@ def check(s: Session, name: str, args: dict) -> str | None:
 
 async def run(s: Session) -> AsyncIterator[dict]:
     """Déroule la mission. Événements : text, tool_start, tool_end, puis un seul result
-    (ok, text, error, cost, turns, session_id, input_tokens, output_tokens, cached_tokens)."""
+    (ok, text, error, limit = quota atteint, cost, turns, session_id, input_tokens, output_tokens, cached_tokens)."""
     async for ev in _run_sdk(s):
         yield ev
 
@@ -192,10 +192,15 @@ async def _run_sdk(s: Session) -> AsyncIterator[dict]:
         elif isinstance(m, sdk.ResultMessage):
             u = m.usage or {}
             cached = u.get("cache_read_input_tokens") or 0
-            error = ""
+            error, limit = "", False
             if m.is_error:
-                error = "; ".join(m.errors or []) or failure or STOPS.get(m.subtype, m.subtype)
-            yield {"type": "result", "ok": not m.is_error, "text": m.result or "", "error": error,
+                # quota du forfait ou limite de débit : la mission peut être relancée sans Claude
+                limit = (failure in ("rate_limit", "billing_error") or getattr(m, "api_error_status", None) == 429
+                         or "usage limit" in (m.result or "").lower())
+                # erreur d'API (quota du forfait, 429, identifiants…) : le message du CLI, plus parlant que son code
+                error = ("; ".join(m.errors or []) or STOPS.get(m.subtype) or (m.result or "").strip()[:300]
+                         or failure or m.subtype)
+            yield {"type": "result", "ok": not m.is_error, "text": m.result or "", "error": error, "limit": limit,
                    "cost": m.total_cost_usd or 0.0, "turns": m.num_turns, "session_id": m.session_id,
                    "input_tokens": (u.get("input_tokens") or 0) + cached + (u.get("cache_creation_input_tokens") or 0),
                    "output_tokens": u.get("output_tokens") or 0, "cached_tokens": cached}
