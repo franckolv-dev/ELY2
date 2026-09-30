@@ -34,6 +34,14 @@ async def openai_chat(request: Request):
     received["openai"] = body
     if body["model"] == "rate-limited":
         return JSONResponse({"error": "slow down"}, status_code=429)
+    if body["model"] == "sans-fin":  # modèle local qui boucle : il génère sans jamais s'arrêter
+        async def endless():
+            import asyncio
+
+            while True:
+                yield f"data: {json.dumps({'choices': [{'delta': {'content': 'encore '}}]})}\n\n"
+                await asyncio.sleep(0.02)
+        return StreamingResponse(endless(), media_type="text/event-stream")
     chunks = [
         {"choices": [{"delta": {"content": "<thi"}}]},
         {"choices": [{"delta": {"content": "nk>je réfléchis</think>Voici "}}]},
@@ -227,3 +235,35 @@ async def test_anthropic_drops_rejected_optional_features(server):
     assert r.text == "Je regarde." and "fallbacks" in p.disabled and len(calls) == 2
     assert anthropic  # le SDK reste la voie d'appel
     await p.client.close()
+
+
+async def test_a_model_that_never_stops_is_capped_then_replaced(server, fake, monkeypatch):
+    """Un modèle local peut boucler sans fin (la routine du 30/09 est restée dix heures sur un seul appel) : Ely lui
+    impose une longueur maximale de réponse et, passé le délai d'un appel, bascule sur le modèle suivant en le disant."""
+    import sys
+
+    from ely.db import db
+    from ely.llm import registry
+
+    registry_module = sys.modules["ely.llm.registry"]  # le paquet expose l'instance sous le même nom que le module
+
+    lm = OpenAICompatProvider("lmstudio", server + "/v1", "lm-studio")
+    await lm.chat("qwen3", ["s"], [{"role": "user", "content": "x"}])
+    assert received["openai"]["max_tokens"] == 16000  # plafond envoyé aussi aux modèles locaux
+
+    monkeypatch.setattr(registry_module, "CALL_DEADLINE", 1)
+    registry.providers["lmstudio"] = lm
+    db.set_setting("model_main", "lmstudio:sans-fin")
+    db.set_setting("model_fallbacks", "fake:agent")
+    fake.script = lambda **kw: "Réponse du modèle de secours."
+    switches = []
+
+    async def on_switch(ref, reason):
+        switches.append((ref, reason))
+
+    started = time.monotonic()
+    resp = await registry.chat(role="main", system=["s"], messages=[{"role": "user", "content": "Routine du matin"}],
+                               on_switch=on_switch)
+    assert resp.text == "Réponse du modèle de secours." and resp.model == "fake:agent"
+    assert time.monotonic() - started < 10  # un seul essai sur le modèle bloqué, pas trois
+    assert any(ref == "fake:agent" and "lmstudio:sans-fin indisponible (pas de réponse complète" in why for ref, why in switches), switches

@@ -42,6 +42,13 @@ leur historique est dans [son journal](https://github.com/franckolv-dev/ElyAgent
   auto-amélioration). Si un message est en cours d'écriture, Ely le garde et propose de recharger.
 
 ### Corrigé
+- **Une tâche pouvait rester bloquée des heures sur un seul appel de modèle.** C'est arrivé le 30/09 : la routine du
+  matin est restée dix heures sans réponse de Gemma (LM Studio).
+  - Les modèles locaux reçoivent désormais, eux aussi, une longueur maximale de réponse.
+  - Un appel qui dépasse 20 minutes est abandonné, et Ely passe au modèle suivant (l'escalade, par exemple) en le
+    disant.
+- **Une tâche planifiée qui se déclenche pendant qu'une autre tourne encore** démarre maintenant à part, au lieu de se
+  greffer sur la tâche en cours. Le 30/09, la routine de midi attendait derrière celle du matin, bloquée.
 - Réglages → Auto-amélioration → « Lancer » ne démarrait pas la session (erreur « no running event loop » dans le
   terminal). Une erreur de lancement s'affiche désormais au lieu de rien.
 
