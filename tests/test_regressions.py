@@ -268,3 +268,46 @@ async def test_worktree_is_reset_after_a_rollback(dev_ctx, tmp_path, monkeypatch
     subprocess.run(["git", "reset", "-q", "--keep", good], cwd=repo, check=True)  # retour arrière du lanceur
     await pipeline.ensure_session()
     assert (tmp_path / "wt" / "a.py").read_text() == "A = 'GOOD'\n"
+
+
+async def test_scheduled_task_starts_apart_while_another_is_still_running(fake, user):
+    """30/09 : la routine du matin est restée bloquée et celle de midi, programmée dans la même conversation, s'y est
+    greffée au lieu de s'exécuter. Une tâche planifiée qui tombe pendant qu'une autre tourne démarre à part."""
+    import time
+
+    from ely.scheduler import run_due_schedules
+
+    morning_may_finish = asyncio.Event()
+
+    async def script(model, system, messages, tools):
+        text = last_user_text(messages)
+        if "contrôleur qualité" in text:
+            return '{"done": true, "missing": ""}'
+        if "mémoire d'Ely" in text or "Donne un titre" in text or "Résume cet échange" in text:
+            return '{"profile": null, "facts": [], "skill": null}'
+        if "Routine du matin" in text:
+            await morning_may_finish.wait()  # modèle qui ne répond pas
+        return "Fait."
+
+    fake.script = script
+    cid = new_conversation(user)
+    db.insert("schedules", user_id=user["id"], conversation_id=cid, instruction="Routine du matin", cron="0 9 * * *",
+                        next_run=time.time() - 1, enabled=1, created_at=now())
+    await run_due_schedules()
+    await asyncio.sleep(0.2)
+    noon = db.insert("schedules", user_id=user["id"], conversation_id=cid, instruction="Routine de midi", cron="0 12 * * *",
+                     next_run=time.time() - 1, enabled=1, created_at=now())
+    await run_due_schedules()
+    run = None
+    for _ in range(100):
+        await asyncio.sleep(0.05)
+        run = db.one("SELECT * FROM runs WHERE objective LIKE ? ORDER BY id DESC LIMIT 1", (f"[Tâche planifiée #{noon}]%",))
+        if run and run["status"] == "done":
+            break
+    assert run and run["status"] == "done" and run["conversation_id"] != cid  # midi s'est fait, à part
+    morning_run = db.one("SELECT * FROM runs WHERE conversation_id = ? ORDER BY id LIMIT 1", (cid,))
+    assert morning_run["status"] == "running" and "Routine de midi" not in morning_run["objective"]
+    morning_may_finish.set()
+    await wait_idle(cid)
+    assert db.val("SELECT status FROM runs WHERE id = ?", (morning_run["id"],)) == "done"
+    assert db.one("SELECT conversation_id FROM schedules WHERE id = ?", (noon,))["conversation_id"] == cid  # la tâche garde sa conversation

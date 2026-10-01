@@ -31,6 +31,8 @@ from .openai_compat import OpenAICompatProvider
 log = logging.getLogger("ely.llm")
 
 ROLES = ("main", "strong", "selfdev", "fast", "local", "embed")
+# Durée maximale d'un appel de modèle, flux compris : au-delà (génération sans fin, serveur figé), on passe au suivant
+CALL_DEADLINE = 20 * 60
 
 # Préférences de choix automatique (motifs appliqués aux modèles découverts)
 PREFS: dict[str, list[tuple[str, list[str]]]] = {
@@ -245,7 +247,10 @@ class Registry:
             for attempt in range(3):
                 try:
                     mt = max_tokens or (32000 if prov.kind == "anthropic" else 16000)
-                    resp = await prov.chat(mid, system, messages, tools, on_delta, mt, effort)
+                    try:
+                        resp = await asyncio.wait_for(prov.chat(mid, system, messages, tools, on_delta, mt, effort), CALL_DEADLINE)
+                    except TimeoutError:
+                        raise LLMError(f"pas de réponse complète en {CALL_DEADLINE // 60} min", retryable=True, kind="timeout") from None
                     self.record_usage(user_id, resp, purpose)
                     return resp
                 except LLMError as e:
@@ -255,6 +260,8 @@ class Registry:
                     if e.kind == "context":
                         raise  # la boucle condense l'historique et réessaie le même modèle, sans en changer
                     transient = transient or e.retryable
+                    if e.kind == "timeout":
+                        break  # le même modèle ferait sans doute pareil : on passe au suivant
                     if e.retryable and attempt < 2:
                         await asyncio.sleep(2 * (3 ** attempt))
                         if on_switch:

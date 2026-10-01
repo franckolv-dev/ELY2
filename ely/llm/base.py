@@ -55,7 +55,7 @@ class LLMError(Exception):
         super().__init__(message)
         self.retryable = retryable
         self.status = status
-        self.kind = kind  # error | refusal | context | auth | not_found
+        self.kind = kind  # error | refusal | context | auth | not_found | timeout
 
 
 @dataclass

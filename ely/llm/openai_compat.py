@@ -199,7 +199,7 @@ class OpenAICompatProvider:
             body["tools"] = self.convert_tools(tools)
         if self.name == "openai":
             body["max_completion_tokens"] = max_tokens
-        elif self.name not in ("lmstudio", "ollama"):
+        else:  # modèles locaux compris : un modèle qui boucle s'arrête au lieu de générer sans fin
             body["max_tokens"] = min(max_tokens, 8192 if self.name in ("deepseek", "groq") else max_tokens)
         if self.name not in NO_STREAM_OPTIONS:
             body["stream_options"] = {"include_usage": True}

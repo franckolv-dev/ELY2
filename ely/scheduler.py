@@ -32,6 +32,10 @@ async def run_due_schedules() -> None:
             cid = db.insert("conversations", user_id=user["id"], title="⏰ Tâches planifiées", channel="schedule",
                             created_at=now(), updated_at=now())
             db.update("schedules", "id = ?", (s["id"],), conversation_id=cid)
+        busy = runner.states.get(cid)
+        if busy and busy.task and not busy.task.done():  # une autre tâche y tourne : celle-ci démarre à part, sans s'y mêler
+            cid = db.insert("conversations", user_id=user["id"], title=f"⏰ Tâche planifiée #{s['id']}", channel="schedule",
+                            created_at=now(), updated_at=now())
         try:
             await runner.submit(user, cid, f"[Tâche planifiée #{s['id']}] {s['instruction']}", channel="schedule", kind="scheduled")
             db.update("schedules", "id = ?", (s["id"],), last_status="lancée")
