@@ -42,6 +42,11 @@ leur historique est dans [son journal](https://github.com/franckolv-dev/ElyAgent
   auto-amélioration). Si un message est en cours d'écriture, Ely le garde et propose de recharger.
 
 ### Corrigé
+- **Sécurité, pour une Ely joignable depuis Internet** :
+  - la session de l'extension Chrome, qui passe dans l'adresse de son WebSocket, ne s'écrit plus en clair dans la
+    console. Il en va de même pour le jeton du flux iCal ;
+  - après 5 mauvais mots de passe, la connexion est suspendue un quart d'heure pour ce compte et pour cette adresse
+    IP.
 - **Une tâche pouvait rester bloquée des heures sur un seul appel de modèle.** C'est arrivé le 30/09 : la routine du
   matin est restée dix heures sans réponse de Gemma (LM Studio).
   - Les modèles locaux reçoivent désormais, eux aussi, une longueur maximale de réponse.

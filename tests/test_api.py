@@ -186,3 +186,52 @@ async def test_self_improvement_session_starts_from_settings(client, user, fake)
     await wait_idle(cid)
     run = db.one("SELECT * FROM runs WHERE conversation_id = ? ORDER BY id DESC LIMIT 1", (cid,))
     assert run and run["objective"] == "Sois plus rapide sur Doctolib" and run["status"] == "done"
+
+
+async def test_password_guessing_is_slowed_down(client, user, monkeypatch):
+    """Ely est souvent joignable depuis Internet : après 5 mauvais mots de passe, la connexion est suspendue un quart
+    d'heure pour ce compte et cette adresse, même avec le bon mot de passe. Un autre compte, ailleurs, n'est pas gêné."""
+    from ely import auth
+    from ely.api import chat
+
+    monkeypatch.setattr(chat, "_failures", {})
+    monkeypatch.setattr(chat.time, "sleep", lambda s: None)
+    for _ in range(5):
+        r = await client.post("/api/auth/login", json={"email": user["email"], "password": "devine"})
+        assert r.status_code == 401
+    r = await client.post("/api/auth/login", json={"email": user["email"], "password": "motdepasse"})
+    assert r.status_code == 429 and "réessayez dans 15 min" in r.json()["detail"]
+    other = auth.create_user("marie.essais@x.fr", "Marie", "123456")
+    chat._failures.pop("ip:127.0.0.1", None)  # Marie se connecte d'ailleurs
+    r = await client.post("/api/auth/login", json={"email": other["email"], "password": "123456"})
+    assert r.status_code == 200
+    # le délai passé, le bon mot de passe fonctionne de nouveau
+    for k in chat._failures:
+        chat._failures[k] = [t - chat.LOGIN_WINDOW for t in chat._failures[k]]
+    r = await client.post("/api/auth/login", json={"email": user["email"], "password": "motdepasse"})
+    assert r.status_code == 200
+
+
+def test_session_tokens_never_reach_the_server_logs():
+    """La session de l'extension Chrome passe dans l'adresse du WebSocket : elle ne doit pas s'écrire dans la console
+    (qui finit dans un fichier, une capture, un message…). Idem pour le jeton du flux iCal."""
+    import logging
+
+    create_app()
+    secret = "9A-pL4h4w4KK4VI-Ite1Gr23gwbwctmiytjU5C0akyg"
+    lines: list[str] = []
+    seen = logging.Handler()
+    seen.emit = lambda record: lines.append(record.getMessage())
+    loggers = [logging.getLogger(n) for n in ("uvicorn.error", "uvicorn.access")]  # uvicorn ne les fait pas remonter
+    for lg in loggers:
+        lg.addHandler(seen)
+        lg.setLevel(logging.INFO)
+    try:
+        loggers[0].info('%s - "WebSocket %s" [accepted]', "203.0.113.5:0", f"/api/chrome/ws?token={secret}")
+        loggers[1].info('%s - "%s %s HTTP/%s" %d', "203.0.113.5:0", "GET", "/ics/AbC_dEf-123.ics", "1.1", 200)
+    finally:
+        for lg in loggers:
+            lg.removeHandler(seen)
+    text = "\n".join(lines)
+    assert secret not in text and "AbC_dEf-123" not in text
+    assert "/api/chrome/ws?token=•••" in text and "/ics/•••.ics" in text
