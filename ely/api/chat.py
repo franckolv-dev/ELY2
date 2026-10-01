@@ -58,12 +58,33 @@ def register(body: Credentials, request: Request, response: Response):
     return _login_response(user, request, response)
 
 
+# Essais de mot de passe : Ely est souvent joignable depuis Internet, où des robots essaient des mots de passe en boucle
+LOGIN_TRIES, LOGIN_WINDOW = 5, 15 * 60
+_failures: dict[str, list[float]] = {}
+
+
+def _recent_failures(key: str) -> list[float]:
+    times = [t for t in _failures.get(key, []) if t > time.time() - LOGIN_WINDOW]
+    _failures[key] = times
+    return times
+
+
 @router.post("/api/auth/login")
 def login(body: Credentials, request: Request, response: Response):
-    row = db.one("SELECT id, password_hash FROM users WHERE email = ?", (body.email.strip().lower(),))
+    email = body.email.strip().lower()
+    keys = (f"email:{email}", f"ip:{request.client.host if request.client else '?'}")
+    blocked = [_recent_failures(k) for k in keys if len(_recent_failures(k)) >= LOGIN_TRIES]
+    if blocked:
+        wait = int(min(times[0] for times in blocked) + LOGIN_WINDOW - time.time()) // 60 + 1
+        raise HTTPException(429, f"Trop d'essais de mot de passe : réessayez dans {wait} min")
+    row = db.one("SELECT id, password_hash FROM users WHERE email = ?", (email,))
     if not row or not auth.verify_password(body.password, row["password_hash"]):
+        for k in keys:
+            _failures.setdefault(k, []).append(time.time())
         time.sleep(0.5)
         raise HTTPException(401, "E-mail ou mot de passe incorrect")
+    for k in keys:
+        _failures.pop(k, None)
     return _login_response(auth.get_user(row["id"]), request, response)
 
 

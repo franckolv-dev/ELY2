@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -20,6 +21,26 @@ from . import admin, chat, settings_routes
 
 log = logging.getLogger("ely")
 WEB = Path(__file__).resolve().parent.parent / "web"
+
+
+class HideTokens(logging.Filter):
+    """Les jetons transmis dans l'adresse (session de l'extension Chrome, flux iCal) ne s'écrivent jamais dans les
+    journaux : celui de l'extension donne accès à tout le compte."""
+    SECRET = re.compile(r"((?:[?&]token=)|(?:/ics/))[^&\s\"'/]+?(?=\.ics\b|[&\s\"']|$)")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        hide = lambda v: self.SECRET.sub(r"\1•••", v) if isinstance(v, str) else v
+        record.msg = hide(record.msg)
+        if isinstance(record.args, tuple):
+            record.args = tuple(hide(a) for a in record.args)
+        return True
+
+
+def hide_tokens_in_logs() -> None:
+    for name in ("uvicorn.access", "uvicorn.error"):
+        logger = logging.getLogger(name)
+        if not any(isinstance(f, HideTokens) for f in logger.filters):
+            logger.addFilter(HideTokens())
 
 
 class Static(StaticFiles):
@@ -58,6 +79,7 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    hide_tokens_in_logs()
     app = FastAPI(title="Ely", version=__version__, lifespan=lifespan, docs_url="/api/docs", openapi_url="/api/openapi.json")
     app.include_router(chat.router)
     app.include_router(settings_routes.router)
