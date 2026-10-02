@@ -206,6 +206,10 @@ Avec une clé d'API, Claude est facturé au token : Ely ne le choisit jamais d'e
   Zhipu, Cerebras, Together, LM Studio, Ollama, ou toute adresse personnalisée.
 - **Abonnement ChatGPT** : GPT avec votre forfait, sans payer au token. Sur le Mac : `codex login` (CLI Codex
   d'OpenAI), puis Réglages → Modèles → « Importer ». Mécanisme non officiel, soumis aux limites du forfait.
+- **Abonnement Google Gemini** (AI Pro…) : Gemini sans clé d'API, par le CLI officiel. Sur le Mac :
+  `npm install -g @google/gemini-cli`, puis `gemini` et « Sign in with Google » ; enfin Réglages → Modèles →
+  « Activer ». Ely impose l'abonnement (sa clé `GEMINI_API_KEY` éventuelle n'est jamais transmise au CLI), désactive
+  les outils du CLI et lui fait utiliser les siens. Soumis aux limites quotidiennes de l'abonnement.
 - **Rôles** : agent principal, escalade, auto-amélioration, contrôleur rapide, tâches de fond locales, vecteurs. Tout est choisi
   automatiquement, et modifiable dans Réglages → Modèles avec effet immédiat. Chaque conversation peut imposer son
   modèle (menu en haut).

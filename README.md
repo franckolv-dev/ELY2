@@ -207,6 +207,10 @@ With an API key, Claude is billed per token: Ely never picks it on its own, you 
   Zhipu, Cerebras, Together, LM Studio, Ollama, or any custom endpoint.
 - **ChatGPT subscription**: GPT on your plan, no per-token billing. On the Mac: `codex login` (OpenAI's Codex
   CLI), then Settings → Models → "Import". Unofficial mechanism, subject to your plan's limits.
+- **Google Gemini subscription** (AI Pro…): Gemini without an API key, through the official CLI. On the Mac:
+  `npm install -g @google/gemini-cli`, then `gemini` and "Sign in with Google"; finally Settings → Models →
+  "Enable". Ely enforces the subscription (any `GEMINI_API_KEY` is never passed to the CLI), turns off the CLI's tools
+  and has it use her own. Subject to the plan's daily limits.
 - **Roles**: main agent, escalation, self-improvement, fast controller, local background tasks, embeddings. Everything is chosen
   automatically, and can be changed in Settings → Models with immediate effect. Each conversation can pin its own
   model (menu at the top).

@@ -254,3 +254,32 @@ async def test_images_from_other_sites_never_load_by_themselves(ely_url, user):
     finally:
         spy.shutdown()
     assert hits == []
+
+
+async def test_gemini_subscription_row_guides_the_setup(ely_url, user, fake, tmp_path, monkeypatch):
+    """Réglages → Modèles : sans le CLI gemini, la ligne de l'abonnement Google donne les étapes ; « Activer » n'est
+    possible qu'une fois le CLI installé et connecté."""
+    from playwright.async_api import async_playwright
+
+    from ely.config import settings
+    from ely.llm import gemini_cli
+
+    monkeypatch.setattr(settings, "gemini_cli", str(tmp_path / "absent" / "gemini"))
+    monkeypatch.setattr(gemini_cli, "gemini_home", lambda: tmp_path / "vide")
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(executable_path=os.environ["ELY_BROWSER_EXECUTABLE"])
+        ctx = await browser.new_context(locale="fr-FR")
+        await ctx.add_cookies([{"name": "ely_token", "value": auth.create_session(user["id"]), "url": ely_url}])
+        page = await ctx.new_page()
+        errors = []
+        page.on("pageerror", lambda e: errors.append(str(e)))
+        await page.goto(ely_url)
+        await page.click(".settings-btn")
+        await page.click(".sheet nav button:has-text('Modèles')")
+        row = page.locator(".srow", has_text="Abonnement Google Gemini")
+        await row.wait_for()
+        text = await row.inner_text()
+        assert "npm install -g @google/gemini-cli" in text and "Sign in with Google" in text
+        assert await row.locator("button:has-text('Activer')").is_disabled()
+        await browser.close()
+    assert errors == []

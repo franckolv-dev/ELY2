@@ -38,6 +38,16 @@ leur historique est dans [son journal](https://github.com/franckolv-dev/ElyAgent
   Il retrouve une tâche passée par quelques mots, puis en donne le déroulé complet : demandes, actions avec leurs
   arguments et résultats, erreurs exactes, refus du contrôleur. Les mots de passe restent masqués. Une session peut
   ainsi diagnostiquer précisément un échec, par exemple une commande en ligne qui n'a pas abouti.
+- **Abonnement Google Gemini (AI Pro…), sans clé d'API.** Ely pilote le CLI officiel `gemini`, connecté une fois au
+  compte Google (« Sign in with Google »). Réglages → Modèles → « Abonnement Google Gemini » : état du CLI et du
+  compte, « Activer », « Tester ». Le modèle `geminicli:gemini-3.8-flash` est alors proposé dans tous les rôles et
+  sert de secours gratuit.
+  - L'abonnement est imposé : le CLI ne reçoit ni clé Gemini ni autre secret. Il préférerait sinon la clé d'API
+    facturée, même lue dans un `.env` d'un dossier parent. La clé `GEMINI_API_KEY` peut donc rester dans `.env`.
+  - Le CLI travaille dans un dossier vide hors du dépôt. Le prompt d'Ely remplace le sien, et ses propres outils
+    sont tous refusés : Gemini se sert de ceux d'Ely, demandés par un bloc d'appels que l'interface n'affiche pas.
+  - CLI non connecté ou limite du jour atteinte : Ely passe au modèle suivant en disant pourquoi. Une tâche arrêtée
+    arrête le CLI.
 - **Rechargement automatique de l'interface** quand Ely redémarre sur une nouvelle version (mise à jour,
   auto-amélioration). Si un message est en cours d'écriture, Ely le garde et propose de recharger.
 

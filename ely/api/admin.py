@@ -286,6 +286,35 @@ async def chatgpt_disconnect(user=Depends(auth.admin_user)):
     return {"ok": True}
 
 
+# ---------------------------------------------------------------------- Gemini par l'abonnement Google (CLI gemini)
+@router.get("/api/admin/geminicli")
+async def geminicli_state(user=Depends(auth.admin_user)):
+    from ..llm import gemini_cli
+
+    return await gemini_cli.status()
+
+
+class GeminiCLIIn(BaseModel):
+    enabled: bool
+
+
+@router.put("/api/admin/geminicli")
+async def geminicli_toggle(body: GeminiCLIIn, user=Depends(auth.admin_user)):
+    from ..llm import gemini_cli
+
+    db.set_setting(gemini_cli.SETTING, body.enabled)
+    registry.build_providers()
+    await registry.refresh()
+    return {**await gemini_cli.status(), "roles": registry.roles_view()}
+
+
+@router.post("/api/admin/geminicli/test")
+async def geminicli_test(user=Depends(auth.admin_user)):
+    from ..llm import gemini_cli
+
+    return await gemini_cli.ping()
+
+
 # ---------------------------------------------------------------------- Claude par l'Agent SDK
 @router.get("/api/admin/claude")
 def claude_state(user=Depends(auth.admin_user)):

@@ -22,7 +22,7 @@ from typing import Awaitable, Callable
 
 from ..config import settings
 from ..db import db, now
-from . import claude_agent
+from . import claude_agent, gemini_cli
 from .anthropic_provider import AnthropicProvider
 from .chatgpt_provider import ChatGPTProvider
 from .base import DeltaCallback, LLMError, LLMResponse, ModelInfo
@@ -45,6 +45,7 @@ PREFS: dict[str, list[tuple[str, list[str]]]] = {
         ("anthropic", [r"^claude-opus-5$", r"^claude-opus-4-8$", r"^claude-sonnet-5$"]),
         ("chatgpt", [r"^gpt-5\.\d+$", r"gpt"]),
         ("openai", [r"^gpt-5\.\d+$", r"^gpt-5$", r"^gpt-4\.1$", r"^gpt-4o$"]),
+        ("geminicli", [r"pro", r"flash", r".*"]),  # abonnement Google : avant l'API Gemini, facturée au token
         ("gemini", [r"^gemini-3(\.\d+)?-pro", r"^gemini-2\.5-pro$"]),
         ("openrouter", [r"^anthropic/claude-opus-5$", r"^anthropic/claude-sonnet", r"^openai/gpt-5"]),
         ("deepseek", [r"deepseek-v\d+-pro", r"^deepseek-chat$"]),
@@ -57,6 +58,7 @@ PREFS: dict[str, list[tuple[str, list[str]]]] = {
     "fast": [
         ("anthropic", [r"^claude-haiku-4-5$"]),
         ("openai", [r"^gpt-5(\.\d+)?-mini$", r"^gpt-4\.1-mini$", r"^gpt-4o-mini$"]),
+        ("geminicli", [r"flash"]),
         ("gemini", [r"^gemini-\d(\.\d+)?-flash$", r"flash"]),
         ("deepseek", [r"deepseek-v\d+-flash", r"^deepseek-chat$"]),
         ("mistral", [r"^mistral-small-latest$"]),
@@ -66,6 +68,7 @@ PREFS: dict[str, list[tuple[str, list[str]]]] = {
     "local": [
         ("lmstudio", [r"gemma-4-26b", r"qwen3\.5", r"gemma-4-12b", r"qwen3", r"gpt-oss", r"gemma-4-e4b", r"ministral"]),
         ("ollama", [r".*"]),
+        ("geminicli", [r"flash"]),
     ],
     "embed": [
         ("lmstudio", [r"nomic-embed", r"embed"]),
@@ -84,7 +87,7 @@ STATIC_FALLBACK = {
     "openrouter": ["anthropic/claude-opus-5"],
 }
 # Sans coût au token : un repli automatique peut y aller même si personne ne les a choisis
-FREE_PROVIDERS = ("chatgpt", "lmstudio", "ollama")
+FREE_PROVIDERS = ("chatgpt", "geminicli", "lmstudio", "ollama")
 # Prix indicatifs ($ / million de tokens entrée, sortie) pour le tableau de bord
 PRICES = {
     "claude-fable-5": (10, 50), "claude-opus-5-5": (4, 20), "claude-opus-5": (5, 25), "claude-opus-4": (5, 25),
@@ -117,6 +120,8 @@ class Registry:
             p["anthropic"] = AnthropicProvider(settings.anthropic_api_key)
         if db.get_setting("chatgpt_auth"):  # abonnement ChatGPT importé depuis le CLI Codex
             p["chatgpt"] = ChatGPTProvider()
+        if gemini_cli.enabled():  # abonnement Google, par le CLI gemini (activé dans Réglages → Modèles)
+            p[gemini_cli.NAME] = gemini_cli.GeminiCLIProvider()
         for name, (url, key) in settings.openai_compat_keys().items():
             p[name] = OpenAICompatProvider(name, url, key)
         if settings.lmstudio_url:

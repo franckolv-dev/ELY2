@@ -73,6 +73,8 @@ class Settings:
     anthropic_api_key: str = field(default_factory=lambda: _env("ANTHROPIC_API_KEY"))
     # Claude par l'Agent SDK (ely/llm/claude_agent.py) : jeton de `claude setup-token`, sinon la clé d'API
     claude_code_oauth_token: str = field(default_factory=lambda: _env("CLAUDE_CODE_OAUTH_TOKEN"))
+    # Gemini par l'abonnement Google (ely/llm/gemini_cli.py) : chemin du CLI `gemini` s'il n'est pas trouvé tout seul
+    gemini_cli: str = field(default_factory=lambda: _env("GEMINI_CLI"))
     lmstudio_url: str = field(default_factory=lambda: _env("LMSTUDIO_BASE_URL", "http://localhost:1234/v1").rstrip("/"))
     ollama_url: str = field(default_factory=lambda: _env("OLLAMA_BASE_URL").rstrip("/"))
     custom_openai_url: str = field(default_factory=lambda: _env("CUSTOM_OPENAI_BASE_URL").rstrip("/"))
