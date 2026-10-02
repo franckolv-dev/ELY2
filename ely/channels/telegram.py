@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import io
+import json
 import logging
 import os
 import time
@@ -123,8 +124,16 @@ async def handle(update: dict) -> None:
     await runner.submit(user, conversation_for(user), content, channel="telegram")
 
 
+def final_answer(run_id: int | None) -> str:
+    """Dernière réponse de la tâche, si elle se termine par une réponse (pas par un appel d'outil ni une note)."""
+    row = db.one("SELECT data FROM messages WHERE run_id = ? AND role = 'assistant' ORDER BY id DESC LIMIT 1", (run_id,))
+    m = json.loads(row["data"]) if row else {}
+    return "" if m.get("tool_calls") or m.get("kind") else (m.get("content") or "")
+
+
 async def on_event(user_id: int, ev: dict) -> None:
-    """Relaie vers Telegram les réponses et questions des conversations Telegram."""
+    """Relaie vers Telegram les réponses et questions des conversations Telegram. La réponse n'est envoyée qu'en fin
+    de tâche : un brouillon refusé par le contrôleur (« je m'en occupe » sans rien faire) n'atteint pas l'utilisateur."""
     conv = db.one("SELECT channel FROM conversations WHERE id = ?", (ev.get("conversation_id"),))
     if not conv or conv["channel"] != "telegram":
         return
@@ -132,9 +141,12 @@ async def on_event(user_id: int, ev: dict) -> None:
     if not chat_id:
         return
     t = ev["type"]
-    if t == "message":
+    if t == "run_end" and ev.get("status") in ("done", "stopped"):
+        if answer := final_answer(ev.get("run_id")):
+            await telegram_send(chat_id, answer)
+    elif t == "message":
         m = ev["message"]
-        if m.get("role") == "assistant" and not m.get("tool_calls") and m.get("content") and m.get("kind") != "control":
+        if m.get("role") == "assistant" and m.get("kind") == "note" and m.get("content"):  # arrêt, erreur
             await telegram_send(chat_id, m["content"])
         if m.get("role") == "tool":
             for f in (m.get("files") or [])[:5]:

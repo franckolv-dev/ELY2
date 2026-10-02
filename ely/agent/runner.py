@@ -95,7 +95,7 @@ class Runner:
                 except (asyncio.QueueEmpty, asyncio.QueueFull):
                     pass
         for fn in self.listeners:
-            if event["type"] in ("message", "ask_user", "tool_start"):
+            if event["type"] in ("message", "ask_user", "tool_start", "run_end"):
                 asyncio.ensure_future(fn(user_id, event))
 
     def state(self, conversation_id: int, user_id: int) -> ConvState:

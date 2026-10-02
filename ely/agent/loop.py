@@ -25,7 +25,7 @@ from ..db import db, now
 from ..llm import LLMError, claude_agent, parse_json_loose, registry
 from ..llm.base import LLMResponse, estimate_tokens, message_text
 from ..tools import TOOLS, ToolContext, execute, tools_for
-from .prompts import STABLE, dynamic_block
+from .prompts import STABLE, dynamic_block, today_text
 from .runner import ConvState, Runner, public_message, save_message
 
 log = logging.getLogger("ely.agent")
@@ -111,9 +111,10 @@ def action_log(history: list[dict], limit_chars: int = 12000) -> str:
     return text[-limit_chars:] if len(text) > limit_chars else (text or "(aucune action)")
 
 
-async def verify(objective: str, history: list[dict], answer: str, user_id: int) -> tuple[bool, str]:
+async def verify(objective: str, history: list[dict], answer: str, user_id: int, today: str = "") -> tuple[bool, str]:
+    when = f"\nNous sommes {today} : juge les dates par rapport à ce jour, pas d'après tes connaissances.\n" if today else ""
     prompt = f"""Tu es le contrôleur qualité d'un agent autonome. Détermine si la DEMANDE de l'utilisateur est entièrement satisfaite.
-
+{when}
 DEMANDE (et ajouts éventuels) :
 {objective[:4000]}
 
@@ -461,7 +462,7 @@ class AgentLoop:
             answer = msg["content"]
             if not TRIVIAL.match(objective.strip()):
                 await self.emit("status", {"status": "running", "detail": "Vérification de l'objectif…"})
-                done, missing = await verify(objective, run_messages(self.run_id), answer, user["id"])
+                done, missing = await verify(objective, run_messages(self.run_id), answer, user["id"], today_text(user))
                 await self.emit("verify", {"done": done, "missing": missing})
                 if not done:
                     rejections += 1

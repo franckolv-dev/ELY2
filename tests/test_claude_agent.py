@@ -57,6 +57,15 @@ def last_run(cid: int) -> dict:
 async def test_self_improvement_is_entrusted_to_claude(fake, user, fake_repo, claude, monkeypatch):
     """Claude corrige le code dans la copie, lance les tests et déploie avec les outils d'Ely. Le compte rendu arrive
     dans la conversation, la consommation est notée, et Ely ne redémarre qu'une fois la mission close."""
+    from ely.selfdev import github
+
+    published = []
+
+    async def publish(summary, sha):
+        published.append((summary, sha))
+        return "https://github.com/example/ely/pull/1"
+
+    monkeypatch.setattr(github, "publish_improvement", publish)
     restarts, seen = [], {}
     monkeypatch.setenv("ELY_SUPERVISED", "1")
     monkeypatch.setattr(pipeline, "RESTART_DELAY", 0)
@@ -92,6 +101,7 @@ async def test_self_improvement_is_entrusted_to_claude(fake, user, fake_repo, cl
         runner.unsubscribe(user["id"], q)
     assert used == []  # aucun autre modèle n'a travaillé
     assert "return a + b" in (fake_repo / "app.py").read_text()  # version active corrigée
+    assert published == [("corrige add", await pipeline.head())]
     last = messages(cid)[-1]
     assert last["content"].startswith("Compte rendu") and last["model"] == OPUS
     assert last_run(cid)["status"] == "done" and restarts == ["done"]
