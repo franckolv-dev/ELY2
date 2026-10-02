@@ -20,9 +20,12 @@ import time
 import zipfile
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Response, WebSocket, WebSocketDisconnect
+from urllib.parse import urlsplit
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 
 from . import auth
+from .config import settings
 from .browser import BaseUserBrowser
 
 log = logging.getLogger("ely.chrome")
@@ -139,9 +142,21 @@ def chrome_status(user=Depends(auth.current_user)):
             "use": preference(user["id"]), "folder": str(EXTENSION_DIR)}
 
 
+def own_address(request: Request, url: str) -> bool:
+    """L'adresse est-elle celle par laquelle on joint Ely ? (un lien piégé ne fabrique pas une extension qui obéirait
+    à un autre serveur)"""
+    netloc = urlsplit(url).netloc.lower()
+    known = {request.headers.get("host", ""), request.headers.get("x-forwarded-host", "").split(",")[0].strip(),
+             urlsplit(settings.public_url).netloc}
+    return bool(netloc) and netloc in {k.lower() for k in known if k}
+
+
 @router.get("/api/chrome/extension.zip")
-def extension_zip(url: str = "", user=Depends(auth.current_user)):
+def extension_zip(request: Request, url: str = "", user=Depends(auth.current_user)):
     """L'extension à installer, déjà réglée sur l'adresse d'Ely d'où on la télécharge."""
+    url = url.strip().rstrip("/")
+    if url and not own_address(request, url):
+        raise HTTPException(400, "Cette adresse n'est pas celle d'Ely : téléchargez l'extension depuis Ely elle-même.")
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for p in sorted(EXTENSION_DIR.rglob("*")):

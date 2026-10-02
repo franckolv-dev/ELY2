@@ -54,7 +54,7 @@ Identifiants : outil credentials. Code de vérification envoyé par e-mail : ouv
         "tab": {"type": "integer", "description": "Index d'onglet (switch_tab)"},
         "js": {"type": "string", "description": "Code JavaScript (eval), renvoie une valeur"},
     },
-    ["action"], label="Navigateur", icon="🌐", timeout=150,
+    ["action"], label="Navigateur", icon="🌐", timeout=150, untrusted=True,
 )
 async def browser(ctx: ToolContext, action: str, url: str = "", ref: int | None = None, text: str = "",
                   submit: bool = False, key: str = "", direction: str = "down", seconds: float = 2,

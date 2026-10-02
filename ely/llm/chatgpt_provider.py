@@ -357,8 +357,8 @@ class ChatGPTProvider:
                             msg = json.dumps(err, ensure_ascii=False)[:400]
                             raise LLMError(f"chatgpt : {msg}", retryable="rate" in msg or "overloaded" in msg or "server" in msg,
                                            kind="context" if "context" in msg else "error")
-        except httpx.TimeoutException as e:
-            raise LLMError(f"chatgpt : délai dépassé ({e.__class__.__name__})", retryable=True) from e
+        except httpx.TimeoutException as e:  # serveur muet : on passe au modèle suivant sans réessayer
+            raise LLMError(f"chatgpt : aucune réponse ({e.__class__.__name__})", retryable=True, kind="timeout") from e
         except httpx.HTTPError as e:
             raise LLMError(f"chatgpt : erreur réseau {e}", retryable=True) from e
         details = usage.get("input_tokens_details") or {}

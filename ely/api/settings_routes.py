@@ -109,9 +109,17 @@ def google_start(request: Request, user=Depends(auth.current_user)):
     return RedirectResponse(google.auth_url(user["id"], _base(request)))
 
 
+def _oauth_owner(request: Request, state: str, provider: str) -> int | None:
+    """Compte qui a lancé la connexion, s'il est bien celui connecté dans ce navigateur : sinon un lien de connexion
+    transmis à quelqu'un d'autre rattacherait SES comptes Google ou LinkedIn au compte de l'expéditeur."""
+    uid = verify_state(state, provider)
+    session = auth.user_from_token(auth.token_from_request(request))
+    return uid if uid and session and session["id"] == uid else None
+
+
 @router.get("/api/integrations/google/callback")
 async def google_callback(request: Request, code: str = "", state: str = "", error: str = ""):
-    uid = verify_state(state, "google")
+    uid = _oauth_owner(request, state, "google")
     if error or not uid:
         return RedirectResponse(f"/?settings=connexions&error={error or 'state'}")
     await google.exchange_code(uid, code, _base(request))
@@ -127,7 +135,7 @@ def linkedin_start(request: Request, user=Depends(auth.current_user)):
 
 @router.get("/api/integrations/linkedin/callback")
 async def linkedin_callback(request: Request, code: str = "", state: str = "", error: str = ""):
-    uid = verify_state(state, "linkedin")
+    uid = _oauth_owner(request, state, "linkedin")
     if error or not uid:
         return RedirectResponse(f"/?settings=connexions&error={error or 'state'}")
     await social.linkedin_exchange(uid, code, _base(request))

@@ -311,3 +311,77 @@ async def test_scheduled_task_starts_apart_while_another_is_still_running(fake, 
     await wait_idle(cid)
     assert db.val("SELECT status FROM runs WHERE id = ?", (morning_run["id"],)) == "done"
     assert db.one("SELECT conversation_id FROM schedules WHERE id = ?", (noon,))["conversation_id"] == cid  # la tâche garde sa conversation
+
+
+def _push_service(handler):
+    """Faux service de notifications push (celui du navigateur), dans un fil à part comme le vrai envoi."""
+    import socket
+    import threading
+    import time as _time
+
+    import uvicorn
+    from starlette.applications import Starlette
+    from starlette.responses import Response
+    from starlette.routing import Route
+
+    got = []
+
+    async def push(request):
+        got.append(dict(request.headers))
+        await handler()
+        return Response(status_code=201)
+
+    app = Starlette(routes=[Route("/push/{sid}", push, methods=["POST"])])
+
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    srv = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error"))
+    threading.Thread(target=srv.run, daemon=True).start()
+    while not srv.started:
+        _time.sleep(0.05)
+    return srv, f"http://127.0.0.1:{port}/push/abc", got
+
+
+def _subscription(endpoint: str) -> dict:
+    import base64
+    import os
+
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+
+    pub = ec.generate_private_key(ec.SECP256R1()).public_key().public_bytes(
+        serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
+    b64 = lambda b: base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+    return {"endpoint": endpoint, "keys": {"p256dh": b64(pub), "auth": b64(os.urandom(16))}}
+
+
+async def test_push_notifications_really_leave(monkeypatch):
+    """La clé VAPID d'Ely est en PEM : les notifications push échouaient toutes en silence. Elles partent, signées,
+    et un service de notification muet ne bloque pas plus de quelques secondes."""
+    import time as _time
+
+    from ely import notify
+
+    async def fine():
+        pass
+
+    srv, endpoint, got = _push_service(fine)
+    try:
+        status = await asyncio.to_thread(notify._push_sync, _subscription(endpoint), {"title": "Ely", "body": "Test"}, notify.vapid_keys())
+        assert status == 201 and len(got) == 1 and got[0]["authorization"].startswith("vapid ")
+    finally:
+        srv.should_exit = True
+
+    async def silent():
+        await asyncio.sleep(30)
+
+    monkeypatch.setattr(notify, "PUSH_TIMEOUT", 1)
+    srv, endpoint, got = _push_service(silent)
+    try:
+        started = _time.monotonic()
+        status = await asyncio.to_thread(notify._push_sync, _subscription(endpoint), {"title": "Ely"}, notify.vapid_keys())
+        assert status == 0 and _time.monotonic() - started < 5
+    finally:
+        srv.should_exit = True

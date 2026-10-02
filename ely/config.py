@@ -96,7 +96,8 @@ class Settings:
 
     # Exécution de code
     allow_code: bool = field(default_factory=lambda: _bool("ELY_ALLOW_CODE", True))
-    allow_shell_for_all: bool = field(default_factory=lambda: _bool("ELY_ALLOW_SHELL_FOR_ALL", True))
+    # Python et terminal pour les comptes non administrateurs : ils tournent sur la machine, avec ses droits
+    allow_code_for_all: bool = field(default_factory=lambda: _bool("ELY_ALLOW_CODE_FOR_ALL", False))
 
     # Intégrations
     google_client_id: str = field(default_factory=lambda: _env("GOOGLE_CLIENT_ID"))

@@ -137,7 +137,7 @@ def _providers():
       {"query": {"type": "string", "description": "Requête de recherche"},
        "category": {"type": "string", "enum": ["general", "news"], "description": "news pour l'actualité"},
        "max_results": {"type": "integer", "description": "Nombre de résultats (défaut 8)"}},
-      ["query"], label="Recherche web", icon="🔎", timeout=60)
+      ["query"], label="Recherche web", icon="🔎", timeout=60, untrusted=True)
 async def web_search(ctx: ToolContext, query: str, category: str = "general", max_results: int = 8) -> ToolResult:
     cat = None if category == "general" else category
     errors = []
@@ -204,7 +204,7 @@ async def fetch_text(url: str, max_chars: int = 20000) -> tuple[str, str]:
 
 @tool("web_fetch", "Lit le contenu d'une page web ou d'un PDF en ligne (texte principal, en markdown).",
       {"url": {"type": "string"}, "max_chars": {"type": "integer", "description": "Longueur max (défaut 15000)"}},
-      ["url"], label="Lecture de page", icon="📄", timeout=90)
+      ["url"], label="Lecture de page", icon="📄", timeout=90, untrusted=True)
 async def web_fetch(ctx: ToolContext, url: str, max_chars: int = 15000) -> ToolResult:
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
