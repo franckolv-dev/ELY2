@@ -37,13 +37,19 @@ class ChromeError(Exception):
     pass
 
 
+class ChromeLost(ChromeError):
+    """Commande envoyée, mais Chrome s'est tu ou déconnecté avant de répondre : on ne sait pas si elle a eu lieu."""
+
+
 # ---------------------------------------------------------------------- liaison avec l'extension
 class ChromeBridge:
     """Une extension connectée : envoie des commandes et attend leurs réponses."""
 
-    def __init__(self, user_id: int, send) -> None:
+    def __init__(self, user_id: int, send, ws: WebSocket | None = None, token: str = "") -> None:
         self.user_id = user_id
         self._send = send
+        self.ws = ws
+        self.token = token  # session avec laquelle l'extension s'est connectée
         self.pending: dict[int, asyncio.Future] = {}
         self.seq = 0
         self.info: dict = {}
@@ -64,7 +70,7 @@ class ChromeBridge:
             await self._send(json.dumps({"id": fid, "cmd": cmd, **params}))
             msg = await asyncio.wait_for(fut, timeout)
         except asyncio.TimeoutError:
-            raise ChromeError(f"Chrome ne répond pas ({cmd})") from None
+            raise ChromeLost(f"Chrome ne répond pas ({cmd})") from None
         finally:
             self.pending.pop(fid, None)
         if not msg.get("ok"):
@@ -82,7 +88,7 @@ class ChromeBridge:
         self.closed = True
         for fut in self.pending.values():
             if not fut.done():
-                fut.set_exception(ChromeError("Chrome s'est déconnecté"))
+                fut.set_exception(ChromeLost("Chrome s'est déconnecté"))
 
 
 bridges: dict[int, ChromeBridge] = {}
@@ -105,14 +111,27 @@ def chrome_for(user_id: int) -> "ChromeUserBrowser | None":
     return ub
 
 
+async def _ws_token(ws: WebSocket) -> str:
+    """Jeton de session de l'extension : dans son premier message (une adresse finit dans les journaux des proxys) ;
+    dans l'adresse pour les extensions d'avant la 1.3."""
+    if ws.query_params.get("token"):
+        return ws.query_params["token"]
+    try:
+        first = json.loads(await asyncio.wait_for(ws.receive_text(), 10))
+    except Exception:  # rien reçu, ou pas du JSON
+        return ""
+    return str(first.get("token") or "") if isinstance(first, dict) and first.get("type") == "auth" else ""
+
+
 @router.websocket("/api/chrome/ws")
 async def chrome_ws(ws: WebSocket):
-    user = auth.user_from_token(ws.query_params.get("token"))
+    await ws.accept()  # avant de refuser : le code 4001 (« reconnectez-vous ») parvient ainsi à l'extension
+    token = await _ws_token(ws)
+    user = auth.user_from_token(token)
     if not user:
         await ws.close(code=4001)
         return
-    await ws.accept()
-    bridge = ChromeBridge(user["id"], ws.send_text)
+    bridge = ChromeBridge(user["id"], ws.send_text, ws, token)
     old = bridges.get(user["id"])
     bridges[user["id"]] = bridge
     if old:
@@ -133,6 +152,21 @@ async def chrome_ws(ws: WebSocket):
         if bridges.get(user["id"]) is bridge:
             bridges.pop(user["id"], None)
             browsers.pop(user["id"], None)
+
+
+async def disconnect(user_id: int, keep_token: str | None = None) -> None:
+    """Coupe le Chrome relié à ce compte (compte supprimé, sessions révoquées), sauf s'il utilise la session gardée."""
+    bridge = bridges.get(user_id)
+    if not bridge or (keep_token and bridge.token == keep_token):
+        return
+    bridges.pop(user_id, None)
+    browsers.pop(user_id, None)
+    bridge.close()
+    if bridge.ws:
+        try:
+            await bridge.ws.close(code=4001)
+        except Exception:  # déjà fermée
+            pass
 
 
 @router.get("/api/chrome")

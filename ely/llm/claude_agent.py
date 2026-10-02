@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import logging
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, AsyncIterator, Awaitable, Callable
@@ -39,6 +40,14 @@ def sdk_version() -> str:
         return importlib.metadata.version("claude-agent-sdk")
     except importlib.metadata.PackageNotFoundError:
         return ""
+
+
+def private_env() -> dict[str, str]:
+    """Le SDK transmet tout l'environnement d'Ely au CLI : les autres clés et jetons (OpenAI, Telegram, Google…) y
+    sont vidés, Claude n'en a pas l'usage."""
+    from ..tools.files import KEEP, SECRET_NAME
+
+    return {k: "" for k in os.environ if SECRET_NAME.search(k) and k not in KEEP}
 
 
 def credentials() -> dict[str, str]:
@@ -160,7 +169,7 @@ def options(s: Session):
         strict_mcp_config=True, setting_sources=["project"],  # CLAUDE.md du projet, pas les réglages de la machine
         can_use_tool=can_use, hooks={"PreToolUse": [sdk.HookMatcher(matcher=None, hooks=[guard])]},
         max_budget_usd=s.budget_usd, max_turns=s.max_turns, effort=s.effort,
-        env={**credentials(), "MCP_TOOL_TIMEOUT": str(25 * 60 * 1000)},  # tests et déploiement peuvent durer
+        env={**private_env(), **credentials(), "MCP_TOOL_TIMEOUT": str(25 * 60 * 1000)},  # tests et déploiement peuvent durer
     )
 
 

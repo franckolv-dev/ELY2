@@ -70,12 +70,23 @@ def load_history(conversation_id: int, pending_ids: set[str] = frozenset()) -> l
             continue
         m["_id"] = r["id"]
         msgs.append(m)
-    # les images anciennes coûtent cher : on ne garde que les récentes
-    for m in msgs[:-6]:
-        if m.get("images"):
-            m.pop("images")
-            m["content"] = (m.get("content") or "") + " [image omise]"
+    for i, m in enumerate(msgs):  # les images anciennes coûtent cher : on ne garde que les récentes
+        drop_images(m, recent=i >= len(msgs) - 6)
     return normalize(msgs, pending_ids)
+
+
+def drop_images(m: dict, recent: bool = False) -> bool:
+    """Retire les images d'un message, renvoyées par un outil ou jointes par l'utilisateur (photo, capture…) :
+    chacune est réencodée à chaque appel du modèle. Une mention les remplace. Message récent : seules partent les
+    images dont le contenu a été purgé de la base (vignette sans données)."""
+    n = 0 if recent else len(m.pop("images", None) or [])
+    if isinstance(m.get("content"), list):
+        parts = [p for p in m["content"] if p.get("type") != "image" or (recent and p.get("data"))]
+        n += len(m["content"]) - len(parts)
+        m["content"] = parts + ([{"type": "text", "text": "[image omise]"}] if n else [])
+    elif n:
+        m["content"] = f"{m.get('content') or ''} [image omise]".strip()
+    return bool(n)
 
 
 def normalize(msgs: list[dict], pending_ids: set[str] = frozenset()) -> list[dict]:
@@ -157,9 +168,7 @@ def elide(history: list[dict], keep_last: int = 8) -> bool:
             if len(c) > 1500:
                 m["content"] = c[:700] + "\n[… résultat élagué pour économiser le contexte]"
                 changed = True
-            if m.get("images"):
-                m.pop("images")
-                changed = True
+        changed = drop_images(m) or changed
     return changed
 
 
@@ -324,7 +333,7 @@ class AgentLoop:
                 return resp
             except LLMError as e:
                 if e.kind == "context" and attempt < 3:
-                    await self.compact(history, force=True)
+                    await self.compact(history, force=True, model=e.model or None)
                     continue
                 if attempt >= len(RETRY_DELAYS) or not e.retryable:  # clé refusée, aucun modèle… : inutile d'attendre
                     raise
@@ -333,9 +342,10 @@ class AgentLoop:
                 await asyncio.sleep(delay)
         raise LLMError("Le modèle n'a pas pu répondre malgré plusieurs essais.")
 
-    async def compact(self, history: list[dict], force: bool = False) -> None:
+    async def compact(self, history: list[dict], force: bool = False, model: str | None = None) -> None:
+        """Condense l'historique ; `model` : celui dont le contexte a débordé (sinon le modèle de la conversation)."""
         try:
-            ref = registry.chain("main", self.conv.get("model") or None)[:1]
+            ref = [model] if model else registry.chain("main", self.conv.get("model") or None)[:1]
             ctx_len = registry.info(ref[0]).context if ref else 128_000
         except Exception:
             ctx_len = 128_000
@@ -566,7 +576,7 @@ class AgentLoop:
         db.run("UPDATE runs SET status = ?, error = ?, updated_at = ? WHERE id = ?",
                ("done" if result.get("ok") else "error", None if result.get("ok") else error[:1000], now(), self.run_id))
         if deployed and os.environ.get("ELY_SUPERVISED") == "1":  # la nouvelle version s'active une fois la mission close
-            asyncio.get_running_loop().call_later(pipeline.RESTART_DELAY, pipeline.request_restart)
+            pipeline.restart_soon()
         return True
 
     async def relaunch_without_claude(self, ref: str, objective: str, error: str, actions: list[dict], texts: list[str],
@@ -601,7 +611,7 @@ class AgentLoop:
 
         asyncio.get_running_loop().create_task(relaunch())
         if deployed and os.environ.get("ELY_SUPERVISED") == "1":
-            asyncio.get_running_loop().call_later(pipeline.RESTART_DELAY, pipeline.request_restart)
+            pipeline.restart_soon()
 
     async def after_run(self) -> None:
         """Titre de la conversation + apprentissage (en arrière-plan, sans bloquer)."""

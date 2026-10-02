@@ -1,6 +1,6 @@
 # Fiche Chrome Web Store : Ely pour Chrome
 
-> Dernière mise à jour : 2026-09-29
+> Dernière mise à jour : 2026-10-02
 
 Source unique des informations à saisir dans le tableau de bord développeur du Chrome Web Store
 (gabarit de la compétence `chrome-extensions` de Modern Web Guidance). À tenir à jour à chaque
@@ -67,7 +67,7 @@ formulaire de rendez-vous à côté de la conversation avec Ely.
 | Informations d'identification personnelle | Non | | | |
 | Santé | Selon les pages qu'Ely ouvre à la demande de l'utilisateur (ex. rendez-vous médical) | Vers le serveur Ely de l'utilisateur | Accomplir la démarche demandée | Non |
 | Finances | Non | | | |
-| Authentification | Cookie de session d'Ely | Vers le serveur Ely de l'utilisateur | Relier l'extension au compte | Non |
+| Authentification | Cookie de session d'Ely | Vers le serveur Ely de l'utilisateur, dans le premier message de la connexion (jamais dans une adresse) | Relier l'extension au compte | Non |
 | Communications personnelles | Selon les pages qu'Ely ouvre (ex. messagerie pour lire un code) | Vers le serveur Ely de l'utilisateur | Accomplir la démarche demandée | Non |
 | Localisation | Non | | | |
 | Historique web | Adresses et titres des onglets de la fenêtre d'Ely | Vers le serveur Ely de l'utilisateur | Savoir où en est la démarche | Non |
@@ -99,6 +99,7 @@ formulaire de rendez-vous à côté de la conversation avec Ely.
 
 | Version | Date | Changements | État |
 |---------|------|-------------|------|
+| 1.3.0 | 2026-10-02 | La session d'Ely part dans le premier message de la connexion et non plus dans son adresse, qui finit dans les journaux des proxys ; une session expirée (mot de passe changé) est signalée comme telle | Brouillon |
 | 1.2.3 | 2026-09-29 | Cadres d'extension chargés par script (sans adresse visible) retirés aussi ; Ely n'est plus bloquée sur une page qu'elle ne peut pas piloter (PDF, cadre qui revient sans cesse) : elle peut toujours ouvrir une autre page ; messages clairs à la place de l'erreur de Chrome | Brouillon |
 | 1.2.2 | 2026-09-29 | Ely garde la main sur ses onglets quand une autre extension (gestionnaire de mots de passe…) y glisse son menu : les cadres de cette extension sont retirés et l'onglet repris ; message clair si Chrome refuse malgré tout | Brouillon |
 | 1.2.1 | 2026-09-26 | Onglets libérés de façon fiable après une période sans action, même si Chrome a mis l'extension en veille ; focus clavier visible dans la fenêtre de l'icône | Brouillon |

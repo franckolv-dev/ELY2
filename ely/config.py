@@ -57,6 +57,8 @@ class Settings:
     host: str = field(default_factory=lambda: _env("ELY_HOST", "0.0.0.0"))
     port: int = field(default_factory=lambda: _int("ELY_PORT", 8000))
     public_url: str = field(default_factory=lambda: _env("ELY_PUBLIC_URL").rstrip("/"))
+    # proxys dont l'en-tête X-Forwarded-For est cru (adresse réelle des visiteurs) : jamais « * » (le visiteur l'écrirait)
+    trusted_proxies: str = field(default_factory=lambda: _env("ELY_TRUSTED_PROXIES", "127.0.0.1,::1"))
     data_dir: Path = field(default_factory=lambda: Path(_env("ELY_DATA_DIR") or ROOT / "data").resolve())
     timezone: str = field(default_factory=lambda: _env("ELY_TIMEZONE", "Europe/Paris"))
     open_registration: bool = field(default_factory=lambda: _bool("ELY_OPEN_REGISTRATION", False))

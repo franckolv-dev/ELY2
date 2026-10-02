@@ -21,6 +21,7 @@ from .tools import TOOLS, Tool, ToolContext, ToolResult, tool
 
 log = logging.getLogger("ely.mcp")
 CONFIG = settings.data_dir / "mcp.json"
+PING_EVERY = 60  # secondes : un serveur mort (processus arrêté, coupure réseau) est détecté puis reconnecté
 
 
 def load_config() -> dict:
@@ -48,6 +49,7 @@ class Connection:
         self.status = "démarrage"
         self.ready = asyncio.Event()
         self.stop = asyncio.Event()
+        self.suspect = asyncio.Event()  # un appel a échoué : vérifier la liaison sans attendre le prochain ping
         self.task: asyncio.Task | None = None
 
     async def _open(self, stack: AsyncExitStack):
@@ -80,7 +82,7 @@ class Connection:
                     self.status = f"ok ({len(self.tools)} outils)"
                     self.ready.set()
                     delay = 5
-                    await self.stop.wait()
+                    await self._watch()
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -93,6 +95,17 @@ class Connection:
             if not self.stop.is_set():
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 300)
+
+    async def _watch(self) -> None:
+        """Tant que la liaison vit. Un ping sans réponse lève : la boucle de run() se reconnecte."""
+        while not self.stop.is_set():
+            self.suspect.clear()
+            waits = [asyncio.ensure_future(self.stop.wait()), asyncio.ensure_future(self.suspect.wait())]
+            await asyncio.wait(waits, timeout=PING_EVERY, return_when=asyncio.FIRST_COMPLETED)
+            for w in waits:
+                w.cancel()
+            if not self.stop.is_set():
+                await asyncio.wait_for(self.session.send_ping(), 15)
 
     def _register(self, tools) -> None:
         self._unregister()
@@ -119,7 +132,11 @@ class Connection:
     async def call(self, remote: str, args: dict) -> ToolResult:
         if not self.session:
             return ToolResult(f"Serveur MCP {self.name} déconnecté ({self.status}).", is_error=True)
-        res = await self.session.call_tool(remote, args)
+        try:
+            res = await self.session.call_tool(remote, args)
+        except Exception:
+            self.suspect.set()
+            raise
         texts, images = [], []
         for c in res.content or []:
             kind = getattr(c, "type", "")

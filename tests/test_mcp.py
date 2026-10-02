@@ -47,3 +47,48 @@ async def test_mcp_stdio_server_tools_become_ely_tools(user, tmp_path, monkeypat
     finally:
         await mcp_client.manager.stop_all()
     assert "mcp_maison_meteo_maison" not in TOOLS
+
+
+MCP_SERVER = """import os, sys
+from mcp.server.mcpserver import MCPServer
+
+open(sys.argv[1], "a").write(f"{os.getpid()}\\n")
+server = MCPServer("maison")
+
+
+@server.tool()
+def lumiere(piece: str) -> str:
+    \"\"\"Allume la lumière d'une pièce.\"\"\"
+    return f"lumière allumée : {piece}"
+
+
+server.run()
+"""
+
+
+async def test_a_dead_mcp_server_is_reconnected(user, tmp_path, monkeypatch):
+    """Le serveur MCP de la maison s'arrête (mise à jour, plantage) : Ely le détecte et s'y reconnecte, au lieu de
+    répondre « Connection closed » jusqu'à son propre redémarrage."""
+    import asyncio
+    import os
+    import signal
+
+    monkeypatch.setattr(mcp_client, "PING_EVERY", 0.5)
+    script, pids = tmp_path / "maison.py", tmp_path / "pids"
+    script.write_text(MCP_SERVER)
+    monkeypatch.setattr(mcp_client, "CONFIG", tmp_path / "mcp.json")
+    mcp_client.save_config({"maison": {"command": sys.executable, "args": [str(script), str(pids)]}})
+    ctx = ToolContext(user=user, conversation_id=0, run_id=0, emit=_noop)
+    try:
+        await mcp_client.manager.start_all(wait=30)
+        r = await execute(ctx, "mcp_maison_lumiere", {"piece": "salon"})
+        assert not r.is_error and "lumière allumée : salon" in r.content, r.content
+        os.kill(int(pids.read_text().split()[0]), signal.SIGKILL)
+        for _ in range(200):
+            await asyncio.sleep(0.1)
+            if len(pids.read_text().split()) == 2 and "mcp_maison_lumiere" in TOOLS:
+                break
+        r = await execute(ctx, "mcp_maison_lumiere", {"piece": "cuisine"})
+        assert not r.is_error and "lumière allumée : cuisine" in r.content, r.content
+    finally:
+        await mcp_client.manager.stop_all()

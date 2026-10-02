@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS messages (
     created_at REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_msg_conv ON messages(conversation_id, id);
+CREATE INDEX IF NOT EXISTS idx_msg_run ON messages(run_id);
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(text, conversation_id UNINDEXED, user_id UNINDEXED, tokenize='unicode61 remove_diacritics 2');
 CREATE TABLE IF NOT EXISTS runs (
     id INTEGER PRIMARY KEY,
@@ -190,6 +191,7 @@ CREATE TABLE IF NOT EXISTS tool_log (
     created_at REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_toollog_time ON tool_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_toollog_run ON tool_log(run_id);
 CREATE TABLE IF NOT EXISTS improvements (
     id INTEGER PRIMARY KEY,
     kind TEXT NOT NULL,

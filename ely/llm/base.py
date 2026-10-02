@@ -51,11 +51,12 @@ class LLMResponse:
 
 
 class LLMError(Exception):
-    def __init__(self, message: str, *, retryable: bool = False, status: int = 0, kind: str = "error"):
+    def __init__(self, message: str, *, retryable: bool = False, status: int = 0, kind: str = "error", model: str = ""):
         super().__init__(message)
         self.retryable = retryable
         self.status = status
         self.kind = kind  # error | refusal | context | auth | not_found | timeout
+        self.model = model  # modèle en cause (contexte trop long : celui pour lequel condenser l'historique)
 
 
 @dataclass

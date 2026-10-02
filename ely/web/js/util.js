@@ -12,8 +12,29 @@ DOMPurify.addHook("afterSanitizeAttributes", (node) => {
   }
 });
 
+// Une image d'un autre site se charge toute seule à l'affichage : son adresse pourrait emporter des informations
+// (réponse manipulée par une page ou un e-mail lu par Ely). Elle devient un lien, ouvert seulement si on clique.
+const SAFE = { FORBID_TAGS: ["video", "audio", "source", "picture", "style"], FORBID_ATTR: ["style", "srcset", "poster"] };
+
 export function md(text) {
-  return DOMPurify.sanitize(marked.parse(text || ""));
+  const frag = DOMPurify.sanitize(marked.parse(text || ""), { ...SAFE, RETURN_DOM_FRAGMENT: true });
+  for (const img of frag.querySelectorAll("img")) {
+    const src = img.getAttribute("src") || "";
+    if (/^\/(?!\/)/.test(src) || src.startsWith("data:image/")) continue;  // fichiers d'Ely, images intégrées
+    const link = document.createElement("a");
+    if (/^https?:\/\//i.test(src)) {
+      link.href = src;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+    }
+    let host = "";
+    try { host = new URL(src).hostname; } catch { /* adresse illisible */ }
+    link.textContent = `🖼️ ${img.getAttribute("alt") || host || t("md.image")}`;
+    img.replaceWith(link);
+  }
+  const box = document.createElement("div");
+  box.append(frag);
+  return box.innerHTML;
 }
 
 // Icônes au trait fin (grille 16 px), comme dans la maquette

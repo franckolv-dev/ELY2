@@ -155,7 +155,12 @@ class EmailIn(BaseModel):
 
 @router.post("/api/integrations/email")
 async def email_connect(body: EmailIn, user=Depends(auth.current_user)):
+    from ..netguard import refusal
+
     cfg = {**mail.preset_for(body.address), **{k: v for k, v in body.model_dump().items() if v}}
+    for host in (cfg["imap_host"], cfg["smtp_host"]):  # pas de sondage du réseau de la maison par un compte ordinaire
+        if why := await refusal(f"https://{host}", user["role"] == "admin"):
+            raise HTTPException(400, f"Serveur de messagerie refusé : {why}")
     try:
         await asyncio.to_thread(mail.test_login, cfg)
     except Exception as e:
@@ -265,7 +270,15 @@ class SubIn(BaseModel):
 
 
 @router.post("/api/push/subscribe")
-def push_subscribe(body: SubIn, user=Depends(auth.current_user)):
+async def push_subscribe(body: SubIn, user=Depends(auth.current_user)):
+    from urllib.parse import urlsplit
+
+    from ..netguard import is_internal
+
+    endpoint = str(body.subscription.get("endpoint") or "")
+    parts = urlsplit(endpoint)  # un service de notification (Google, Mozilla, Apple, Microsoft) : HTTPS, sur Internet
+    if parts.scheme != "https" or await is_internal(parts.hostname or ""):
+        raise HTTPException(400, "Abonnement aux notifications invalide")
     save_subscription(user["id"], body.subscription)
     return {"ok": True}
 

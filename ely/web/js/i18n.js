@@ -165,6 +165,7 @@ const FR = {
   // tâches, fichiers
   "sched.enable": "Activer", "sched.once": "une fois", "sched.next": "prochaine : {d}", "sched.done": "terminée",
   "sched.last": " · dernière : {d}", "sched.none": "Aucune tâche planifiée.",
+  "md.image": "image d'un autre site",
   "files.add": "Ajouter des fichiers", "files.download": "Télécharger", "files.deleteConfirm": "Supprimer ce fichier ?", "files.none": "Aucun fichier.",
   // modèles
   "role.main": "Agent principal", "role.mainDesc": "Réfléchit et agit. Le plus capable possible.",
@@ -378,6 +379,7 @@ const EN = {
   "vault.saved": "Saved", "vault.count": "{n} credential", "vault.countN": "{n} credentials", "vault.none": "No credentials yet.",
   "sched.enable": "Enable", "sched.once": "once", "sched.next": "next: {d}", "sched.done": "finished",
   "sched.last": " · last: {d}", "sched.none": "No scheduled tasks.",
+  "md.image": "image from another site",
   "files.add": "Add files", "files.download": "Download", "files.deleteConfirm": "Delete this file?", "files.none": "No files.",
   "role.main": "Main agent", "role.mainDesc": "Thinks and acts. As capable as possible.",
   "role.strong": "Escalation", "role.strongDesc": "Used as soon as the goal isn't met, or when you ask for it (“use the strong model”).",

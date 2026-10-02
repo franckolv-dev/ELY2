@@ -65,7 +65,7 @@ def read_any(path: Path, offset: int = 0, limit: int = 20000) -> tuple[str, list
 
 @tool("file_read", "Lit un fichier de l'espace de fichiers de l'utilisateur (texte, PDF, Word, Excel, image…).",
       {"path": {"type": "string"}, "offset": {"type": "integer"}, "limit": {"type": "integer"}},
-      ["path"], label="Lecture de fichier", icon="📖", timeout=60, untrusted=True)
+      ["path"], label="Lecture de fichier", icon="📖", timeout=60, untrusted=True, effects=False)
 async def file_read(ctx: ToolContext, path: str, offset: int = 0, limit: int = 20000) -> ToolResult:
     p = ctx.resolve_path(path)
     if not p.exists():
@@ -91,7 +91,7 @@ async def file_write(ctx: ToolContext, path: str, content: str, append: bool = F
 
 
 @tool("file_list", "Liste les fichiers de l'espace de fichiers de l'utilisateur (documents reçus, créés, téléchargés).",
-      {"path": {"type": "string", "description": "Sous-dossier (défaut : racine)"}}, [], label="Fichiers", icon="🗂️", timeout=30)
+      {"path": {"type": "string", "description": "Sous-dossier (défaut : racine)"}}, [], label="Fichiers", icon="🗂️", timeout=30, effects=False)
 async def file_list(ctx: ToolContext, path: str = "") -> ToolResult:
     root = ctx.resolve_path(path or ".")
     if not root.exists():

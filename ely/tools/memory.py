@@ -19,7 +19,7 @@ async def remember(ctx: ToolContext, fact: str, category: str = "fait") -> ToolR
 
 @tool("recall", """Cherche dans la mémoire d'Ely : souvenirs sur l'utilisateur ET conversations passées.
 À utiliser dès qu'une information personnelle manque (adresse, médecin, proches, préférences, ce qui a été dit/fait avant).""",
-      {"query": {"type": "string"}}, ["query"], label="Souvenirs", icon="💭", timeout=60)
+      {"query": {"type": "string"}}, ["query"], label="Souvenirs", icon="💭", timeout=60, effects=False)
 async def recall(ctx: ToolContext, query: str) -> ToolResult:
     mems = await store.search_memories(ctx.user_id, query, k=10)
     hist = store.search_history(ctx.user_id, query, limit=8, exclude_conversation=ctx.conversation_id)

@@ -273,6 +273,8 @@ class BrowserManager:
                 p.on("download", lambda d: asyncio.ensure_future(on_download(d)))
             ub = UserBrowser(user_id, ctx)
             self.users[user_id] = ub
+            # Chromium fermé ou planté : relancé au prochain appel au lieu d'échouer sans fin sur un contexte mort
+            ctx.on("close", lambda *_: self.users.pop(user_id, None) if self.users.get(user_id) is ub else None)
             return ub
 
     async def shared(self):
@@ -291,6 +293,11 @@ class BrowserManager:
                 if time.time() - ub.last_used > IDLE_CLOSE_S and not any(l.locked() for l in ub.locks.values()):
                     self.users.pop(uid, None)
                     await ub.close()
+
+    async def close_user(self, user_id: int) -> None:
+        ub = self.users.pop(user_id, None)
+        if ub:
+            await ub.close()
 
     async def shutdown(self) -> None:
         for ub in list(self.users.values()):

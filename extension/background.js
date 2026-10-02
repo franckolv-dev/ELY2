@@ -60,11 +60,13 @@ async function connect() {
       return;
     }
     if (gen !== generation) return;  // adresse ou session changée entre-temps : la tentative suivante s'en charge
-    const sock = new WebSocket(url.replace(/^http/, "ws") + "/api/chrome/ws?token=" + encodeURIComponent(cookie.value));
+    // la session part dans le premier message, jamais dans l'adresse (qui finit dans les journaux des proxys)
+    const sock = new WebSocket(url.replace(/^http/, "ws") + "/api/chrome/ws");
     ws = sock;
     sock.onopen = () => {
       retryDelay = RETRY_MIN_MS;
       const m = chrome.runtime.getManifest();
+      sock.send(JSON.stringify({ type: "auth", token: cookie.value }));
       sock.send(JSON.stringify({ type: "hello", version: m.version, ua: navigator.userAgent, platform: navigator.platform }));
     };
     sock.onmessage = (e) => {

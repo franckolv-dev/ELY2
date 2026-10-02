@@ -16,8 +16,18 @@ from ..integrations import google as g
 from . import ToolContext, ToolResult, tool
 
 
+def known_tz(name: str) -> bool:
+    try:
+        ZoneInfo(name)
+        return True
+    except Exception:  # nom inconnu ou mal formé
+        return False
+
+
 def user_tz(user: dict) -> str:
-    return (user.get("settings") or {}).get("timezone") or settings.timezone
+    """Fuseau de la personne ; un fuseau inconnu ne fait jamais échouer ses tâches ni les routines : celui d'Ely."""
+    tz = (user.get("settings") or {}).get("timezone") or settings.timezone
+    return tz if known_tz(tz) else settings.timezone if known_tz(settings.timezone) else "Europe/Paris"
 
 
 def parse_local(value: str, tz: str) -> dt.datetime:
@@ -42,7 +52,7 @@ def _fmt_event(e: dict) -> str:
 @tool("calendar_list", "Liste les événements de l'agenda sur une période (par défaut : les 7 prochains jours).",
       {"start": {"type": "string", "description": "Début ISO (AAAA-MM-JJ ou AAAA-MM-JJTHH:MM)"},
        "end": {"type": "string", "description": "Fin ISO"}, "query": {"type": "string", "description": "Filtre texte"}},
-      [], label="Agenda", icon="📅", timeout=60)
+      [], label="Agenda", icon="📅", timeout=60, effects=False)
 async def calendar_list(ctx: ToolContext, start: str = "", end: str = "", query: str = "") -> ToolResult:
     tz = user_tz(ctx.user)
     s = parse_local(start, tz) if start else dt.datetime.now(ZoneInfo(tz))
@@ -126,7 +136,7 @@ def _fmt_contact(c: dict) -> str:
 
 
 @tool("contacts_search", "Cherche dans les contacts de l'utilisateur (nom, e-mail, téléphone, entreprise).",
-      {"query": {"type": "string"}}, ["query"], label="Contacts", icon="👤", timeout=60)
+      {"query": {"type": "string"}}, ["query"], label="Contacts", icon="👤", timeout=60, effects=False)
 async def contacts_search(ctx: ToolContext, query: str) -> ToolResult:
     if _google(ctx):
         items = await g.contacts_search(ctx.user_id, query)

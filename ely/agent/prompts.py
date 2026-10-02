@@ -9,7 +9,6 @@ import datetime as dt
 from zoneinfo import ZoneInfo
 
 from ..auth import addresses_informally
-from ..config import settings
 from ..db import db
 from ..integrations import connected, get
 from ..memory import store
@@ -72,7 +71,9 @@ def integrations_status(user_id: int) -> str:
 
 
 async def dynamic_block(user: dict, objective: str, channel: str = "web") -> str:
-    tz = (user.get("settings") or {}).get("timezone") or settings.timezone
+    from ..tools.pim import user_tz
+
+    tz = user_tz(user)
     nowdt = dt.datetime.now(ZoneInfo(tz))
     jours = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
     mois = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"]

@@ -12,7 +12,7 @@ from pathlib import Path
 import uvicorn
 from fastapi import FastAPI
 
-from ely.__main__ import PORT_BUSY, check_port
+from ely.__main__ import PORT_BUSY, SHUTDOWN_LIMIT, STARTUP_FAILED, check_port
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -135,3 +135,134 @@ def test_update_that_conflicts_leaves_ely_as_it_was(tmp_path):
     assert r.returncode == 1 and "mise à jour impossible" in r.stdout, r.stdout + r.stderr
     assert _git(mac, "rev-parse", "HEAD") == before
     assert _git(mac, "status", "--porcelain") == "" and (mac / "notes.txt").read_text() == "v2 d'Ely\n"
+
+
+def _free_port() -> int:
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
+
+
+STUBBORN_TASK = """import asyncio, time
+from ely.agent.runner import runner
+
+async def tache_tetue():
+    try:
+        await asyncio.sleep(3600)
+    except asyncio.CancelledError:
+        {on_cancel}
+
+runner.state(999999, 1).task = asyncio.get_running_loop().create_task(tache_tetue())
+"""
+
+
+def _stop_ely_with(tmp_path, on_cancel: str) -> float:
+    """Lance Ely avec une tâche qui refuse de s'arrêter, demande l'arrêt (comme le redémarrage après une mise à jour)
+    et renvoie le temps qu'il a fallu au processus pour se terminer."""
+    import signal
+
+    import httpx
+
+    (tmp_path / "plugins").mkdir()
+    (tmp_path / "plugins" / "tetue.py").write_text(STUBBORN_TASK.format(on_cancel=on_cancel))
+    port = _free_port()
+    env = {**os.environ, "ELY_PORT": str(port), "ELY_HOST": "127.0.0.1", "ELY_DATA_DIR": str(tmp_path)}
+    proc = subprocess.Popen([sys.executable, "-m", "ely"], cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        for _ in range(600):
+            try:
+                if httpx.get(f"http://127.0.0.1:{port}/api/health", timeout=1).status_code == 200:
+                    break
+            except httpx.HTTPError:
+                time.sleep(0.1)
+        else:
+            raise AssertionError("Ely n'a pas démarré")
+        proc.send_signal(signal.SIGTERM)
+        started = time.monotonic()
+        proc.wait(timeout=SHUTDOWN_LIMIT + 15)
+        return time.monotonic() - started
+    finally:
+        proc.kill()
+
+
+def test_a_task_that_ignores_cancellation_never_blocks_a_restart(tmp_path):
+    """Une tâche qui ne s'arrête pas quand on l'annule (outil mal écrit) retenait le processus : le lanceur attendait
+    sans fin et Ely restait hors service après sa mise à jour. Chaque étape de l'arrêt est bornée."""
+    assert _stop_ely_with(tmp_path, "await asyncio.sleep(3600)") < 12
+
+
+def test_even_a_frozen_server_ends_up_stopping(tmp_path):
+    """Pire cas : un appel bloquant fige complètement le serveur pendant l'arrêt. Passé SHUTDOWN_LIMIT, il est
+    arrêté de force et le lanceur peut le relancer."""
+    assert _stop_ely_with(tmp_path, "time.sleep(3600)") < SHUTDOWN_LIMIT + 5
+
+
+def test_a_failed_startup_is_not_mistaken_for_a_busy_port(tmp_path):
+    """Démarrage en échec (ici le dossier des plugins est un fichier) : un code distinct de « port occupé », pour que
+    le lanceur relance Ely (et revienne en arrière si une mise à jour en est la cause) au lieu de s'arrêter."""
+    (tmp_path / "plugins").write_text("pas un dossier")
+    env = {**os.environ, "ELY_PORT": str(_free_port()), "ELY_HOST": "127.0.0.1", "ELY_DATA_DIR": str(tmp_path)}
+    r = subprocess.run([sys.executable, "-m", "ely"], cwd=ROOT, env=env, capture_output=True, text=True, timeout=120)
+    assert r.returncode == STARTUP_FAILED, r.stderr[-2000:]
+
+
+FAKE_PYTHON = """#!/bin/bash
+# Fausse Ely pour le superviseur : la « bonne » version s'arrête proprement ; la « mauvaise » passe le contrôle de
+# santé à son premier démarrage, puis plante à chaque fois.
+if grep -q mauvaise version.txt; then
+  n=$(cat "$ELY_DATA_DIR/demarrages" 2>/dev/null || echo 0)
+  echo $((n + 1)) > "$ELY_DATA_DIR/demarrages"
+  if [ "$n" = 0 ]; then
+    exec {python} -c '
+import http.server, os, sys
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200); self.end_headers(); self.wfile.write(b"{{}}")
+    def log_message(self, *a): pass
+http.server.HTTPServer(("127.0.0.1", int(os.environ["ELY_PORT"])), H).handle_request()
+sys.exit(1)'
+  fi
+  exit 1
+fi
+exit 0
+"""
+
+
+def test_repeated_crashes_after_an_update_bring_back_the_previous_version(tmp_path):
+    """Une auto-amélioration passe le contrôle de santé puis plante à chaque démarrage : au troisième plantage, le
+    lanceur revient à la version précédente au lieu de boucler. Franck avait modifié un fichier à la main : sa
+    modification est mise de côté (git stash), jamais écrasée."""
+    mac = tmp_path / "mac"
+    mac.mkdir()
+    _git(mac, "init", "-q", "-b", "main")
+    (mac / "ely.sh").write_text((ROOT / "ely.sh").read_text())
+    (mac / "pyproject.toml").write_text("[project]\nname = 'ely'\n")
+    (mac / ".gitignore").write_text(".venv/\ndata/\n")
+    (mac / "version.txt").write_text("bonne\n")
+    (mac / "reglages.txt").write_text("v1\n")
+    _git(mac, "add", "-A")
+    _git(mac, "commit", "-qm", "version saine")
+    good = _git(mac, "rev-parse", "HEAD")
+    (mac / "version.txt").write_text("mauvaise\n")
+    (mac / "reglages.txt").write_text("v2\n")
+    _git(mac, "commit", "-qam", "ely-self: amélioration qui plante")
+    (mac / "reglages.txt").write_text("réglage fait à la main par Franck\n")
+    venv = mac / ".venv" / "bin"
+    venv.mkdir(parents=True)
+    (venv / "python").write_text(FAKE_PYTHON.format(python=sys.executable))
+    (venv / "python").chmod(0o755)
+    deps = subprocess.run(["sha1sum", "pyproject.toml"], cwd=mac, capture_output=True, text=True).stdout.split()[0]
+    (mac / ".venv" / ".deps").write_text(deps + "\n")
+    data = mac / "data"
+    (data / "selfdev").mkdir(parents=True)
+    (data / "selfdev" / "pending_check").write_text(good)  # la mise à jour vient d'être déployée
+
+    env = {**os.environ, "ELY_PORT": str(_free_port()), "ELY_DATA_DIR": str(data)}
+    r = subprocess.run(["bash", str(mac / "ely.sh")], env=env, capture_output=True, text=True, timeout=90)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert _git(mac, "rev-parse", "HEAD") == good and (mac / "version.txt").read_text() == "bonne\n"
+    assert "plantages répétés" in (data / "selfdev" / "rollback.json").read_text()
+    assert (data / "demarrages").read_text().strip() == "3"
+    assert "réglage fait à la main par Franck" in _git(mac, "stash", "show", "-p")

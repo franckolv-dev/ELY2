@@ -214,7 +214,9 @@ With an API key, Claude is billed per token: Ely never picks it on its own, you 
   - The first account is the administrator. It is created on Ely's own machine (http://localhost:8000).
   - The following ones sign up with an invitation link (single use, valid 7 days), or are created by the admin.
   - Python and the terminal run on the machine: they are reserved to the administrator, unless
-    `ELY_ALLOW_CODE_FOR_ALL=true`.
+    `ELY_ALLOW_CODE_FOR_ALL=true`. So is the home network (router, NAS, LM Studio).
+  - Changing a password closes the other sessions. Repeated password guesses are slowed down and the person is
+    notified. Behind a proxy running on another machine than the Mac, declare its address in `ELY_TRUSTED_PROXIES`.
   - Usage and cost per user in Settings → Usage.
 
 ## Connections

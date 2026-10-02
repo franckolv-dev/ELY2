@@ -420,3 +420,33 @@ async def test_ely_is_never_stuck_on_a_page_it_cannot_drive(ely_url, chrome_with
     assert "une autre extension" in r.content and "Cannot access" not in r.content, r.content
     r = await execute(ctx, "browser", {"action": "open", "url": f"{ely_url}/test/doctolib"})
     assert not r.is_error and "Code reçu par e-mail" in r.content, r.content
+
+
+async def test_the_extension_never_puts_the_session_in_an_address(user, tmp_path):
+    """Les adresses (WebSocket compris) finissent dans les journaux des proxys : la vraie extension n'y met jamais
+    la session d'Ely."""
+    from playwright.async_api import async_playwright
+
+    seen: list[str] = []
+    app = create_app()
+
+    async def recording(scope, receive, send):
+        if scope["type"] == "websocket":
+            seen.append(scope.get("query_string", b"").decode())
+        await app(scope, receive, send)
+
+    port = free_port()
+    server = uvicorn.Server(uvicorn.Config(recording, host="127.0.0.1", port=port, lifespan="off", log_level="error"))
+    task = asyncio.create_task(server.serve())
+    while not server.started:
+        await asyncio.sleep(0.05)
+    url = f"http://127.0.0.1:{port}"
+    try:
+        async with async_playwright() as p:
+            ctx = await launch_chrome(p, tmp_path / "profil", url, auth.create_session(user["id"]))
+            assert await wait_bridge(user["id"], 10), "l'extension ne s'est pas connectée à Ely"
+            await ctx.close()
+    finally:
+        server.should_exit = True
+        await task
+    assert seen and not any("token" in q for q in seen), seen

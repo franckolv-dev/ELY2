@@ -4,14 +4,16 @@ from __future__ import annotations
 import asyncio
 
 from ..browser import CONSENT_JS, manager
-from ..chrome import FIND_JS
-from . import ToolContext, ToolResult, tool
+from ..chrome import FIND_JS, ChromeLost
+from ..netguard import refusal
+from . import ToolContext, ToolResult, tool, uncertain
 
 ACTIONS = ["open", "snapshot", "click", "type", "select", "press", "scroll", "back", "screenshot", "wait",
            "text", "tabs", "switch_tab", "eval", "upload", "close_tab"]
 
 
 ELEMENT_ACTIONS = {"click", "type", "select", "upload"}
+ACTING = ELEMENT_ACTIONS | {"press", "eval", "back"}  # agissent sur la page : une coupure en plein vol rend l'issue incertaine
 
 
 async def _present(page, ref: int) -> bool:
@@ -56,9 +58,21 @@ Identifiants : outil credentials. Code de vérification envoyé par e-mail : ouv
     },
     ["action"], label="Navigateur", icon="🌐", timeout=150, untrusted=True,
 )
-async def browser(ctx: ToolContext, action: str, url: str = "", ref: int | None = None, text: str = "",
-                  submit: bool = False, key: str = "", direction: str = "down", seconds: float = 2,
-                  tab: int | None = None, js: str = "", new_tab: bool = False) -> ToolResult:
+async def browser(ctx: ToolContext, action: str, **kw) -> ToolResult:
+    url = kw.get("url") or ""
+    if action == "open" and url and url != "about:blank" and (why := await refusal(url, ctx.is_admin)):
+        return ToolResult(f"Adresse refusée : {why}.", is_error=True)  # avant même d'ouvrir un navigateur
+    try:
+        return await _browser(ctx, action, **kw)
+    except ChromeLost as e:
+        if action in ACTING:
+            return ToolResult(uncertain(f"{e} pendant l'action {action}"), is_error=True)
+        raise
+
+
+async def _browser(ctx: ToolContext, action: str, url: str = "", ref: int | None = None, text: str = "",
+                   submit: bool = False, key: str = "", direction: str = "down", seconds: float = 2,
+                   tab: int | None = None, js: str = "", new_tab: bool = False) -> ToolResult:
     ub = await manager.for_user(ctx.user_id)
     page_key = ctx.extra.get("browser_key", "main")
     async with ub.lock(page_key):
@@ -102,6 +116,8 @@ async def browser(ctx: ToolContext, action: str, url: str = "", ref: int | None 
             try:
                 await el.scroll_into_view_if_needed(timeout=5000)
                 await el.click(timeout=8000)
+            except ChromeLost:
+                raise  # le clic est peut-être parti : surtout pas un second par JavaScript
             except Exception:
                 await el.evaluate("e => e.click()")
             await ub.settle(page)
