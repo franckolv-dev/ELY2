@@ -94,7 +94,7 @@ async def email_send(ctx: ToolContext, body: str, to: str = "", subject: str = "
 Avec Gmail, la requête suit la syntaxe Gmail (from:, subject:, is:unread, newer_than:7d, has:attachment…).""",
       {"query": {"type": "string"}, "limit": {"type": "integer", "description": "défaut 15"},
        "unread_only": {"type": "boolean"}, "folder": {"type": "string", "description": "Dossier IMAP (défaut INBOX)"}},
-      [], label="Recherche e-mail", icon="📬", timeout=90)
+      [], label="Recherche e-mail", icon="📬", timeout=90, untrusted=True)
 async def email_search(ctx: ToolContext, query: str = "", limit: int = 15, unread_only: bool = False, folder: str = "INBOX") -> ToolResult:
     backend = _backend(ctx)
     if not backend:
@@ -113,7 +113,7 @@ async def email_search(ctx: ToolContext, query: str = "", limit: int = 15, unrea
 
 
 @tool("email_read", "Lit un e-mail complet (expéditeur, destinataires, corps, pièces jointes) à partir de son id.",
-      {"id": {"type": "string"}, "folder": {"type": "string"}}, ["id"], label="Lecture e-mail", icon="📨", timeout=60)
+      {"id": {"type": "string"}, "folder": {"type": "string"}}, ["id"], label="Lecture e-mail", icon="📨", timeout=60, untrusted=True)
 async def email_read(ctx: ToolContext, id: str, folder: str = "INBOX") -> ToolResult:
     backend = _backend(ctx)
     if not backend:

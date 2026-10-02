@@ -5,13 +5,16 @@ import asyncio
 import base64
 import io
 import os
+import re
 import signal
 import sys
 import time
 import uuid
 from pathlib import Path
 
-from ..config import settings
+from dotenv import dotenv_values
+
+from ..config import ROOT, settings
 from . import ToolContext, ToolResult, tool
 
 IMAGE_EXT = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif"}
@@ -62,7 +65,7 @@ def read_any(path: Path, offset: int = 0, limit: int = 20000) -> tuple[str, list
 
 @tool("file_read", "Lit un fichier de l'espace de fichiers de l'utilisateur (texte, PDF, Word, Excel, image…).",
       {"path": {"type": "string"}, "offset": {"type": "integer"}, "limit": {"type": "integer"}},
-      ["path"], label="Lecture de fichier", icon="📖", timeout=60)
+      ["path"], label="Lecture de fichier", icon="📖", timeout=60, untrusted=True)
 async def file_read(ctx: ToolContext, path: str, offset: int = 0, limit: int = 20000) -> ToolResult:
     p = ctx.resolve_path(path)
     if not p.exists():
@@ -111,10 +114,35 @@ def _snapshot(root: Path) -> dict[str, float]:
     return out
 
 
+def received_path(workspace: Path, name: str) -> Path:
+    """Emplacement d'un fichier reçu (envoi depuis l'interface, Telegram) : nom nettoyé, dans Reçus/, sans écraser."""
+    clean = re.sub(r"[^\w.\- ()àâäéèêëîïôöùûüç]", "_", Path(name or "fichier").name)[:120].lstrip(".") or "fichier"
+    dest = workspace / "Reçus" / clean
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.exists():
+        dest = dest.with_name(f"{dest.stem}-{int(time.time() * 1000)}{dest.suffix}")
+    return dest
+
+
+SECRET_NAME = re.compile(r"KEY|TOKEN|SECRET|PASS|CREDENTIAL|COOKIE|AUTH", re.I)
+KEEP = {"SSH_AUTH_SOCK"}  # agent SSH (git push…) : un chemin de socket, pas un secret
+
+
+def child_env(ws: Path) -> dict[str, str]:
+    """Environnement du code lancé par l'agent : celui de la machine, sans les secrets d'Ely (.env, clés, jetons)."""
+    private = set(dotenv_values(ROOT / ".env"))
+    env = {k: v for k, v in os.environ.items() if k in KEEP or (k not in private and not SECRET_NAME.search(k))}
+    return {**env, "PYTHONIOENCODING": "utf-8", "MPLBACKEND": "Agg", "ELY_WORKSPACE": str(ws)}
+
+
+def code_allowed(ctx: ToolContext) -> bool:
+    return settings.allow_code and (ctx.is_admin or settings.allow_code_for_all)
+
+
 async def _run(ctx: ToolContext, argv: list[str], timeout: int) -> ToolResult:
     ws = ctx.workspace
     before = _snapshot(ws)
-    env = {**os.environ, "PYTHONIOENCODING": "utf-8", "MPLBACKEND": "Agg", "ELY_WORKSPACE": str(ws)}
+    env = child_env(ws)
     proc = await asyncio.create_subprocess_exec(*argv, cwd=str(ws), env=env, stdout=asyncio.subprocess.PIPE,
                                                 stderr=asyncio.subprocess.STDOUT, start_new_session=True)
 
@@ -145,7 +173,7 @@ async def _run(ctx: ToolContext, argv: list[str], timeout: int) -> ToolResult:
 Bibliothèques disponibles : requests/httpx, pandas si installé, openpyxl, python-docx, reportlab, pypdf, pillow, numpy, matplotlib si installé.
 Idéal pour calculs, analyse de données, conversion et génération de documents (Word, Excel, PDF, graphiques). Affiche les résultats avec print().""",
       {"code": {"type": "string"}, "timeout": {"type": "integer", "description": "secondes (défaut 120)"}},
-      ["code"], label="Python", icon="🐍", timeout=900, available=lambda ctx: settings.allow_code)
+      ["code"], label="Python", icon="🐍", timeout=900, available=code_allowed)
 async def run_python(ctx: ToolContext, code: str, timeout: int = 120) -> ToolResult:
     tmp = ctx.workspace / ".ely"
     tmp.mkdir(exist_ok=True)
@@ -160,6 +188,6 @@ async def run_python(ctx: ToolContext, code: str, timeout: int = 120) -> ToolRes
 @tool("run_shell", "Exécute une commande shell (bash) sur le serveur d'Ely, dans l'espace de fichiers de l'utilisateur.",
       {"command": {"type": "string"}, "timeout": {"type": "integer", "description": "secondes (défaut 120)"}},
       ["command"], label="Terminal", icon="🖥️", timeout=900,
-      available=lambda ctx: settings.allow_code and (ctx.is_admin or settings.allow_shell_for_all))
+      available=code_allowed)
 async def run_shell(ctx: ToolContext, command: str, timeout: int = 120) -> ToolResult:
     return await _run(ctx, ["bash", "-lc", command], max(5, min(timeout, 880)))

@@ -260,8 +260,9 @@ class OpenAICompatProvider:
                                     slot["extra"] = {"extra_content": tc["extra_content"]}
                             if choice.get("finish_reason"):
                                 finish = choice["finish_reason"]
-        except httpx.TimeoutException as e:
-            raise LLMError(f"{self.name}: délai dépassé ({e.__class__.__name__})", retryable=True) from e
+        except httpx.TimeoutException as e:  # serveur muet : le même modèle ferait pareil, on passe au suivant
+            raise LLMError(f"{self.name}: aucune réponse en {self.timeout:.0f} s ({e.__class__.__name__})",
+                           retryable=True, kind="timeout") from e
         except httpx.HTTPError as e:
             raise LLMError(f"{self.name}: erreur réseau {e.__class__.__name__}: {e}", retryable=True) from e
 

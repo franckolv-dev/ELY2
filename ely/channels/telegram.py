@@ -16,6 +16,8 @@ from ..db import db, now
 from ..integrations import get, put, remove
 from ..notify import telegram_send
 
+LINK_MINUTES = 30  # validité du code de liaison (Réglages → Connexions → Telegram)
+
 log = logging.getLogger("ely.telegram")
 API = "https://api.telegram.org/bot{token}/{method}"
 _username = ""
@@ -69,14 +71,17 @@ async def handle(update: dict) -> None:
     from ..agent.runner import runner
 
     msg = update.get("message") or update.get("edited_message")
-    if not msg:
+    if not msg or msg["chat"].get("type", "private") != "private":  # groupe : chacun y parlerait au nom du compte relié
         return
     chat_id = msg["chat"]["id"]
     text = msg.get("text") or msg.get("caption") or ""
     if text.startswith("/start"):
         code = text.split(maxsplit=1)[1].strip() if " " in text else ""
-        row = db.one("SELECT user_id FROM integrations WHERE provider = 'telegram_pending' AND json_extract(data, '$.code') = ?", (code,))
-        if row:
+        row = db.one("SELECT user_id FROM integrations WHERE provider = 'telegram_pending' AND json_extract(data, '$.code') = ? "
+                     "AND json_extract(data, '$.at') > ?", (code, now() - LINK_MINUTES * 60))
+        if row and code:
+            db.run("DELETE FROM integrations WHERE provider = 'telegram' AND json_extract(data, '$.chat_id') = ? AND user_id != ?",
+                   (chat_id, row["user_id"]))  # un chat ne parle qu'au nom d'un seul compte
             put(row["user_id"], "telegram", {"chat_id": chat_id, "username": msg["from"].get("username", "")})
             remove(row["user_id"], "telegram_pending")
             linked = get_user(row["user_id"])
@@ -108,11 +113,11 @@ async def handle(update: dict) -> None:
                    {"type": "image", "media_type": "image/jpeg", "data": base64.b64encode(buf.getvalue()).decode()}]
     elif msg.get("document"):
         data = await download(msg["document"]["file_id"])
-        name = msg["document"].get("file_name", "document")
-        dest = settings.user_dir(user["id"]) / "files" / "Reçus" / name
-        dest.parent.mkdir(parents=True, exist_ok=True)
+        from ..tools.files import received_path
+
+        dest = received_path(settings.user_dir(user["id"]) / "files", msg["document"].get("file_name", "document"))
         dest.write_bytes(data)
-        content = f"{text}\n\n[Fichier joint : Reçus/{name}]".strip()
+        content = f"{text}\n\n[Fichier joint : Reçus/{dest.name}]".strip()
     if not content:
         return
     await runner.submit(user, conversation_for(user), content, channel="telegram")

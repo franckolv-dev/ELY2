@@ -41,7 +41,41 @@ leur historique est dans [son journal](https://github.com/franckolv-dev/ElyAgent
 - **Rechargement automatique de l'interface** quand Ely redémarre sur une nouvelle version (mise à jour,
   auto-amélioration). Si un message est en cours d'écriture, Ely le garde et propose de recharger.
 
+### Sécurité
+Ce lot fait suite à une revue complète. Ely est souvent joignable depuis Internet et partagée en famille : ces failles
+permettaient de prendre la main sur la machine.
+- **Droits vérifiés à l'exécution de chaque outil.** Jusqu'ici, un outil réservé n'était que retiré de la liste
+  proposée au modèle. Un compte ordinaire, ou un contenu piégé lu par l'agent, pouvait encore appeler par leur nom
+  `ely_plugin`, `ely_guidelines` ou `ely_deploy`.
+- **Python et terminal réservés à l'administrateur par défaut.** Le nouveau réglage `ELY_ALLOW_CODE_FOR_ALL=false`
+  remplace `ELY_ALLOW_SHELL_FOR_ALL`, qui laissait `run_python` à tous. Le code lancé ne reçoit plus les secrets
+  d'Ely (`.env`, clés, jetons).
+- **Fichiers de l'espace personnel servis sans pouvoir s'exécuter.** HTML, SVG et XML se téléchargent ; tout est
+  servi avec `nosniff` et dans un bac à sable. Une page déposée par Telegram ou un téléchargement ne peut plus agir
+  avec la session.
+- **Contenu de tiers encadré pour le modèle.** Pages web, e-mails, fichiers lus, résultats de recherche et extensions
+  MCP arrivent marqués comme des informations, jamais des consignes. Le prompt de base pose la règle.
+- **Compétences partagées réservées à l'administrateur.** Une compétence personnelle du même nom, apprise ou
+  enregistrée, n'écrase plus celle de toute la famille.
+- **Extension Chrome téléchargée liée à Ely.** Le lien `extension.zip?url=` refuse une autre adresse que celle
+  d'Ely.
+- **Premier compte (administrateur) créé seulement sur la machine d'Ely.** Une installation neuve exposée ne
+  revient plus au premier venu. Les inscriptions simultanées ne créent plus plusieurs administrateurs.
+- **Invitations à usage unique, même en cas d'envois simultanés, et valables 7 jours.**
+- **Retour OAuth (Google, LinkedIn) lié à la session de la personne qui l'a lancé.** Transmis à un autre, le lien
+  ne rattache plus ses comptes à l'expéditeur.
+- **Telegram.**
+  - Seuls les chats privés sont écoutés : relié à un groupe, chacun y aurait parlé au nom du compte.
+  - Le nom des fichiers reçus est nettoyé : il n'écrit plus hors de `Reçus/`, et un fichier existant n'est plus
+    écrasé.
+  - Le code de liaison expire après 30 minutes, et un chat n'est relié qu'à un seul compte.
+
 ### Corrigé
+- **Notifications push jamais envoyées.** La clé VAPID, enregistrée en PEM, était illisible pour `pywebpush`. Aucune
+  notification ne partait, sans erreur visible : les questions d'Ely, les résultats des tâches planifiées et les
+  rappels d'agenda n'arrivaient que par Telegram. Un service push muet est désormais abandonné au bout de 10 s.
+- **LM Studio (ou ChatGPT) qui ne répond plus du tout.** Ely passe au modèle suivant dès le premier délai réseau,
+  au lieu de trois essais de 15 minutes, soit 45 minutes perdues à chaque étape.
 - **Sécurité, pour une Ely joignable depuis Internet** :
   - la session de l'extension Chrome, qui passe dans l'adresse de son WebSocket, ne s'écrit plus en clair dans la
     console. Il en va de même pour le jeton du flux iCal ;

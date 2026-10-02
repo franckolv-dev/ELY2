@@ -60,7 +60,7 @@ async def test_files_and_python(ctx):
     r = await execute(ctx, "file_write", {"path": "notes/a.txt", "content": "bonjour"})
     assert r.files == ["notes/a.txt"]
     r = await execute(ctx, "file_read", {"path": "notes/a.txt"})
-    assert r.content == "bonjour"
+    assert r.content.splitlines()[1:] == ["bonjour", "⟦fin du contenu externe⟧"]  # contenu encadré : jamais des consignes
     r = await execute(ctx, "file_read", {"path": "../../etc/passwd"})
     assert r.is_error
     code = "import docx\nd = docx.Document(); d.add_paragraph('Rapport'); d.save('rapport.docx')\nprint(6*7)"

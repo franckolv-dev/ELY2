@@ -7,6 +7,7 @@ import io
 import json
 import mimetypes
 import re
+import threading
 import time
 from pathlib import Path
 
@@ -45,16 +46,41 @@ def setup_state():
             "version": CODE_VERSION}
 
 
+_register_lock = threading.Lock()
+LOOPBACK = {"127.0.0.1", "::1", "localhost"}
+INVITE_DAYS = 7
+
+
+def from_this_machine(request: Request) -> bool:
+    """Requête faite sur la machine d'Ely elle-même, sans passer par un proxy (en-têtes de transfert absents)."""
+    forwarded = any(request.headers.get(h) for h in ("x-forwarded-for", "forwarded", "x-real-ip"))
+    return not forwarded and bool(request.client) and request.client.host in LOOPBACK
+
+
 @router.post("/api/auth/register")
 def register(body: Credentials, request: Request, response: Response):
-    first = not db.val("SELECT COUNT(*) FROM users")
-    if not first and not settings.open_registration:
-        inv = db.one("SELECT code FROM invites WHERE code = ? AND used_by IS NULL", (body.invite.strip(),))
-        if not inv:
-            raise HTTPException(403, "Inscription sur invitation : demandez un code à l'administrateur")
-    user = auth.create_user(body.email, body.name, body.password)
-    if not first and body.invite:
-        db.run("UPDATE invites SET used_by = ? WHERE code = ?", (user["id"], body.invite.strip()))
+    code = body.invite.strip()
+    with _register_lock:  # deux inscriptions simultanées ne créent pas deux administrateurs ni deux comptes par invitation
+        first = not db.val("SELECT COUNT(*) FROM users")
+        if first and not from_this_machine(request):
+            # Ely exposée sur Internet, base neuve : le premier venu deviendrait administrateur
+            raise HTTPException(403, "Le premier compte (administrateur) se crée sur la machine où tourne Ely : "
+                                     "ouvrez http://localhost:" + str(settings.port))
+        invited = False
+        if not first and not settings.open_registration:
+            invited = db.run("UPDATE invites SET used_by = 0 WHERE code = ? AND used_by IS NULL AND created_at > ?",
+                             (code, time.time() - INVITE_DAYS * 86400)) == 1
+            if not invited:
+                raise HTTPException(403, "Inscription sur invitation : demandez un code à l'administrateur "
+                                         f"(un code sert une fois, pendant {INVITE_DAYS} jours)")
+        try:
+            user = auth.create_user(body.email, body.name, body.password)
+        except Exception:
+            if invited:
+                db.run("UPDATE invites SET used_by = NULL WHERE code = ? AND used_by = 0", (code,))
+            raise
+        if invited:
+            db.run("UPDATE invites SET used_by = ? WHERE code = ?", (user["id"], code))
     return _login_response(user, request, response)
 
 
@@ -354,11 +380,9 @@ def list_files(user=Depends(auth.current_user)):
 
 @router.post("/api/files/upload")
 async def upload(file: UploadFile = File(...), user=Depends(auth.current_user)):
-    name = re.sub(r"[^\w.\- ()àâäéèêëîïôöùûüç]", "_", Path(file.filename or "fichier").name)[:120]
-    dest = _ws(user) / "Reçus" / name
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    if dest.exists():
-        dest = dest.with_name(f"{dest.stem}-{int(time.time())}{dest.suffix}")
+    from ..tools.files import received_path
+
+    dest = received_path(_ws(user), file.filename or "fichier")
     with open(dest, "wb") as f:
         while chunk := await file.read(1 << 20):
             f.write(chunk)
@@ -373,13 +397,26 @@ def delete_file(path: str, user=Depends(auth.current_user)):
     return {"ok": True}
 
 
+# Affichés dans la page : formats inertes. Le reste (HTML, SVG, XML…) se télécharge : une page déposée dans l'espace de
+# fichiers (document Telegram, téléchargement, fichier écrit par l'agent) ne s'exécute jamais avec la session d'Ely.
+INLINE = re.compile(r"^(image/(png|jpeg|gif|webp|avif|bmp)|application/pdf|text/plain|audio/.+|video/.+)$")
+FILE_CSP = "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'"
+
+
 @router.get("/files/{path:path}")
 def serve_file(path: str, download: bool = False, user=Depends(auth.current_user)):
     p = _safe(user, path)
     if not p.is_file():
         raise HTTPException(404, "Fichier introuvable")
-    return FileResponse(p, filename=p.name if download else None,
-                        content_disposition_type="attachment" if download else "inline")
+    media = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
+    if (media.startswith("text/") and media not in ("text/html", "text/xml")) or media == "application/json":
+        media = "text/plain; charset=utf-8"  # markdown, CSV, code… lisibles, jamais interprétés
+    inline = not download and bool(INLINE.match(media.split(";")[0]))
+    headers = {"X-Content-Type-Options": "nosniff"}
+    if media != "application/pdf":  # le lecteur PDF du navigateur ne fonctionne pas dans un bac à sable
+        headers["Content-Security-Policy"] = FILE_CSP
+    return FileResponse(p, media_type=media, filename=p.name, headers=headers,
+                        content_disposition_type="inline" if inline else "attachment")
 
 
 # ---------------------------------------------------------------------- voix

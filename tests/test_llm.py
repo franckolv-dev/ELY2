@@ -34,6 +34,10 @@ async def openai_chat(request: Request):
     received["openai"] = body
     if body["model"] == "rate-limited":
         return JSONResponse({"error": "slow down"}, status_code=429)
+    if body["model"] == "muet":  # LM Studio figé : la requête est acceptée, puis plus rien
+        import asyncio
+
+        await asyncio.sleep(30)
     if body["model"] == "sans-fin":  # modèle local qui boucle : il génère sans jamais s'arrêter
         async def endless():
             import asyncio
@@ -267,3 +271,24 @@ async def test_a_model_that_never_stops_is_capped_then_replaced(server, fake, mo
     assert resp.text == "Réponse du modèle de secours." and resp.model == "fake:agent"
     assert time.monotonic() - started < 10  # un seul essai sur le modèle bloqué, pas trois
     assert any(ref == "fake:agent" and "lmstudio:sans-fin indisponible (pas de réponse complète" in why for ref, why in switches), switches
+
+
+async def test_a_silent_local_model_is_skipped_at_once(server, fake):
+    """LM Studio figé n'envoie plus rien : au premier délai réseau, Ely passe au modèle suivant, sans trois essais de
+    15 minutes sur le même modèle (45 min perdues à chaque étape)."""
+    from ely.db import db
+    from ely.llm import registry
+
+    registry.providers["lmstudio"] = OpenAICompatProvider("lmstudio", server + "/v1", "lm-studio", timeout=1)
+    db.set_setting("model_main", "lmstudio:muet")
+    db.set_setting("model_fallbacks", "fake:agent")
+    fake.script = lambda **kw: "Réponse du modèle de secours."
+    switches = []
+
+    async def on_switch(ref, reason):
+        switches.append(reason)
+
+    started = time.monotonic()
+    resp = await registry.chat(role="main", system=["s"], messages=[{"role": "user", "content": "x"}], on_switch=on_switch)
+    assert resp.model == "fake:agent" and time.monotonic() - started < 5
+    assert any("lmstudio:muet indisponible" in why and "aucune réponse" in why for why in switches), switches

@@ -37,17 +37,22 @@ def save_subscription(user_id: int, sub: dict) -> None:
            (sub["endpoint"], user_id, json.dumps(sub), now()))
 
 
+PUSH_TIMEOUT = 10  # s : un service de notification muet ne bloque jamais le planificateur
+
+
 def _push_sync(sub: dict, payload: dict, keys: dict) -> int:
+    from py_vapid import Vapid
     from pywebpush import WebPushException, webpush
 
     try:
-        webpush(subscription_info=sub, data=json.dumps(payload), vapid_private_key=keys["private_pem"],
-                vapid_claims={"sub": settings.vapid_contact}, ttl=86400)
+        # la clé est en PEM : passée en texte, pywebpush la lit comme du base64 et échoue (aucun push n'arrivait)
+        webpush(subscription_info=sub, data=json.dumps(payload), vapid_private_key=Vapid.from_pem(keys["private_pem"].encode()),
+                vapid_claims={"sub": settings.vapid_contact}, ttl=86400, timeout=PUSH_TIMEOUT)
         return 201
     except WebPushException as e:
         return e.response.status_code if e.response is not None else 0
     except Exception as e:
-        log.info("push impossible : %s", e)
+        log.warning("push impossible : %s", e)
         return 0
 
 

@@ -176,7 +176,8 @@ def search_history(user_id: int, query: str, limit: int = 10, exclude_conversati
 # ---------------------------------------------------------------------- compétences
 def save_skill(user_id: int | None, name: str, description: str, content: str) -> tuple[int, bool]:
     name = name.strip()[:80]
-    existing = db.one("SELECT id FROM skills WHERE lower(name) = lower(?) AND (user_id IS ? OR user_id IS NULL)", (name, user_id))
+    # chacun ne met à jour que ses propres compétences ; une compétence partagée ne change que par un enregistrement partagé
+    existing = db.one("SELECT id FROM skills WHERE lower(name) = lower(?) AND user_id IS ?", (name, user_id))
     if existing:
         sid = existing["id"]
         db.update("skills", "id = ?", (sid,), description=description, content=content, updated_at=now())

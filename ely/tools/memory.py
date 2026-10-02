@@ -48,5 +48,7 @@ Contenu : étapes concrètes, URLs, pièges rencontrés et solutions. Décris co
        "shared": {"type": "boolean", "description": "Utile à tous les utilisateurs (pas de données personnelles)"}},
       ["name", "description", "content"], label="Nouvelle compétence", icon="🎓", timeout=20)
 async def skill_save(ctx: ToolContext, name: str, description: str, content: str, shared: bool = False) -> ToolResult:
+    shared = shared and ctx.is_admin  # une compétence partagée entre dans le contexte de toute la famille
     sid, created = store.save_skill(None if shared else ctx.user_id, name, description, content)
-    return ToolResult(f"Compétence « {name} » {'créée' if created else 'mise à jour'} (#{sid}).")
+    return ToolResult(f"Compétence « {name} » {'créée' if created else 'mise à jour'} (#{sid})"
+                      + (" pour tous." if shared else " pour cette personne."))

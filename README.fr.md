@@ -209,9 +209,12 @@ Avec une clé d'API, Claude est facturé au token : Ely ne le choisit jamais d'e
 - **Rôles** : agent principal, escalade, auto-amélioration, contrôleur rapide, tâches de fond locales, vecteurs. Tout est choisi
   automatiquement, et modifiable dans Réglages → Modèles avec effet immédiat. Chaque conversation peut imposer son
   modèle (menu en haut).
-- **Utilisateurs** : chacun a sa mémoire, ses connexions, ses fichiers, son navigateur et ses tâches. Premier compte
-  = admin ; les suivants s'inscrivent par lien d'invitation, ou sont créés par l'admin. Consommation et coût par
-  utilisateur dans Réglages → Consommation.
+- **Utilisateurs** : chacun a sa mémoire, ses connexions, ses fichiers, son navigateur et ses tâches.
+  - Le premier compte est l'administrateur. Il se crée sur la machine d'Ely elle-même (http://localhost:8000).
+  - Les suivants s'inscrivent par lien d'invitation (usage unique, valable 7 jours), ou sont créés par l'admin.
+  - Python et le terminal s'exécutent sur la machine : ils sont réservés à l'administrateur, sauf
+    `ELY_ALLOW_CODE_FOR_ALL=true`.
+  - Consommation et coût par utilisateur dans Réglages → Consommation.
 
 ## Connexions
 

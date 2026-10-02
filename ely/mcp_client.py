@@ -107,7 +107,8 @@ class Connection:
                 return await self.call(_remote, args)
 
             TOOLS[tname] = Tool(name=tname, description=f"[{self.name}] {(t.description or t.name)[:900]}", parameters=schema,
-                                func=call, label=f"{self.name} · {t.name}", icon="🧩", timeout=300, source=f"mcp:{self.name}")
+                                func=call, label=f"{self.name} · {t.name}", icon="🧩", timeout=300, source=f"mcp:{self.name}",
+                                untrusted=True)
             self.tools.append(tname)
 
     def _unregister(self) -> None:

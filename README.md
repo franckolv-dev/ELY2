@@ -210,9 +210,12 @@ With an API key, Claude is billed per token: Ely never picks it on its own, you 
 - **Roles**: main agent, escalation, self-improvement, fast controller, local background tasks, embeddings. Everything is chosen
   automatically, and can be changed in Settings → Models with immediate effect. Each conversation can pin its own
   model (menu at the top).
-- **Users**: each has their own memory, connections, files, browser and tasks. First account
-  = admin; the following ones sign up with an invitation link, or are created by the admin. Usage and cost per
-  user in Settings → Usage.
+- **Users**: each has their own memory, connections, files, browser and tasks.
+  - The first account is the administrator. It is created on Ely's own machine (http://localhost:8000).
+  - The following ones sign up with an invitation link (single use, valid 7 days), or are created by the admin.
+  - Python and the terminal run on the machine: they are reserved to the administrator, unless
+    `ELY_ALLOW_CODE_FOR_ALL=true`.
+  - Usage and cost per user in Settings → Usage.
 
 ## Connections
 
