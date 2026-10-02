@@ -67,7 +67,16 @@ async def test_metrics_report(dev_ctx):
     assert "Performances d'Ely" in r.content
 
 
-async def test_code_self_modification_pipeline(dev_ctx, fake_repo: Path):
+async def test_code_self_modification_pipeline(dev_ctx, fake_repo: Path, monkeypatch):
+    from ely.selfdev import github
+
+    published = []
+
+    async def publish(summary, sha):
+        published.append((summary, sha))
+        return "https://github.com/example/ely/pull/1"
+
+    monkeypatch.setattr(github, "publish_improvement", publish)
     r = await execute(dev_ctx, "ely_code", {"action": "read", "path": "app.py"})
     assert "return a - b" in r.content
     ok, out = await pipeline.run_tests()
@@ -86,6 +95,8 @@ async def test_code_self_modification_pipeline(dev_ctx, fake_repo: Path):
     log = subprocess.run(["git", "log", "--oneline"], cwd=fake_repo, capture_output=True, text=True).stdout
     assert "ely-self: corrige add" in log
     assert db.one("SELECT * FROM improvements WHERE kind = 'code' AND status = 'deployed'")
+    assert published == [("corrige add", await pipeline.head())]
+    assert "https://github.com/example/ely/pull/1" in r.content
 
 
 async def test_tests_run_on_edited_code_not_stale_bytecode(dev_ctx, fake_repo):

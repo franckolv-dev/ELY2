@@ -71,11 +71,17 @@ def integrations_status(user_id: int) -> str:
     return "\n".join(lines)
 
 
-async def dynamic_block(user: dict, objective: str, channel: str = "web") -> str:
+def today_text(user: dict) -> str:
+    """« le jeudi 1 octobre 2026, il est 09:00 (Europe/Paris) », dans le fuseau de la personne."""
     tz = (user.get("settings") or {}).get("timezone") or settings.timezone
     nowdt = dt.datetime.now(ZoneInfo(tz))
     jours = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
     mois = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
+    return f"le {jours[nowdt.weekday()]} {nowdt.day} {mois[nowdt.month - 1]} {nowdt.year}, il est {nowdt:%H:%M} ({tz})"
+
+
+async def dynamic_block(user: dict, objective: str, channel: str = "web") -> str:
+    tz = (user.get("settings") or {}).get("timezone") or settings.timezone
     address = "tutoiement (elle l'a demandé)" if addresses_informally(user) else "vouvoiement"
     parts = [f"# Personne\nNom : {user['name']} · e-mail du compte : {user['email']} · fuseau : {tz} · s'adresser à elle : {address}"]
     profile = store.get_profile(user["id"])
@@ -93,6 +99,5 @@ async def dynamic_block(user: dict, objective: str, channel: str = "web") -> str
     if guidelines:
         parts.append(f"# Leçons tirées de l'expérience\n{guidelines}")
     parts.append(f"# Connexions\n{integrations_status(user['id'])}")
-    parts.append(f"# Contexte\nNous sommes le {jours[nowdt.weekday()]} {nowdt.day} {mois[nowdt.month - 1]} {nowdt.year}, "
-                 f"il est {nowdt:%H:%M} ({tz}). Canal : {channel}.")
+    parts.append(f"# Contexte\nNous sommes {today_text(user)}. Canal : {channel}.")
     return "\n\n".join(parts)

@@ -112,6 +112,28 @@ async def email_search(ctx: ToolContext, query: str = "", limit: int = 15, unrea
     return ToolResult(f"{len(items)} e-mail(s) :\n" + "\n".join(lines))
 
 
+MANAGED = {"trash": "mis à la corbeille", "archive": "archivé(s)", "label": "classé(s) sous « {} »",
+           "read": "marqué(s) comme lu(s)", "unread": "marqué(s) comme non lu(s)"}
+
+
+@tool("email_manage", """Trie des e-mails à partir de leurs ids (email_search) : trash (corbeille, récupérable), archive,
+label (déplace sous le libellé `label`, créé s'il manque), read, unread. Traite tous les ids en un appel.""",
+      {"ids": {"type": "array", "items": {"type": "string"}},
+       "action": {"type": "string", "enum": list(MANAGED)}, "label": {"type": "string"}},
+      ["ids", "action"], label="Tri e-mail", icon="🗂️", timeout=120)
+async def email_manage(ctx: ToolContext, ids: list[str], action: str, label: str = "") -> ToolResult:
+    backend = _backend(ctx)
+    if not backend:
+        return ToolResult(NO_MAIL, is_error=True)
+    if backend != "gmail":
+        return ToolResult("Tri possible seulement avec la connexion Google : pour cette boîte, passe par le webmail avec browser.",
+                          is_error=True)
+    if action not in MANAGED or (action == "label" and not label.strip()) or not ids:
+        return ToolResult(f"Indique des ids, une action parmi {', '.join(MANAGED)} et, pour label, le libellé.", is_error=True)
+    await g.gmail_manage(ctx.user_id, ids, action, label.strip())
+    return ToolResult(f"{len(ids)} e-mail(s) {MANAGED[action].format(label.strip())}.")
+
+
 @tool("email_read", "Lit un e-mail complet (expéditeur, destinataires, corps, pièces jointes) à partir de son id.",
       {"id": {"type": "string"}, "folder": {"type": "string"}}, ["id"], label="Lecture e-mail", icon="📨", timeout=60, untrusted=True)
 async def email_read(ctx: ToolContext, id: str, folder: str = "INBOX") -> ToolResult:
