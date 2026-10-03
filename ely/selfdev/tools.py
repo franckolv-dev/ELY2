@@ -30,7 +30,10 @@ Méthode :
    c) un outil manquant ou plus fiable → ely_plugin (Python, chargé à chaud, sans redémarrage)
    d) un défaut ou une lenteur du cœur → ely_code / ely_edit dans la copie de travail, ely_test, puis ely_deploy.
 3. Cœur : changements petits et ciblés, un test ajouté pour chaque correction, ely_test vert avant ely_deploy.
-   Ne supprime ni n'affaiblis jamais un test pour le faire passer. ely_deploy redémarre Ely (retour arrière automatique si échec).
+   Ne supprime ni n'affaiblis jamais un test pour le faire passer. ely_deploy publie le commit testé sur une branche GitHub
+   et ouvre une PR attribuée à Ely (auto-amélioration), puis active localement le code et redémarre (retour arrière si échec).
+   La publication doit réussir avant l'activation. Donne le lien de la PR et demande à l'administrateur de la fusionner ;
+   laisse-lui la fusion GitHub. Les leçons, souvenirs et données privées restent hors du dépôt.
 4. Tu peux améliorer ton processus d'amélioration lui-même (ely/selfdev/, ce guide compris).
 5. Termine par un compte rendu : problèmes trouvés, améliorations appliquées, effet attendu, idées pour la suite.
 Architecture : ely/agent (boucle, prompts, runner) · ely/llm (modèles) · ely/tools (outils) · ely/memory · ely/selfdev ·
@@ -49,8 +52,10 @@ Outils :
   actions avec arguments et résultats, erreurs, refus du contrôleur) : le point de départ pour comprendre un échec ;
   mcp__ely__recall : souvenirs et conversations passées ; mcp__ely__ely_code : diff et reset de la copie ;
 - mcp__ely__ely_test : suite de tests sur la copie (pattern = filtre -k) ; tu n'as pas de terminal ;
-- mcp__ely__ely_deploy : tests, commit et fusion dans la version active ; Ely redémarre à la fin de ta mission, avec
-  retour arrière automatique si elle ne démarre pas ;
+- mcp__ely__ely_deploy : tests, commit, push sur une branche GitHub dédiée et PR attribuée à Ely (auto-amélioration),
+  puis fusion locale dans la version active ; si la publication échoue, aucune activation. Donne le lien de la PR
+  et demande à l'administrateur de la fusionner sur GitHub ; laisse-lui cette fusion. Ely redémarre à la fin de ta
+  mission, avec retour arrière automatique si elle ne démarre pas ;
 - mcp__ely__ely_guidelines, mcp__ely__skill_save (shared=true), mcp__ely__ely_plugin : leçons, compétences, plugins à chaud.
 Méthode : diagnostique d'abord (ely_metrics, puis ely_journal sur les cas concrets), puis choisis le levier le plus simple et le plus sûr qui règle
 la cause (leçon, compétence, plugin, code). Pour le code : changements petits et ciblés, un test de comportement pour
@@ -268,7 +273,7 @@ async def ely_test(ctx: ToolContext, pattern: str = "") -> ToolResult:
     return ToolResult(("✅ Tests OK\n" if ok else "❌ Tests en échec\n") + out, is_error=not ok)
 
 
-@tool("ely_deploy", "Valide les modifications de la copie de travail (tests obligatoires), les active et redémarre Ely.",
+@tool("ely_deploy", "Teste et commit les modifications, pousse une branche GitHub et ouvre une PR à faire fusionner par l'administrateur, puis active localement et redémarre Ely.",
       {"summary": {"type": "string", "description": "Résumé de l'amélioration (message de commit)"}},
       ["summary"], label="Déploiement", icon="🚀", admin_only=True, available=_selfdev, timeout=1200)
 async def ely_deploy(ctx: ToolContext, summary: str) -> ToolResult:

@@ -42,6 +42,48 @@ async def test_telegram_link_and_conversation(fake, user, monkeypatch):
         runner.listeners.remove(telegram.on_event)
 
 
+async def test_draft_rejected_by_controller_never_reaches_telegram(fake, user, monkeypatch):
+    """Le modèle annonce « je lance la recherche » sans rien faire : le contrôleur le relance, et seule la vraie
+    réponse part sur Telegram."""
+    import json
+
+    from conftest import call
+
+    sent: list[tuple] = []
+
+    async def fake_send(chat_id, text):
+        sent.append((chat_id, text))
+
+    async def fake_call(method, **params):
+        return {"ok": True, "result": {}}
+
+    verdicts = [{"done": False, "missing": "aucune recherche effectuée"}]
+
+    def script(model, system, messages, tools):
+        text = " ".join(str(m["content"]) for m in messages if m["role"] == "user")
+        if "contrôleur qualité" in str(messages[-1]["content"]):
+            return json.dumps(verdicts.pop(0) if verdicts else {"done": True, "missing": ""})
+        if "Contrôle automatique" not in text:
+            return "Je lance immédiatement la recherche, je reviens vers vous."
+        if not any(m["role"] == "tool" for m in messages):
+            return call("remember", fact="Franck suit l'actualité de l'IA")
+        return "Voici les nouveautés IA du jour : trois modèles publiés."
+
+    monkeypatch.setattr(telegram, "telegram_send", fake_send)
+    monkeypatch.setattr(telegram, "call", fake_call)
+    put(user["id"], "telegram", {"chat_id": 556})
+    runner.listeners.append(telegram.on_event)
+    try:
+        fake.script = script
+        await telegram.handle({"update_id": 4, "message": {"chat": {"id": 556}, "from": {}, "text": "Lance une recherche sur les news IA"}})
+        await wait_idle(telegram.conversation_for(user))
+        await asyncio.sleep(0.2)
+    finally:
+        runner.listeners.remove(telegram.on_event)
+    texts = [text for chat, text in sent if chat == 556]
+    assert texts == ["Voici les nouveautés IA du jour : trois modèles publiés."], texts
+
+
 WEBHOOK_CONFLICT = {"ok": False, "error_code": 409,
                     "description": "Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first"}
 

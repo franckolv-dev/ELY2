@@ -74,6 +74,25 @@ async def test_controller_forces_agent_to_continue(fake, user):
     assert datas[-1]["content"].startswith("Rendez-vous ajouté")
 
 
+async def test_verifier_knows_today_date(fake, user):
+    """Le contrôleur juge « nous serons le … » d'après la date du jour, comme l'agent, pas d'après ses connaissances."""
+    from ely.agent.prompts import today_text
+
+    prompts = []
+
+    def fn(model, system, messages, tools):
+        text = last_user_text(messages)
+        if "contrôleur qualité" in text:
+            prompts.append(text)
+        return script(lambda m, t: "Dans 25 jours, nous serons le 27 octobre.")(model, system, messages, tools)
+
+    fake.script = fn
+    cid = new_conversation(user)
+    await runner.submit(user, cid, "Quelle date serons-nous dans 25 jours ?")
+    await wait_idle(cid)
+    assert prompts and today_text(user).split(", il est")[0] in prompts[0]
+
+
 async def test_no_endless_loop_without_progress(fake, user):
     fake.script = script(lambda m, t: "Impossible.", verdicts=[{"done": False, "missing": "rien n'est fait"}] * 20)
     cid = new_conversation(user)

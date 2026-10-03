@@ -1,6 +1,7 @@
 """Google : OAuth + Gmail, Agenda, Contacts (API REST directes, sans SDK)."""
 from __future__ import annotations
 
+import asyncio
 import base64
 import time
 from email.message import EmailMessage
@@ -70,8 +71,12 @@ async def _token(user_id: int) -> str:
 
 async def api(user_id: int, method: str, url: str, **kw) -> dict:
     token = await _token(user_id)
-    async with httpx.AsyncClient(timeout=40) as c:
-        r = await c.request(method, url, headers={"Authorization": f"Bearer {token}"}, **kw)
+    for attempt in range(3):  # 429 : requête refusée sans être exécutée, on peut la refaire
+        async with httpx.AsyncClient(timeout=40) as c:
+            r = await c.request(method, url, headers={"Authorization": f"Bearer {token}"}, **kw)
+        if r.status_code != 429 or attempt == 2:
+            break
+        await asyncio.sleep(1 + 2 * attempt)
     if r.status_code >= 400:
         raise RuntimeError(f"Google API {r.status_code} : {r.text[:400]}")
     return r.json() if r.content else {}
@@ -79,6 +84,7 @@ async def api(user_id: int, method: str, url: str, **kw) -> dict:
 
 # ---------------------------------------------------------------------- Gmail
 GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me"
+GMAIL_PARALLEL = 5  # Gmail refuse au-delà d'une dizaine de requêtes simultanées (429 « Too many concurrent requests »)
 
 
 def _header(msg: dict, name: str) -> str:
@@ -104,14 +110,14 @@ def _body(part: dict) -> tuple[str, str]:
 
 
 async def gmail_search(user_id: int, query: str, limit: int) -> list[dict]:
-    import asyncio
-
     res = await api(user_id, "GET", f"{GMAIL}/messages", params={"q": query, "maxResults": limit})
     ids = [m["id"] for m in res.get("messages", [])]
+    slots = asyncio.Semaphore(GMAIL_PARALLEL)
 
     async def meta(mid):
-        m = await api(user_id, "GET", f"{GMAIL}/messages/{mid}", params={
-            "format": "metadata", "metadataHeaders": ["From", "To", "Subject", "Date"]})
+        async with slots:
+            m = await api(user_id, "GET", f"{GMAIL}/messages/{mid}", params={
+                "format": "metadata", "metadataHeaders": ["From", "To", "Subject", "Date"]})
         return {"id": mid, "from": _header(m, "From"), "to": _header(m, "To"), "subject": _header(m, "Subject"),
                 "date": _header(m, "Date"), "snippet": m.get("snippet", ""), "unread": "UNREAD" in m.get("labelIds", [])}
 
@@ -147,6 +153,26 @@ async def gmail_send(user_id: int, msg: EmailMessage, draft: bool = False, threa
     if draft:
         return await api(user_id, "POST", f"{GMAIL}/drafts", json={"message": body})
     return await api(user_id, "POST", f"{GMAIL}/messages/send", json=body)
+
+
+async def gmail_manage(user_id: int, ids: list[str], action: str, label: str = "") -> None:
+    if action == "trash":
+        slots = asyncio.Semaphore(GMAIL_PARALLEL)
+
+        async def one(mid):
+            async with slots:
+                await api(user_id, "POST", f"{GMAIL}/messages/{mid}/trash")
+
+        await asyncio.gather(*(one(i) for i in ids))
+        return
+    add, remove = {"archive": ([], ["INBOX"]), "read": ([], ["UNREAD"]), "unread": (["UNREAD"], [])}.get(action, ([], []))
+    if action == "label":
+        labels = (await api(user_id, "GET", f"{GMAIL}/labels")).get("labels", [])
+        lid = next((x["id"] for x in labels if x["name"].lower() == label.lower()), None)
+        if not lid:
+            lid = (await api(user_id, "POST", f"{GMAIL}/labels", json={"name": label}))["id"]
+        add, remove = [lid], ["INBOX"]
+    await api(user_id, "POST", f"{GMAIL}/messages/batchModify", json={"ids": ids, "addLabelIds": add, "removeLabelIds": remove})
 
 
 # ---------------------------------------------------------------------- Agenda

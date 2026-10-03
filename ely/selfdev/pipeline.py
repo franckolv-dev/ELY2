@@ -2,7 +2,8 @@
 
 1. Ely travaille dans une copie git isolée (worktree, branche ely-self).
 2. La suite de tests doit passer dans cette copie.
-3. Les changements sont validés (commit) puis fusionnés dans la version active.
+3. Les changements sont validés (commit), sauvegardés sur une branche GitHub avec une PR
+   à fusionner par l'administrateur, puis fusionnés dans la version active locale.
 4. Ely redémarre (code de sortie 42) ; le lanceur vérifie la santé de la nouvelle
    version et revient automatiquement à la précédente en cas de problème.
 """
@@ -162,11 +163,21 @@ async def deploy(summary: str, restart: bool = True) -> dict:
     if code:
         return {"ok": False, "message": f"commit impossible : {out}"}
     new_sha = (await git("rev-parse", "HEAD", cwd=WORKTREE))[1]
+    from .github import publish_improvement
+
+    try:
+        pr_url = await publish_improvement(summary, new_sha)
+    except Exception as exc:
+        return {"ok": False, "sha": new_sha,
+                "message": f"Commit {new_sha} créé, mais publication GitHub non confirmée : {exc}. "
+                           "Aucune activation locale. Vérifier la branche ely-improvement/" + new_sha + "."}
     prev = await head()
     code, out = await git("merge", "--ff-only", BRANCH)
     if code:
-        return {"ok": False, "message": f"fusion impossible (modifications locales ?) : {out}"}
-    db.insert("improvements", kind="code", title=summary[:200], detail=f"{prev[:10]} → {new_sha[:10]}", diff=patch,
+        return {"ok": False, "pr_url": pr_url,
+                "message": f"PR publiée : {pr_url}. Fusion locale impossible (modifications locales ?) : {out}. "
+                           "Demander à l'administrateur de relire et fusionner la PR."}
+    db.insert("improvements", kind="code", title=summary[:200], detail=f"{prev[:10]} → {new_sha[:10]} · PR : {pr_url}", diff=patch,
               commit_sha=new_sha, status="deployed", created_at=now())
     (settings.data_dir / "selfdev").mkdir(parents=True, exist_ok=True)
     (settings.data_dir / "selfdev" / "last_deploy.json").write_text(json.dumps({"prev": prev, "new": new_sha, "summary": summary, "at": now()}))
@@ -179,7 +190,9 @@ async def deploy(summary: str, restart: bool = True) -> dict:
         after = "Redémarrage automatique dans quelques secondes (retour arrière automatique si problème)."
     else:
         after = "Ely redémarrera à la fin de cette session pour l'activer (retour arrière automatique si problème)."
-    return {"ok": True, "sha": new_sha, "restart": supervised, "message": "Déployé. " + after}
+    return {"ok": True, "sha": new_sha, "restart": supervised, "pr_url": pr_url,
+            "message": "Déployé localement. " + after + f" PR GitHub ouverte : {pr_url}. "
+                       "Demander à l'administrateur de la relire et de la fusionner ; ne pas la fusionner automatiquement."}
 
 
 _waiting: set[asyncio.Task] = set()
