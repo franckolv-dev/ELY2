@@ -10,6 +10,13 @@ leur historique est dans [son journal](https://github.com/franckolv-dev/ElyAgent
 
 ---
 
+## [Non publié]
+
+### Corrigé
+- **Une clé retirée ou commentée dans `.env` restait active jusqu'au redémarrage.** « Actualiser les modèles »
+  ajoutait les nouvelles clés mais n'oubliait jamais les anciennes : une clé Anthropic commentée pouvait encore servir
+  à Claude. Elle est maintenant abandonnée dès l'actualisation.
+
 ## [4.1.0] — 2026-10-03
 
 > **Ely s'ouvre à Internet et à la famille.** Revue complète de sécurité et de stabilité ; auto-amélioration

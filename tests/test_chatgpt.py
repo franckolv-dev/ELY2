@@ -175,6 +175,35 @@ def test_env_reload_picks_up_new_keys(tmp_path, monkeypatch):
         config.reload_env()
 
 
+def test_env_reload_forgets_a_key_commented_out(tmp_path, monkeypatch):
+    """Clé d'API commentée dans .env, puis « Actualiser les modèles » : Ely ne s'en sert plus, sans redémarrer
+    (elle restait active jusqu'au redémarrage, et Claude pouvait encore être facturé)."""
+    from ely import config
+    from ely.llm import claude_agent, registry
+
+    env = tmp_path / ".env"
+    env.write_text("ANTHROPIC_API_KEY=sk-ant-facturee\n")
+    monkeypatch.setattr(config, "ROOT", tmp_path)
+    monkeypatch.setattr(claude_agent, "sdk_version", lambda: "0.2.162")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    config._BOOT_ENV.discard("ANTHROPIC_API_KEY")
+    try:
+        config.reload_env()
+        registry.build_providers()
+        assert "anthropic" in registry.providers and claude_agent.status()["source"] == "api_key"
+        env.write_text("# ANTHROPIC_API_KEY=sk-ant-facturee\n")
+        config.reload_env()
+        registry.build_providers()
+        assert "anthropic" not in registry.providers and "ANTHROPIC_API_KEY" not in os.environ
+        assert not claude_agent.status()["ready"]  # plus aucune mission Claude possible
+    finally:
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+        monkeypatch.undo()
+        config.reload_env()
+        registry.build_providers()
+
+
 def test_search_chain_uses_every_configured_key(monkeypatch):
     from ely.tools import web
 
