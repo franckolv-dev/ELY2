@@ -169,6 +169,9 @@ Second lot, durcissement :
   greffer sur la tâche en cours. Le 30/09, la routine de midi attendait derrière celle du matin, bloquée.
 - Réglages → Auto-amélioration → « Lancer » ne démarrait pas la session (erreur « no running event loop » dans le
   terminal). Une erreur de lancement s'affiche désormais au lieu de rien.
+- **Le menu de modèle de la conversation suit les réglages.** Une clé ajoutée dans `.env` puis « Actualiser les
+  modèles » : ses modèles sont proposés dès la fermeture des réglages, sans recharger la page. Un fournisseur retiré
+  (clé enlevée, abonnement déconnecté) n'y figure plus et n'apparaît plus « ok » parmi les fournisseurs.
 
 ### Modifié
 - **Escalade dès le premier échec** constaté par le contrôleur d'objectif, au lieu du deuxième. Chaque bascule est

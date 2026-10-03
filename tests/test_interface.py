@@ -155,6 +155,32 @@ async def test_claude_row_says_when_the_server_does_not_know_it(ely_url, user, f
         await browser.close()
 
 
+async def test_the_model_menu_follows_the_settings(ely_url, user, fake):
+    """Clé ajoutée dans .env puis « Actualiser les modèles » : en refermant les réglages, les nouveaux modèles sont
+    proposés dans le menu de la conversation, sans recharger la page."""
+    from playwright.async_api import async_playwright
+
+    from ely.llm import registry
+    from ely.llm.base import ModelInfo
+
+    offered = "[...document.querySelectorAll('select option')].some((o) => o.textContent.includes('gemini-3.8-flash'))"
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(executable_path=os.environ["ELY_BROWSER_EXECUTABLE"])
+        ctx = await browser.new_context(locale="fr-FR")
+        await ctx.add_cookies([{"name": "ely_token", "value": auth.create_session(user["id"]), "url": ely_url}])
+        page = await ctx.new_page()
+        await page.goto(ely_url)
+        await until(page, "[...document.querySelectorAll('select option')].some((o) => o.value.startsWith('fake:'))")
+        assert not await page.evaluate(offered)
+        registry.catalog["gemini"] = [ModelInfo(id="gemini-3.8-flash", provider="gemini")]  # la clé vient d'être lue
+        registry.status["gemini"] = "ok (1 modèles)"
+        await page.click(".settings-btn")
+        await page.click(".sheet nav button:has-text('Modèles')")
+        await page.click(".sheet-close")
+        await until(page, offered)
+        await browser.close()
+
+
 async def test_page_reloads_when_ely_restarts_on_a_new_version(user, fake, monkeypatch):
     """Après une mise à jour ou une auto-amélioration, Ely redémarre : la page ouverte se recharge d'elle-même à la
     reconnexion ; si un message est en cours d'écriture, elle le garde et propose de recharger."""

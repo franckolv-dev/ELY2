@@ -292,3 +292,17 @@ async def test_a_silent_local_model_is_skipped_at_once(server, fake):
     resp = await registry.chat(role="main", system=["s"], messages=[{"role": "user", "content": "x"}], on_switch=on_switch)
     assert resp.model == "fake:agent" and time.monotonic() - started < 5
     assert any("lmstudio:muet indisponible" in why and "aucune réponse" in why for why in switches), switches
+
+
+async def test_a_removed_provider_is_no_longer_offered(fake):
+    """Clé retirée du .env, abonnement déconnecté : après « Actualiser les modèles », ses modèles ne sont plus proposés
+    et il n'apparaît plus « ok » parmi les fournisseurs."""
+    from ely.llm import registry
+    from ely.llm.base import ModelInfo
+
+    registry.catalog["geminicli"] = [ModelInfo(id="gemini-3.8-flash", provider="geminicli")]
+    registry.status["geminicli"] = "ok (1 modèles)"
+    await registry.refresh()
+    refs = [m["ref"] for m in registry.all_models()]
+    assert not any(r.startswith("geminicli:") for r in refs) and "geminicli" not in registry.status
+    assert refs and all(r.startswith("fake:") for r in refs) and registry.reachable("fake")

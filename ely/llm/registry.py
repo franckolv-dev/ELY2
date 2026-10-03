@@ -144,6 +144,9 @@ class Registry:
                     self.status[name] = f"injoignable : {str(e)[:120]}"
             await asyncio.gather(*(one(n, p) for n, p in self.providers.items() if names is None or n in names))
             if names is None:
+                for gone in (set(self.catalog) | set(self.status)) - set(self.providers):  # clé retirée, abonnement coupé
+                    self.catalog.pop(gone, None)
+                    self.status.pop(gone, None)
                 self.refreshed_at = time.time()
 
     async def ensure_catalog(self) -> None:

@@ -258,12 +258,17 @@ function App() {
     addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); setPwa(() => () => { e.prompt(); setPwa(null); }); });
   }, []);
 
+  // modèles du menu de conversation : relus à la fermeture des réglages (clé ajoutée, modèle principal changé…)
+  const loadModels = () => get("/api/models").then((d) => {
+    setModels(d.models.filter((m) => m.reachable)); setMainRef(d.roles.main?.effective || ""); setNoModel(!d.roles.main?.effective);
+  }).catch(() => {});
+
   // après connexion
   useEffect(() => {
     if (!me) return;
     loadConvs();
     loadRecordedVoices(); // voix clonée du Mac, si son service tourne
-    get("/api/models").then((d) => { setModels(d.models.filter((m) => m.reachable)); setMainRef(d.roles.main?.effective || ""); setNoModel(!d.roles.main?.effective); }).catch(() => {});
+    loadModels();
     const stop = connectEvents(onEvent);
     if (location.pathname === "/share") {
       const text = [params.get("title"), params.get("text"), params.get("url")].filter(Boolean).join("\n");
@@ -512,7 +517,7 @@ function App() {
           onClose=${() => { setLiveOpen(false); liveClosedByUser.current = true; }} />` : null}
       </div>
     </main>
-    ${settingsTab ? html`<${Settings} me=${me} onMe=${setMe} tab=${settingsTab} onTab=${setSettingsTab} onClose=${() => setSettingsTab(null)} pwa=${pwa}
+    ${settingsTab ? html`<${Settings} me=${me} onMe=${setMe} tab=${settingsTab} onTab=${setSettingsTab} onClose=${() => { setSettingsTab(null); loadModels(); }} pwa=${pwa}
       prefs=${{ theme, lang, setTheme: chooseTheme, setLang: chooseLang }}
       openConversation=${(id) => { loadConvs(); pick(id); }} />` : null}
     ${dialog === "install" ? html`<${InstallDialog} onClose=${() => setDialog(null)} />` : null}
