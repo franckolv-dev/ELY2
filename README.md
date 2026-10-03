@@ -21,8 +21,6 @@ The interface is bilingual (English / French, formal "vous" by default), and Ely
 
 ## What's new in 4.1
 
-- **Your subscriptions instead of paid keys**: Gemini on your Google AI plan (official `gemini` CLI), on top of
-  ChatGPT on your plan. See [Multi-model](#multi-model-multi-user).
 - **Self-improvement handed to Claude** (Claude Agent SDK), and every change to its own code **published on GitHub as
   a pull request** that you review and merge. See [Self-improvement](#recursive-self-improvement).
 - **Ready for the Internet and for the family**: permissions checked on every action, code reserved to the
@@ -232,10 +230,9 @@ With an API key, Claude is billed per token: Ely never picks it on its own, you 
   Zhipu, Cerebras, Together, LM Studio, Ollama, or any custom endpoint.
 - **ChatGPT subscription**: GPT on your plan, no per-token billing. On the Mac: `codex login` (OpenAI's Codex
   CLI), then Settings → Models → "Import". Unofficial mechanism, subject to your plan's limits.
-- **Google Gemini subscription** (AI Pro…): Gemini without an API key, through the official CLI. On the Mac:
-  `npm install -g @google/gemini-cli`, then `gemini` and "Sign in with Google"; finally Settings → Models →
-  "Enable". Ely enforces the subscription (any `GEMINI_API_KEY` is never passed to the CLI), turns off the CLI's tools
-  and has it use Ely's own. Subject to the plan's daily limits.
+- **Gemini**: through the API key (`GEMINI_API_KEY`). The Google AI Pro plan can no longer be used outside Google's
+  own apps: since June 2026, the `gemini` CLI turns personal accounts away. Subscribers can, however, turn on the
+  Google Developer Program's monthly credits ("Benefits" section), which work with the Gemini API.
 - **Roles**: main agent, escalation, self-improvement, fast controller, local background tasks, embeddings. Everything is chosen
   automatically, and can be changed in Settings → Models with immediate effect. Each conversation can pin its own
   model (menu at the top).
@@ -283,7 +280,7 @@ Ely is built to be reachable from the Internet and shared with the family:
 ely/
   agent/      loop.py (loop + controller + compaction), runner.py (background tasks, resume, live stream), prompts.py
   llm/        anthropic_provider.py, openai_compat.py, registry.py (roles, automatic choice, fallback),
-              chatgpt_provider.py and gemini_cli.py (subscriptions), claude_agent.py (Claude Agent SDK)
+              chatgpt_provider.py (ChatGPT subscription), claude_agent.py (Claude Agent SDK)
   tools/      web, browser, comms (email), pim (calendar, contacts), social, files (+ Python/shell), memory,
               planning (scheduling, questions, notifications, credentials), media, delegate (sub-agents)
   memory/     store.py (profile, hybrid memories, history, skills), learner.py
@@ -295,7 +292,7 @@ ely/
   web/        bilingual English/French PWA (Preact + htm, no build step)
 extension/    "Ely for Chrome" (MV3, no build step)
 voice/xtts/   local voice service: XTTS-v2 and cloned voice, on the Mac (port 8020)
-tests/        loop, tools, real browser, real Chrome extension, adapters (fake OpenAI/Anthropic servers, fake Gemini CLI),
+tests/        loop, tools, real browser, real Chrome extension, adapters (fake OpenAI/Anthropic servers),
               API, MCP, self-modification, security, stability (about 200 behaviour tests)
 scripts/      mock_llm.py (fake model to try without tokens), e2e_ui.py (full interface walkthrough)
 ```
@@ -318,7 +315,7 @@ the task forward remains.
 - Without the Chrome extension, the first sign-in to a site (Doctolib, LinkedIn…) happens once in Ely's browser or through the credentials vault.
 - A small local model alone doesn't handle a long procedure well: keep at least one cloud key for the main agent.
 - For the administrator, Ely has broad access (code, terminal, credentials): expose it over HTTPS (Tailscale, proxy) and pick strong passwords.
-- ChatGPT and Gemini subscriptions are subject to the plans' limits; once reached, Ely moves on to the next model and says so.
+- The ChatGPT subscription is subject to the plan's limits; once reached, Ely moves on to the next model and says so.
 
 ## License
 

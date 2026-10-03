@@ -18,8 +18,6 @@ Un seul processus, une seule base SQLite, zéro service à maintenir.
 
 ## Nouveautés de la 4.1
 
-- **Vos abonnements plutôt que des clés payantes** : Gemini avec votre forfait Google AI (CLI officiel `gemini`), en
-  plus de ChatGPT avec votre forfait. Voir [Multi-modèles](#multi-modèles-multi-utilisateurs).
 - **Auto-amélioration confiée à Claude** (Claude Agent SDK), et chaque modification de son propre code **publiée sur
   GitHub en pull request**, que vous relisez et fusionnez. Voir [Auto-amélioration](#auto-amélioration-récursive).
 - **Prête pour Internet et pour la famille** : droits vérifiés à chaque action, code réservé à l'administrateur,
@@ -233,10 +231,10 @@ Avec une clé d'API, Claude est facturé au token : Ely ne le choisit jamais d'e
   Zhipu, Cerebras, Together, LM Studio, Ollama, ou toute adresse personnalisée.
 - **Abonnement ChatGPT** : GPT avec votre forfait, sans payer au token. Sur le Mac : `codex login` (CLI Codex
   d'OpenAI), puis Réglages → Modèles → « Importer ». Mécanisme non officiel, soumis aux limites du forfait.
-- **Abonnement Google Gemini** (AI Pro…) : Gemini sans clé d'API, par le CLI officiel. Sur le Mac :
-  `npm install -g @google/gemini-cli`, puis `gemini` et « Sign in with Google » ; enfin Réglages → Modèles →
-  « Activer ». Ely impose l'abonnement (sa clé `GEMINI_API_KEY` éventuelle n'est jamais transmise au CLI), désactive
-  les outils du CLI et lui fait utiliser les siens. Soumis aux limites quotidiennes de l'abonnement.
+- **Gemini** : par la clé d'API (`GEMINI_API_KEY`). L'abonnement Google AI Pro ne s'utilise plus hors des
+  applications de Google : depuis juin 2026, le CLI `gemini` refuse les comptes personnels. Les abonnés peuvent en
+  revanche activer les crédits mensuels du Google Developer Program (rubrique « Avantages »), utilisables avec l'API
+  Gemini.
 - **Rôles** : agent principal, escalade, auto-amélioration, contrôleur rapide, tâches de fond locales, vecteurs. Tout est choisi
   automatiquement, et modifiable dans Réglages → Modèles avec effet immédiat. Chaque conversation peut imposer son
   modèle (menu en haut).
@@ -284,7 +282,7 @@ Ely est faite pour être joignable depuis Internet et partagée en famille :
 ely/
   agent/      loop.py (boucle + contrôleur + compaction), runner.py (tâches de fond, reprise, flux temps réel), prompts.py
   llm/        anthropic_provider.py, openai_compat.py, registry.py (rôles, choix auto, repli),
-              chatgpt_provider.py et gemini_cli.py (abonnements), claude_agent.py (Claude Agent SDK)
+              chatgpt_provider.py (abonnement ChatGPT), claude_agent.py (Claude Agent SDK)
   tools/      web, browser, comms (e-mail), pim (agenda, contacts), social, files (+ Python/shell), memory,
               planning (planification, questions, notifications, identifiants), media, delegate (sous-agents)
   memory/     store.py (profil, souvenirs hybrides, historique, compétences), learner.py
@@ -296,7 +294,7 @@ ely/
   web/        interface PWA bilingue français/anglais (Preact + htm, sans étape de compilation)
 extension/    « Ely pour Chrome » (MV3, sans compilation)
 voice/xtts/   service vocal local : XTTS-v2 et voix clonée, sur le Mac (port 8020)
-tests/        boucle, outils, navigateur réel, extension Chrome réelle, adaptateurs (faux serveurs OpenAI/Anthropic, faux CLI Gemini),
+tests/        boucle, outils, navigateur réel, extension Chrome réelle, adaptateurs (faux serveurs OpenAI/Anthropic),
               API, MCP, auto-modification, sécurité, stabilité (près de 200 tests de comportement)
 scripts/      mock_llm.py (faux modèle pour essayer sans tokens), e2e_ui.py (parcours complet de l'interface)
 ```
@@ -319,7 +317,7 @@ qui fait avancer la tâche.
 - Sans l'extension Chrome, la première connexion à un site (Doctolib, LinkedIn…) se fait une fois dans le navigateur d'Ely ou via le coffre d'identifiants.
 - Un petit modèle local seul ne mène pas bien une longue démarche : gardez au moins une clé cloud pour l'agent principal.
 - Pour l'administrateur, Ely a un accès étendu (code, terminal, identifiants) : exposez-la en HTTPS (Tailscale, proxy) et choisissez des mots de passe solides.
-- Abonnements ChatGPT et Gemini : soumis aux limites des forfaits ; une fois atteintes, Ely passe au modèle suivant et le dit.
+- Abonnement ChatGPT : soumis aux limites du forfait ; une fois atteintes, Ely passe au modèle suivant et le dit.
 
 ## Licence
 

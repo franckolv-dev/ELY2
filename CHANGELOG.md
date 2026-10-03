@@ -12,9 +12,8 @@ leur historique est dans [son journal](https://github.com/franckolv-dev/ElyAgent
 
 ## [4.1.0] — 2026-10-03
 
-> **Ely s'ouvre à Internet et à la famille, et travaille avec vos abonnements.** Gemini avec le forfait Google AI
-> et ChatGPT avec le forfait ChatGPT, sans payer au token ; auto-amélioration confiée à Claude et publiée sur GitHub
-> en pull request ; revue complète de sécurité et de stabilité.
+> **Ely s'ouvre à Internet et à la famille.** Revue complète de sécurité et de stabilité ; auto-amélioration
+> confiée à Claude et publiée sur GitHub en pull request.
 >
 > **En mettant à jour depuis la 4.0.0** (`./ely.sh update`) :
 > - retéléchargez l'extension Chrome (1.3.0) depuis Ely : l'ancienne reste reliée, mais met la session dans
@@ -51,16 +50,6 @@ leur historique est dans [son journal](https://github.com/franckolv-dev/ElyAgent
   Il retrouve une tâche passée par quelques mots, puis en donne le déroulé complet : demandes, actions avec leurs
   arguments et résultats, erreurs exactes, refus du contrôleur. Les mots de passe restent masqués. Une session peut
   ainsi diagnostiquer précisément un échec, par exemple une commande en ligne qui n'a pas abouti.
-- **Abonnement Google Gemini (AI Pro…), sans clé d'API.** Ely pilote le CLI officiel `gemini`, connecté une fois au
-  compte Google (« Sign in with Google »). Réglages → Modèles → « Abonnement Google Gemini » : état du CLI et du
-  compte, « Activer », « Tester ». Le modèle `geminicli:gemini-3.8-flash` est alors proposé dans tous les rôles et
-  sert de secours gratuit.
-  - L'abonnement est imposé : le CLI ne reçoit ni clé Gemini ni autre secret. Il préférerait sinon la clé d'API
-    facturée, même lue dans un `.env` d'un dossier parent. La clé `GEMINI_API_KEY` peut donc rester dans `.env`.
-  - Le CLI travaille dans un dossier vide hors du dépôt. Le prompt d'Ely remplace le sien, et ses propres outils
-    sont tous refusés : Gemini se sert de ceux d'Ely, demandés par un bloc d'appels que l'interface n'affiche pas.
-  - CLI non connecté ou limite du jour atteinte : Ely passe au modèle suivant en disant pourquoi. Une tâche arrêtée
-    arrête le CLI.
 - **Auto-amélioration publiée sur GitHub** (amélioration écrite par Ely elle-même). Chaque modification de son code
   testée est poussée sur une branche `ely-improvement/<commit>` avec une pull request attribuée à Ely, que
   l'administrateur relit et fusionne ; Ely ne fusionne jamais elle-même. L'activation locale n'a lieu qu'une fois la
@@ -176,9 +165,6 @@ Second lot, durcissement :
 - **Le contrôleur d'objectif connaît la date du jour** : il juge les dates par rapport à aujourd'hui, et non d'après
   ses connaissances.
 - **Recherche Gmail** : cinq lectures simultanées au plus, avec reprise sur une limite de débit (429).
-- **Gemini par l'abonnement : un CLI remis sur « clé d'API » n'est jamais lancé.** Ce réglage passe avant
-  l'environnement imposé par Ely, et le CLI irait chercher la clé dans le trousseau du Mac : l'API serait facturée.
-  Ely le refuse et indique `/auth` → « Sign in with Google ».
 - **Une tâche planifiée qui se déclenche pendant qu'une autre tourne encore** démarre maintenant à part, au lieu de se
   greffer sur la tâche en cours. Le 30/09, la routine de midi attendait derrière celle du matin, bloquée.
 - Réglages → Auto-amélioration → « Lancer » ne démarrait pas la session (erreur « no running event loop » dans le
