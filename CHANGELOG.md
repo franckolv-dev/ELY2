@@ -12,6 +12,18 @@ leur historique est dans [son journal](https://github.com/franckolv-dev/ElyAgent
 
 ## [Non publié]
 
+### Ajouté
+- **Effort de raisonnement par rôle** (Réglages → Modèles) : Moyen ou Élevé pour l'agent principal, l'escalade et
+  l'auto-amélioration. Il est transmis à chaque modèle qui le prend en charge (abonnement ChatGPT, OpenAI, Gemini,
+  Claude). Inutile de faire réfléchir longuement le modèle le plus puissant pour des demandes courantes (actualités,
+  e-mails…), qui consomment alors moins de quota.
+- **Autres modèles de l'abonnement ChatGPT** (GPT-6 Sol, Luna…) : il suffit de les lister dans `CHATGPT_MODELS`
+  puis de cliquer « Actualiser les modèles », comme l'explique désormais la ligne « Abonnement ChatGPT ».
+
+### Modifié
+- **L'agent principal réfléchit en effort Moyen par défaut**, au lieu d'Élevé. L'escalade et l'auto-amélioration
+  restent en Élevé.
+
 ### Corrigé
 - **Une clé retirée ou commentée dans `.env` restait active jusqu'au redémarrage.** « Actualiser les modèles »
   ajoutait les nouvelles clés mais n'oubliait jamais les anciennes : une clé Anthropic commentée pouvait encore servir

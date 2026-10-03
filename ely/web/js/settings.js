@@ -276,6 +276,7 @@ function Files() {
 
 // ---------------------------------------------------------------- administration : modèles
 const ROLES = ["main", "strong", "selfdev", "fast", "local", "embed"];
+const EFFORT_ROLES = ["main", "strong", "selfdev"]; // effort de raisonnement réglable (Moyen ou Élevé)
 
 function ChatGPTRow({ onChange }) {
   const [st, reload, error] = useLoad(() => get("/api/admin/chatgpt"));
@@ -294,6 +295,7 @@ function ChatGPTRow({ onChange }) {
   return html`<${Row} title=${t("gpt.title")} hint=${t("gpt.hint")} badge=${badge}>
     <p class="desc">${t("gpt.desc")}</p>
     ${st.codex_model ? html`<p class="desc">${t("gpt.codexModel", { m: st.codex_model })}</p>` : null}
+    ${st.connected ? html`<p class="desc">${t("gpt.more")}</p>` : null}
     ${st.connected ? html`<div class="row"><span class="meta-text">${t("gpt.account", { id: st.account_id || "ChatGPT" })}</span>
         <button class="btn small danger" onClick=${async () => { await del("/api/admin/chatgpt"); reload(); onChange(); }}>${t("common.disconnect")}</button></div>`
       : html`
@@ -375,6 +377,9 @@ function Models() {
     }
     await put("/api/admin/models", { [role]: value }); reload(); toast(t("models.saved"));
   }
+  async function setEffort(role, level) {
+    await put("/api/admin/models", { effort: { [role]: level } }); reload(); toast(t("models.effortSaved"));
+  }
   return html`
     ${ROLES.map((role) => html`<${Row} title=${t(`role.${role}`)} hint=${t(`role.${role}Desc`)}>
       <select class="input" value=${data.roles[role]?.configured} onChange=${(e) => setRole(role, e.target.value)}>
@@ -385,6 +390,12 @@ function Models() {
         <option value="__autre__">${t("models.other")}</option>
       </select>
       <span class="meta-text">${t("common.current", { v: data.roles[role]?.effective || "—" })}</span>
+      ${EFFORT_ROLES.includes(role) && data.roles[role]?.effort ? html`<label class="effort-pick">
+        <span class="meta-text">${t("models.effort")}</span>
+        <select class="input" value=${data.roles[role].effort} onChange=${(e) => setEffort(role, e.target.value)} aria-label=${t("models.effort")}>
+          <option value="medium">${t("effort.medium")}</option>
+          <option value="high">${t("effort.high")}</option>
+        </select></label>` : null}
     <//>`)}
     <${FallbackRow} fb=${data.roles.fallbacks} onSave=${async (v) => { await put("/api/admin/models", { fallbacks: v || "auto" }); reload(); toast(t("models.fallbackSaved")); }} />
     <${ChatGPTRow} onChange=${reload} />

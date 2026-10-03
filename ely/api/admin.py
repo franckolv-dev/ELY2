@@ -11,7 +11,7 @@ from .. import auth
 from ..config import settings
 from ..db import db, now
 from ..llm import registry
-from ..llm.registry import ROLES, price_of
+from ..llm.registry import EFFORT_DEFAULTS, EFFORTS, ROLES, price_of
 from ..selfdev import metrics, pipeline, plugins
 
 router = APIRouter()
@@ -48,14 +48,20 @@ class RolesIn(BaseModel):
     local: str | None = None
     embed: str | None = None
     fallbacks: str | None = None
+    effort: dict[str, str] | None = None  # rôle → « medium » ou « high »
 
 
 @router.put("/api/admin/models")
 def set_roles(body: RolesIn, user=Depends(auth.admin_user)):
+    for role, level in (body.effort or {}).items():
+        if role not in EFFORT_DEFAULTS or level not in EFFORTS:
+            raise HTTPException(400, f"Effort « {level} » impossible pour « {role} »")
     for role in (*ROLES, "fallbacks"):
         v = getattr(body, role)
         if v is not None:
             db.set_setting(f"model_{role}", v.strip() or "auto")
+    for role, level in (body.effort or {}).items():
+        db.set_setting(f"effort_{role}", level)
     return registry.roles_view()
 
 

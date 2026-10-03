@@ -181,6 +181,38 @@ async def test_the_model_menu_follows_the_settings(ely_url, user, fake):
         await browser.close()
 
 
+async def test_the_admin_sets_the_reasoning_effort_of_a_role(ely_url, user, fake):
+    """Réglages → Modèles : l'agent principal est en effort Moyen ; l'admin le passe en Élevé, c'est enregistré."""
+    from playwright.async_api import async_playwright
+
+    from ely.db import db
+    from ely.llm import registry
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(executable_path=os.environ["ELY_BROWSER_EXECUTABLE"])
+        ctx = await browser.new_context(locale="fr-FR")
+        await ctx.add_cookies([{"name": "ely_token", "value": auth.create_session(user["id"]), "url": ely_url}])
+        page = await ctx.new_page()
+        await page.goto(ely_url)
+        await page.click(".settings-btn")
+        await page.click(".sheet nav button:has-text('Modèles')")
+        effort = page.locator(".srow", has_text="Agent principal").locator("select[aria-label='Effort de raisonnement']")
+        await effort.wait_for()
+        assert await effort.input_value() == "medium"
+        quick = page.locator(".srow", has_text="Contrôle rapide").locator("select[aria-label='Effort de raisonnement']")
+        assert await quick.count() == 0  # le contrôle rapide garde l'effort le plus faible
+        try:
+            await effort.select_option("high")
+            for _ in range(100):
+                if registry.effort("main") == "high":
+                    break
+                await asyncio.sleep(0.05)
+            assert registry.effort("main") == "high"
+        finally:
+            db.set_setting("effort_main", "medium")
+        await browser.close()
+
+
 async def test_page_reloads_when_ely_restarts_on_a_new_version(user, fake, monkeypatch):
     """Après une mise à jour ou une auto-amélioration, Ely redémarre : la page ouverte se recharge d'elle-même à la
     reconnexion ; si un message est en cours d'écriture, elle le garde et propose de recharger."""

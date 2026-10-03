@@ -460,7 +460,7 @@ async def test_self_improvement_uses_its_own_model(fake, user):
     from ely.selfdev.tools import start_session
 
     with_strong_model(fake)
-    assert registry.roles_view()["selfdev"] == {"configured": "auto", "effective": "fake:fort"}
+    assert registry.roles_view()["selfdev"] == {"configured": "auto", "effective": "fake:fort", "effort": "high"}
     fake.script, used = routed(lambda messages, tools: "Rien à améliorer aujourd'hui.")
     cid = start_session(user, "Sois plus rapide sur Doctolib")
     await wait_idle(cid)

@@ -31,6 +31,10 @@ from .openai_compat import OpenAICompatProvider
 log = logging.getLogger("ely.llm")
 
 ROLES = ("main", "strong", "selfdev", "fast", "local", "embed")
+# Effort de raisonnement des rôles qui agissent, réglable par l'admin : « medium » suffit aux demandes courantes
+# (actualités, e-mails…), « high » réfléchit plus longtemps et consomme davantage (tokens, quota de l'abonnement)
+EFFORT_DEFAULTS = {"main": "medium", "strong": "high", "selfdev": "high"}
+EFFORTS = ("medium", "high")
 # Durée maximale d'un appel de modèle, flux compris : au-delà (génération sans fin, serveur figé), on passe au suivant
 CALL_DEADLINE = 20 * 60
 # Un modèle qui vient de rester muet passe en fin de chaîne pendant ce temps : l'étape suivante ne l'attend pas encore
@@ -193,6 +197,13 @@ class Registry:
         v = (db.get_setting(f"model_{role}") or getattr(settings, f"model_{role}", "auto") or "auto").strip()
         return "" if v in ("auto", "") else v
 
+    def effort(self, role: str) -> str:
+        """Effort de raisonnement d'un rôle : choix de l'admin, sinon son défaut ; « high » hors des rôles réglables."""
+        if role not in EFFORT_DEFAULTS:
+            return "high"
+        v = db.get_setting(f"effort_{role}")
+        return v if v in EFFORTS else EFFORT_DEFAULTS[role]
+
     def resolve(self, role: str) -> str | None:
         explicit = self.configured(role)
         if explicit:
@@ -247,8 +258,9 @@ class Registry:
     # ------------------------------------------------------------------ appels
     async def chat(self, *, role: str = "main", model: str | None = None, system: list[str], messages: list[dict],
                    tools: list[dict] | None = None, on_delta: DeltaCallback = None, max_tokens: int | None = None,
-                   effort: str = "high", user_id: int | None = None, purpose: str = "agent",
+                   effort: str | None = None, user_id: int | None = None, purpose: str = "agent",
                    on_switch: Callable[[str, str], Awaitable[None]] | None = None) -> LLMResponse:
+        effort = effort or self.effort(role)
         await self.ensure_catalog()
         chain = self.chain(role, model)
         if not chain:  # LM Studio pas encore prêt : réessayable, il sera revérifié à l'essai suivant
@@ -330,6 +342,8 @@ class Registry:
 
     def roles_view(self) -> dict:
         view = {r: {"configured": self.configured(r) or "auto", "effective": self.resolve(r)} for r in ROLES}
+        for r in EFFORT_DEFAULTS:
+            view[r]["effort"] = self.effort(r)
         view["fallbacks"] = {"configured": self.fallbacks_configured(), "effective": ", ".join(self.chain("main")[1:])}
         return view
 

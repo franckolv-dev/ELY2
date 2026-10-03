@@ -272,3 +272,42 @@ def test_session_tokens_never_reach_the_server_logs():
     text = "\n".join(lines)
     assert secret not in text and "AbC_dEf-123" not in text
     assert "/api/chrome/ws?token=•••" in text and "/ics/•••.ics" in text
+
+
+async def test_reasoning_effort_follows_each_role(client, user, fake):
+    """Demandes courantes en effort Moyen, escalade et auto-amélioration en Élevé. L'admin règle chaque rôle, effectif
+    dès la tâche suivante ; un compte ordinaire ne le peut pas, et un effort inconnu est refusé."""
+    from conftest import wait_idle
+
+    from ely import auth
+    from ely.llm import registry
+
+    fake.script = lambda model, system, messages, tools: "C'est fait."
+    h = await login(client, user["email"], "motdepasse")
+
+    async def agent_effort(text: str) -> str:
+        fake.calls.clear()
+        cid = (await client.post("/api/chat", headers=h, json={"text": text})).json()["conversation_id"]
+        await wait_idle(cid)
+        return next(c["effort"] for c in fake.calls if c["tools"])  # l'appel de l'agent, avec ses outils
+
+    roles = (await client.get("/api/models", headers=h)).json()["roles"]
+    assert [roles[r]["effort"] for r in ("main", "strong", "selfdev")] == ["medium", "high", "high"]
+    assert await agent_effort("Quelles sont les nouvelles du jour ?") == "medium"
+    try:
+        r = await client.put("/api/admin/models", headers=h, json={"effort": {"main": "high"}})
+        assert r.status_code == 200 and r.json()["main"]["effort"] == "high"
+        assert await agent_effort("Vérifie mes e-mails") == "high"
+        await registry.chat(role="selfdev", system=["s"], messages=[{"role": "user", "content": "Améliore-toi"}])
+        assert fake.calls[-1]["effort"] == "high"
+        await registry.complete("Donne un titre", role="local")
+        assert fake.calls[-1]["effort"] == "low"  # tâches de fond : toujours l'effort le plus faible
+        for bad in ({"main": "extreme"}, {"fast": "high"}):
+            assert (await client.put("/api/admin/models", headers=h, json={"effort": bad})).status_code == 400
+        member = auth.create_user("lea.effort@x.fr", "Léa", "motdepasse")
+        db.run("UPDATE users SET role = 'user' WHERE id = ?", (member["id"],))
+        r = await client.put("/api/admin/models", json={"effort": {"main": "medium"}},
+                             headers={"Authorization": f"Bearer {auth.create_session(member['id'])}"})
+        assert r.status_code == 403 and registry.effort("main") == "high"
+    finally:
+        db.set_setting("effort_main", "medium")

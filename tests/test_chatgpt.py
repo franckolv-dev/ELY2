@@ -155,6 +155,37 @@ async def test_registry_offers_the_subscription_once_connected(chatgpt, fake):
     assert "chatgpt" not in registry.providers
 
 
+async def test_plan_models_from_env_with_the_effort_of_each_role(chatgpt, fake, tmp_path, monkeypatch):
+    """GPT-6 Sol et Luna ajoutés dans .env (CHATGPT_MODELS) puis « Actualiser les modèles » : proposés sans redémarrer.
+    Une demande courante part chez ChatGPT en effort Moyen, l'auto-amélioration en effort Élevé."""
+    from ely import config
+    from ely.llm import registry
+
+    await cg.import_auth(AUTH_JSON)
+    (tmp_path / ".env").write_text("CHATGPT_MODELS=gpt-6-astra,gpt-6-sol,gpt-6-luna\n")
+    monkeypatch.setattr(config, "ROOT", tmp_path)
+    monkeypatch.delenv("CHATGPT_MODELS", raising=False)
+    config._BOOT_ENV.discard("CHATGPT_MODELS")
+    try:
+        config.reload_env()
+        registry.build_providers()
+        await registry.refresh(["chatgpt"])
+        refs = {m["ref"] for m in registry.all_models()}
+        assert {"chatgpt:gpt-6-astra", "chatgpt:gpt-6-sol", "chatgpt:gpt-6-luna"} <= refs
+        db.set_setting("model_main", "chatgpt:gpt-6-sol")
+        db.set_setting("model_selfdev", "chatgpt:gpt-6-astra")
+        await registry.chat(role="main", system=["s"], messages=[{"role": "user", "content": "Les nouvelles du jour ?"}])
+        assert (seen["body"]["model"], seen["body"]["reasoning"]["effort"]) == ("gpt-6-sol", "medium")
+        await registry.chat(role="selfdev", system=["s"], messages=[{"role": "user", "content": "Améliore-toi"}])
+        assert (seen["body"]["model"], seen["body"]["reasoning"]["effort"]) == ("gpt-6-astra", "high")
+    finally:
+        db.set_setting("model_main", "fake:agent")
+        db.set_setting("model_selfdev", "auto")
+        os.environ.pop("CHATGPT_MODELS", None)
+        monkeypatch.undo()
+        config.reload_env()
+
+
 def test_env_reload_picks_up_new_keys(tmp_path, monkeypatch):
     from ely import config
 
