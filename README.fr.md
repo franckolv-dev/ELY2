@@ -8,11 +8,27 @@ téléphone Android. Et **il ne s'arrête pas tant que l'objectif n'est pas atte
 
 ![Ely réserve un rendez-vous dans son navigateur](docs/images/rdv.png)
 
-Trois mots d'ordre : **efficacité, autonomie, performance.** La version 4.0.0 est une réécriture complète, à la
+Trois mots d'ordre : **efficacité, autonomie, performance.** La version 4 est une réécriture complète, à la
 suite de la 3.1.0 d'[ElyAgent](https://github.com/franckolv-dev/ElyAgent) (voir le [journal des versions](CHANGELOG.md)) :
-~8 300 lignes de Python et ~2 900 lignes d'interface, au lieu des 240 000 lignes et 9 services Docker de la version
+~10 000 lignes de Python et ~3 000 lignes d'interface, au lieu des 240 000 lignes et 9 services Docker de la version
 précédente.
 Un seul processus, une seule base SQLite, zéro service à maintenir.
+
+---
+
+## Nouveautés de la 4.1
+
+- **Auto-amélioration confiée à Claude** (Claude Agent SDK), et chaque modification de son propre code **publiée sur
+  GitHub en pull request**, que vous relisez et fusionnez. Voir [Auto-amélioration](#auto-amélioration-récursive).
+- **Prête pour Internet et pour la famille** : droits vérifiés à chaque action, code réservé à l'administrateur,
+  contenus de tiers jamais pris pour des ordres, réseau de la maison fermé aux autres comptes, sessions protégées.
+  Voir [Sécurité](#sécurité).
+- **Plus robuste** : une action au résultat incertain n'est jamais refaite à l'aveugle, un modèle figé est contourné,
+  Ely attend LM Studio s'il démarre après elle, et revient seule à la version précédente si une mise à jour plante.
+- **Tri des e-mails Gmail** (corbeille, archives, libellés) ; sur Telegram, la réponse n'arrive qu'une fois la tâche
+  validée.
+
+Tout le détail dans le [journal des versions](CHANGELOG.md).
 
 ---
 
@@ -26,8 +42,9 @@ Un seul processus, une seule base SQLite, zéro service à maintenir.
 | « Ajoute Marie Leroy, 06 12 34 56 78, c'est ma kiné » | crée le contact, et retient qui est Marie |
 | « Chaque lundi à 8 h, fais-moi un point sur mes rendez-vous de la semaine » | planifie la tâche et vous envoie le résultat en notification |
 | « Compare ces 3 devis (PDF joints) et fais-moi un tableau Excel » | lit les PDF, calcule, produit le fichier à télécharger |
+| « Range les newsletters de la semaine sous le libellé Lectures » | retrouve les e-mails, les classe sous le libellé (créé s'il manque) |
 | « Branche-toi sur mon Home Assistant » (admin) | ajoute le serveur MCP : ses outils deviennent les siens |
-| « Améliore-toi pour être plus rapide sur Doctolib » (admin) | analyse ses échecs, écrit une compétence ou corrige son propre code, teste, se redéploie |
+| « Améliore-toi pour être plus rapide sur Doctolib » (admin) | analyse ses échecs, écrit une compétence ou corrige son propre code, teste, publie la modification en pull request sur GitHub, se redéploie |
 
 ---
 
@@ -109,9 +126,13 @@ votre demande ─▶ tâche de fond persistante ─▶ réfléchir ─▶ agir (
   seulement quand c'est fait, ou quand plus aucun progrès n'est possible (pas de boucle infinie).
 - **Tâches de fond** : fermez l'application, la tâche continue. Vous recevez une notification à la fin.
 - **Reprise après redémarrage** : chaque étape est enregistrée ; au redémarrage, les tâches reprennent là où elles
-  étaient. Une action dont le résultat s'est perdu n'est jamais rejouée à l'aveugle : Ely vérifie d'abord.
+  étaient. Une action dont le résultat s'est perdu n'est jamais rejouée à l'aveugle : Ely vérifie d'abord. Une mise à
+  jour attend que les tâches en cours de la famille soient finies avant de redémarrer.
+- **Résultat incertain** : un envoi d'e-mail ou un clic qui dépasse son délai n'est pas présenté comme un échec, car
+  il a souvent eu lieu. Ely vérifie (boîte d'envoi, page, agenda) avant de le refaire.
 - **Messages en cours de route** : « ah, et ajoute aussi du pain » est intégré à la tâche en cours.
-- **Pannes de modèle** : bascule automatique sur le fournisseur suivant, puis nouveaux essais patients.
+- **Pannes de modèle** : bascule automatique sur le fournisseur suivant, puis nouveaux essais patients. Un modèle figé
+  passe dix minutes en fin de liste ; si Ely démarre avant LM Studio, elle l'attend au lieu d'abandonner.
   Dès que le contrôleur constate que l'objectif n'est pas atteint, ou si vous le demandez (« prenez le modèle fort »),
   Ely passe au modèle d'escalade (`ELY_MODEL_STRONG`), si vous en avez configuré un.
 - **Questions à l'utilisateur** : seulement pour ce qu'elle ne peut vraiment pas deviner (code SMS, mot de passe
@@ -167,8 +188,10 @@ d'insatisfaction, coût) et s'améliore sur quatre niveaux, du plus léger au pl
 3. **Nouveaux outils** : Ely écrit ses propres plugins Python, chargés à chaud, sans redémarrage. Un plugin qui
    plante est refusé ou désactivé automatiquement.
 4. **Son propre code** : Ely lit et modifie son code dans une **copie git isolée**, lance la **suite de tests**,
-   puis valide, fusionne et **redémarre**. Le lanceur `ely.sh` vérifie la santé de la nouvelle version et **revient
-   automatiquement à la précédente** si elle ne démarre pas. Chaque changement est dans le journal, avec son diff et
+   puis valide, **publie la modification sur GitHub** (une pull request que vous relisez et fusionnez), l'active et
+   **redémarre**. Un déploiement qui retire un test est refusé. Le lanceur `ely.sh` vérifie la santé de la nouvelle
+   version et **revient automatiquement à la précédente** si elle ne démarre pas ou plante à répétition (vos
+   modifications locales sont mises de côté, jamais écrasées). Chaque changement est dans le journal, avec son diff et
    un bouton « Annuler ».
 
 Pour comprendre un échec, la session relit le déroulé complet des tâches passées (demandes, actions, erreurs exactes,
@@ -179,7 +202,9 @@ Une session tourne chaque nuit à 4 h s'il y a eu de l'activité (désactivable)
 la main (Réglages → Auto-amélioration), ou simplement demander dans le chat : « améliore-toi pour… ». Ces sessions
 utilisent leur propre modèle (Réglages → Modèles → Auto-amélioration ; automatique : le modèle d'escalade).
 
-> Pour que l'étape 4 soit active, lancez Ely avec `./ely.sh` (le superviseur) depuis un clone git.
+> Pour que l'étape 4 soit active, lancez Ely avec `./ely.sh` (le superviseur) depuis un clone git, et connectez le CLI
+> GitHub sur le Mac (`gh auth login`) : sans publication possible, le déploiement est refusé
+> (voir [docs/auto-amelioration-github.md](docs/auto-amelioration-github.md)).
 
 ### Confier l'auto-amélioration à Claude (facultatif)
 
@@ -206,34 +231,48 @@ Avec une clé d'API, Claude est facturé au token : Ely ne le choisit jamais d'e
   Zhipu, Cerebras, Together, LM Studio, Ollama, ou toute adresse personnalisée.
 - **Abonnement ChatGPT** : GPT avec votre forfait, sans payer au token. Sur le Mac : `codex login` (CLI Codex
   d'OpenAI), puis Réglages → Modèles → « Importer ». Mécanisme non officiel, soumis aux limites du forfait.
-- **Abonnement Google Gemini** (AI Pro…) : Gemini sans clé d'API, par le CLI officiel. Sur le Mac :
-  `npm install -g @google/gemini-cli`, puis `gemini` et « Sign in with Google » ; enfin Réglages → Modèles →
-  « Activer ». Ely impose l'abonnement (sa clé `GEMINI_API_KEY` éventuelle n'est jamais transmise au CLI), désactive
-  les outils du CLI et lui fait utiliser les siens. Soumis aux limites quotidiennes de l'abonnement.
+- **Gemini** : par la clé d'API (`GEMINI_API_KEY`). L'abonnement Google AI Pro ne s'utilise plus hors des
+  applications de Google : depuis juin 2026, le CLI `gemini` refuse les comptes personnels. Les abonnés peuvent en
+  revanche activer les crédits mensuels du Google Developer Program (rubrique « Avantages »), utilisables avec l'API
+  Gemini.
 - **Rôles** : agent principal, escalade, auto-amélioration, contrôleur rapide, tâches de fond locales, vecteurs. Tout est choisi
   automatiquement, et modifiable dans Réglages → Modèles avec effet immédiat. Chaque conversation peut imposer son
   modèle (menu en haut).
 - **Utilisateurs** : chacun a sa mémoire, ses connexions, ses fichiers, son navigateur et ses tâches.
   - Le premier compte est l'administrateur. Il se crée sur la machine d'Ely elle-même (http://localhost:8000).
   - Les suivants s'inscrivent par lien d'invitation (usage unique, valable 7 jours), ou sont créés par l'admin.
-  - Python et le terminal s'exécutent sur la machine : ils sont réservés à l'administrateur, sauf
-    `ELY_ALLOW_CODE_FOR_ALL=true`. Le réseau de la maison (box, NAS, LM Studio) l'est aussi.
-  - Changer de mot de passe ferme les autres sessions. Les mots de passe essayés en boucle sont freinés, et la
-    personne est prévenue. Derrière un proxy installé sur une autre machine que le Mac, déclarez son adresse dans
-    `ELY_TRUSTED_PROXIES`.
   - Consommation et coût par utilisateur dans Réglages → Consommation.
+
+## Sécurité
+
+Ely est faite pour être joignable depuis Internet et partagée en famille :
+
+- **Droits vérifiés à chaque action** : un outil réservé à l'administrateur n'est jamais exécuté pour un autre compte,
+  même si le modèle le demande (contenu piégé, nom inventé).
+- **Code réservé à l'administrateur** : Python et le terminal tournent sur la machine, sans les secrets d'Ely
+  (`ELY_ALLOW_CODE_FOR_ALL=true` pour les ouvrir à tous). Le réseau de la maison (box, NAS, LM Studio, fichiers du Mac)
+  est fermé aux autres comptes.
+- **Contenus de tiers encadrés** : pages web, e-mails et fichiers reçus arrivent au modèle comme des informations,
+  jamais comme des ordres.
+- **Interface protégée** : les fichiers servis ne peuvent pas s'exécuter, la page n'exécute que ses propres scripts,
+  et une image venant d'un autre site s'affiche comme un lien.
+- **Sessions** : jamais dans une adresse ; changer de mot de passe ferme les autres sessions ; les mots de passe
+  essayés en boucle sont freinés sans bloquer le vrai titulaire, qui est prévenu.
+- **Proxy** : derrière un proxy installé sur une autre machine que le Mac, déclarez son adresse dans
+  `ELY_TRUSTED_PROXIES` (avec `tailscale serve` sur le Mac, rien à faire).
 
 ## Connexions
 
 | Service | Comment |
 |---|---|
-| **Gmail, Google Agenda, Contacts** | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (voir `.env.example`), puis chaque utilisateur clique « Connecter mon compte Google » |
+| **Gmail, Google Agenda, Contacts** | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (voir `.env.example`), puis chaque utilisateur clique « Connecter mon compte Google ». Lecture, envoi et tri des e-mails (corbeille, archives, libellés) |
 | **Toute autre boîte mail** | Réglages → Connexions → Boîte mail, avec un mot de passe d'application (Gmail, Outlook, iCloud, Free, Orange, SFR, OVH…) |
 | **Agenda & contacts sans Google** | intégrés à Ely, avec rappels en notification et un lien iCal pour s'abonner depuis le téléphone |
 | **LinkedIn** | par API (`LINKEDIN_CLIENT_ID/SECRET`) ou, sans rien configurer, par le navigateur d'Ely |
 | **Facebook** | page : jeton de page ; profil personnel : navigateur d'Ely |
 | **Telegram** | `TELEGRAM_BOT_TOKEN`, puis Réglages → Connexions |
 | **Serveurs MCP** | Réglages → Extensions MCP, ou demandez à Ely de se brancher dessus |
+| **GitHub** (auto-amélioration) | CLI `gh` connecté sur le Mac (`gh auth login`) : chaque amélioration du code d'Ely arrive en pull request sur son dépôt |
 | **Recherche web** | gratuite par défaut (DuckDuckGo & co) ; SearXNG, Serper, Exa, SearchCans, Google, Tavily ou Brave si vous les avez |
 | **Voix** | dictée du navigateur (Chrome Android) ; sinon transcription par Groq ou OpenAI si une clé existe. Lecture : voix Google de Chrome, ou voix Premium de macOS (Réglages Système → Accessibilité → Contenu énoncé → Voix du système → Gérer les voix), à écouter dans Réglages → Profil → Voix. **Voix clonée** : si le service vocal `voice/xtts` tourne sur le Mac (port 8020, ou `XTTS_URL` ; voir son `README.md`), ses voix enregistrées sont proposées en premier, lues phrase par phrase, avec repli sur la voix du navigateur |
 
@@ -242,18 +281,21 @@ Avec une clé d'API, Claude est facturé au token : Ely ne le choisit jamais d'e
 ```
 ely/
   agent/      loop.py (boucle + contrôleur + compaction), runner.py (tâches de fond, reprise, flux temps réel), prompts.py
-  llm/        anthropic_provider.py, openai_compat.py, registry.py (rôles, choix auto, repli)
+  llm/        anthropic_provider.py, openai_compat.py, registry.py (rôles, choix auto, repli),
+              chatgpt_provider.py (abonnement ChatGPT), claude_agent.py (Claude Agent SDK)
   tools/      web, browser, comms (e-mail), pim (agenda, contacts), social, files (+ Python/shell), memory,
               planning (planification, questions, notifications, identifiants), media, delegate (sous-agents)
   memory/     store.py (profil, souvenirs hybrides, historique, compétences), learner.py
-  selfdev/    metrics.py, plugins.py, pipeline.py (worktree, tests, déploiement), tools.py
+  selfdev/    metrics.py, plugins.py, pipeline.py (worktree, tests, déploiement), github.py (pull requests), tools.py
   integrations/ google.py, mail.py, social.py        channels/ telegram.py        mcp_client.py
   browser.py  navigateur interne (Playwright)        chrome.py  pont vers l'extension Chrome
+  netguard.py adresses permises aux comptes ordinaires (pas de réseau local)
   api/        app.py, chat.py, settings_routes.py, admin.py
   web/        interface PWA bilingue français/anglais (Preact + htm, sans étape de compilation)
 extension/    « Ely pour Chrome » (MV3, sans compilation)
 voice/xtts/   service vocal local : XTTS-v2 et voix clonée, sur le Mac (port 8020)
-tests/        boucle, outils, navigateur réel, extension Chrome réelle, adaptateurs (faux serveurs OpenAI/Anthropic), API, MCP, auto-modification
+tests/        boucle, outils, navigateur réel, extension Chrome réelle, adaptateurs (faux serveurs OpenAI/Anthropic),
+              API, MCP, auto-modification, sécurité, stabilité (près de 200 tests de comportement)
 scripts/      mock_llm.py (faux modèle pour essayer sans tokens), e2e_ui.py (parcours complet de l'interface)
 ```
 
@@ -274,7 +316,8 @@ qui fait avancer la tâche.
 - Certains sites détectent les robots (captcha, vérification) : Ely vous le signale et vous prenez la main quelques secondes.
 - Sans l'extension Chrome, la première connexion à un site (Doctolib, LinkedIn…) se fait une fois dans le navigateur d'Ely ou via le coffre d'identifiants.
 - Un petit modèle local seul ne mène pas bien une longue démarche : gardez au moins une clé cloud pour l'agent principal.
-- Sécurité minimale par choix : Ely a un accès complet (code, shell, identifiants). Gardez-la derrière Tailscale, pas sur Internet ouvert.
+- Pour l'administrateur, Ely a un accès étendu (code, terminal, identifiants) : exposez-la en HTTPS (Tailscale, proxy) et choisissez des mots de passe solides.
+- Abonnement ChatGPT : soumis aux limites du forfait ; une fois atteintes, Ely passe au modèle suivant et le dit.
 
 ## Licence
 

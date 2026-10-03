@@ -2,7 +2,7 @@
 import subprocess
 from pathlib import Path
 
-__version__ = "4.0.0"  # succède à la 3.1.0 d'ElyAgent (réécriture complète)
+__version__ = "4.1.0"  # succède à la 3.1.0 d'ElyAgent (réécriture complète)
 
 
 def _code_version() -> str:
