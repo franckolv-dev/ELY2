@@ -43,7 +43,8 @@ class FakeProvider:
         return next((m for m in self.models if m.id == model), ModelInfo(id=model, provider=self.name))
 
     async def chat(self, model, system, messages, tools=None, on_delta=None, max_tokens=0, effort="high"):
-        self.calls.append({"model": model, "system": system, "messages": messages, "tools": [t["name"] for t in tools or []]})
+        self.calls.append({"model": model, "system": system, "messages": messages, "tools": [t["name"] for t in tools or []],
+                           "effort": effort})
         res = self.script(model=model, system=system, messages=messages, tools=tools or [])
         if asyncio.iscoroutine(res):
             res = await res

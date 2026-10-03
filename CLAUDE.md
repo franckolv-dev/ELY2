@@ -12,7 +12,7 @@ l'interface est bilingue (français vouvoyé / anglais) : tout texte affiché pa
 
 ## Repères
 - Boucle d'agent : `ely/agent/loop.py` (contrôleur d'objectif `verify`, compaction, sous-agents) ; tâches de fond et flux SSE : `ely/agent/runner.py`
-- Modèles : `ely/llm/registry.py` (rôles main/strong/fast/local/embed, choix auto, repli) ; réglages admin en base, relus à chaque appel
+- Modèles : `ely/llm/registry.py` (rôles main/strong/selfdev/fast/local/embed, effort par rôle, choix auto, repli) ; réglages admin en base, relus à chaque appel
 - Navigateur : `ely/chrome.py` (Chrome de l'utilisateur via l'extension `extension/`, prioritaire) et `ely/browser.py` (interne, secours) ; l'outil `browser` ne voit que l'interface commune
 - Outils : décorateur `@tool` dans `ely/tools/__init__.py` ; un outil renvoie `ToolResult`, ne lève jamais vers le modèle ; les droits (`admin_only`, `available`) sont revérifiés à l'exécution ; `untrusted=True` pour tout outil qui renvoie du contenu écrit par des tiers (encadré pour le modèle)
 - Garder la liste d'outils courte et les descriptions concises (coût en tokens à chaque tour)

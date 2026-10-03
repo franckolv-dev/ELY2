@@ -88,14 +88,15 @@ def claude_guard(name: str, args: dict) -> str | None:
 
 def claude_session(ctx: ToolContext, objective: str, model: str):
     """Mission d'auto-amélioration pour Claude : outils natifs gardés, outils d'Ely par MCP, budget des réglages."""
-    from ..llm import claude_agent
+    from ..llm import claude_agent, registry
 
     async def call(name: str, args: dict) -> ToolResult:
         return await execute(ctx, name, args)
 
     return claude_agent.Session(prompt=objective, cwd=Path(pipeline.WORKTREE), model=model, system=CLAUDE_GUIDE,
                                 tools=list(CLAUDE_TOOLS), bridge=[TOOLS[n] for n in CLAUDE_BRIDGE if n in TOOLS],
-                                call=call, permit=claude_guard, budget_usd=claude_agent.budget())
+                                call=call, permit=claude_guard, budget_usd=claude_agent.budget(),
+                                effort=registry.effort("selfdev"))
 
 
 def claude_report(user: dict, objective: str, model: str, error: str, actions: list[dict], texts: list[str],

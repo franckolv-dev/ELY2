@@ -237,7 +237,8 @@ Avec une clé d'API, Claude est facturé au token : Ely ne le choisit jamais d'e
   Gemini.
 - **Rôles** : agent principal, escalade, auto-amélioration, contrôleur rapide, tâches de fond locales, vecteurs. Tout est choisi
   automatiquement, et modifiable dans Réglages → Modèles avec effet immédiat. Chaque conversation peut imposer son
-  modèle (menu en haut).
+  modèle (menu en haut). L'effort de raisonnement se règle aussi par rôle : Moyen pour l'agent principal (demandes
+  courantes), Élevé pour l'escalade et l'auto-amélioration.
 - **Utilisateurs** : chacun a sa mémoire, ses connexions, ses fichiers, son navigateur et ses tâches.
   - Le premier compte est l'administrateur. Il se crée sur la machine d'Ely elle-même (http://localhost:8000).
   - Les suivants s'inscrivent par lien d'invitation (usage unique, valable 7 jours), ou sont créés par l'admin.

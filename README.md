@@ -235,7 +235,8 @@ With an API key, Claude is billed per token: Ely never picks it on its own, you 
   Google Developer Program's monthly credits ("Benefits" section), which work with the Gemini API.
 - **Roles**: main agent, escalation, self-improvement, fast controller, local background tasks, embeddings. Everything is chosen
   automatically, and can be changed in Settings → Models with immediate effect. Each conversation can pin its own
-  model (menu at the top).
+  model (menu at the top). Reasoning effort is set per role too: Medium for the main agent (everyday requests), High
+  for escalation and self-improvement.
 - **Users**: each has their own memory, connections, files, browser and tasks.
   - The first account is the administrator. It is created on Ely's own machine (http://localhost:8000).
   - The following ones sign up with an invitation link (single use, valid 7 days), or are created by the admin.
