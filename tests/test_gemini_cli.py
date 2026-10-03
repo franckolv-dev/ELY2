@@ -192,3 +192,16 @@ def test_a_cli_that_never_signed_in_says_what_to_do(tmp_path, monkeypatch):
     (tmp_path / "vide" / "oauth_creds.json").write_text("{}")
     (tmp_path / "vide" / "settings.json").write_text(json.dumps({"security": {"auth": {"selectedType": "gemini-api-key"}}}))
     assert "/auth" in gemini_cli.problem()  # réglé sur une clé d'API : l'abonnement ne serait pas utilisé
+
+
+async def test_a_cli_switched_back_to_an_api_key_is_never_used(cli):
+    """Le CLI a été remis sur « Gemini API key » (clé gardée dans le trousseau du Mac) après l'activation dans Ely :
+    son réglage passe avant l'environnement imposé par Ely, il facturerait l'API. Ely ne le lance pas et dit quoi faire."""
+    from ely.llm.base import LLMError
+
+    home = gemini_cli.gemini_home()
+    (home / "settings.json").write_text(json.dumps({"security": {"auth": {"selectedType": "gemini-api-key"}}}))
+    with pytest.raises(LLMError) as refused:
+        await gemini_cli.GeminiCLIProvider().chat("gemini-3.8-flash", ["s"], [{"role": "user", "content": "x"}])
+    assert refused.value.kind == "auth" and "/auth" in str(refused.value)
+    assert calls(cli["log"]) == []  # le CLI n'a même pas été lancé

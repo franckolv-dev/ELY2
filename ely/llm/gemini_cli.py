@@ -248,6 +248,10 @@ class GeminiCLIProvider:
         path = binary()
         if not path:
             raise LLMError(problem(), kind="not_found")
+        if auth_type() not in ("", "oauth-personal"):
+            # CLI réglé sur une clé d'API : ce réglage passe avant l'environnement, et il irait chercher la clé dans le
+            # trousseau du Mac. L'abonnement ne serait pas utilisé : l'API serait facturée.
+            raise LLMError(problem(), kind="auth")
         space, base = workdir()
         system_md = base / f"systeme-{uuid.uuid4().hex}.md"
         system_md.write_text("\n\n".join([*system, tools_section(tools)] if tools else system) or "Tu es Ely.")

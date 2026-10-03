@@ -10,7 +10,20 @@ leur historique est dans [son journal](https://github.com/franckolv-dev/ElyAgent
 
 ---
 
-## [Non publié]
+## [4.1.0] — 2026-10-03
+
+> **Ely s'ouvre à Internet et à la famille, et travaille avec vos abonnements.** Gemini avec le forfait Google AI
+> et ChatGPT avec le forfait ChatGPT, sans payer au token ; auto-amélioration confiée à Claude et publiée sur GitHub
+> en pull request ; revue complète de sécurité et de stabilité.
+>
+> **En mettant à jour depuis la 4.0.0** (`./ely.sh update`) :
+> - retéléchargez l'extension Chrome (1.3.0) depuis Ely : l'ancienne reste reliée, mais met la session dans
+>   l'adresse de sa connexion ;
+> - `ELY_ALLOW_SHELL_FOR_ALL` n'a plus d'effet : Python et le terminal sont réservés à l'administrateur, sauf
+>   `ELY_ALLOW_CODE_FOR_ALL=true` ;
+> - proxy HTTPS sur une autre machine que le Mac : déclarez son adresse dans `ELY_TRUSTED_PROXIES` ;
+> - auto-amélioration du code : connectez le CLI GitHub sur le Mac (`gh auth login`), sans quoi le déploiement est
+>   refusé.
 
 ### Ajouté
 - **Modèle fort sur demande** : « prenez le modèle fort », « utilise le modèle fort » (ou « use the strong model »)
@@ -48,6 +61,12 @@ leur historique est dans [son journal](https://github.com/franckolv-dev/ElyAgent
     sont tous refusés : Gemini se sert de ceux d'Ely, demandés par un bloc d'appels que l'interface n'affiche pas.
   - CLI non connecté ou limite du jour atteinte : Ely passe au modèle suivant en disant pourquoi. Une tâche arrêtée
     arrête le CLI.
+- **Auto-amélioration publiée sur GitHub** (amélioration écrite par Ely elle-même). Chaque modification de son code
+  testée est poussée sur une branche `ely-improvement/<commit>` avec une pull request attribuée à Ely, que
+  l'administrateur relit et fusionne ; Ely ne fusionne jamais elle-même. L'activation locale n'a lieu qu'une fois la
+  publication confirmée. Voir [docs/auto-amelioration-github.md](docs/auto-amelioration-github.md).
+- **Tri des e-mails Gmail** (`email_manage`) : corbeille, archives, libellés (créés s'ils manquent), lu ou non lu, sur
+  plusieurs e-mails en un appel.
 - **Rechargement automatique de l'interface** quand Ely redémarre sur une nouvelle version (mise à jour,
   auto-amélioration). Si un message est en cours d'écriture, Ely le garde et propose de recharger.
 
@@ -152,6 +171,14 @@ Second lot, durcissement :
   - Les modèles locaux reçoivent désormais, eux aussi, une longueur maximale de réponse.
   - Un appel qui dépasse 20 minutes est abandonné, et Ely passe au modèle suivant (l'escalade, par exemple) en le
     disant.
+- **Telegram : la réponse n'est envoyée qu'en fin de tâche.** Un brouillon refusé par le contrôleur d'objectif
+  (« je m'en occupe » sans rien faire) n'atteint plus la personne.
+- **Le contrôleur d'objectif connaît la date du jour** : il juge les dates par rapport à aujourd'hui, et non d'après
+  ses connaissances.
+- **Recherche Gmail** : cinq lectures simultanées au plus, avec reprise sur une limite de débit (429).
+- **Gemini par l'abonnement : un CLI remis sur « clé d'API » n'est jamais lancé.** Ce réglage passe avant
+  l'environnement imposé par Ely, et le CLI irait chercher la clé dans le trousseau du Mac : l'API serait facturée.
+  Ely le refuse et indique `/auth` → « Sign in with Google ».
 - **Une tâche planifiée qui se déclenche pendant qu'une autre tourne encore** démarre maintenant à part, au lieu de se
   greffer sur la tâche en cours. Le 30/09, la routine de midi attendait derrière celle du matin, bloquée.
 - Réglages → Auto-amélioration → « Lancer » ne démarrait pas la session (erreur « no running event loop » dans le
@@ -221,4 +248,5 @@ Second lot, durcissement :
 
 Les mesures de l'ancien projet l'ont montré : ces couches coûtaient plus qu'elles ne rapportaient.
 
+[4.1.0]: https://github.com/franckolv-dev/ELY2/releases/tag/v4.1.0
 [4.0.0]: https://github.com/franckolv-dev/ELY2/releases/tag/v4.0.0

@@ -8,14 +8,31 @@ And **it doesn't stop until the goal is reached.**
 
 ![Ely: home screen, with its live browser on the right](docs/images/en/home.png)
 
-Three watchwords: **efficiency, autonomy, performance.** Version 4.0.0 is a complete rewrite, following
-[ElyAgent](https://github.com/franckolv-dev/ElyAgent)'s 3.1.0 (see the [changelog](CHANGELOG.md), in French): ~8,300
-lines of Python and ~2,900 lines of interface, instead of the previous version's 240,000 lines and 9 Docker services.
+Three watchwords: **efficiency, autonomy, performance.** Version 4 is a complete rewrite, following
+[ElyAgent](https://github.com/franckolv-dev/ElyAgent)'s 3.1.0 (see the [changelog](CHANGELOG.md), in French): ~10,000
+lines of Python and ~3,000 lines of interface, instead of the previous version's 240,000 lines and 9 Docker services.
 One process, one SQLite database, zero services to maintain.
 
 The interface is bilingual (English / French, formal "vous" by default), and Ely answers in your language.
 
 ![Settings → Profile: theme, language and form of address](docs/images/en/profile.png)
+
+---
+
+## What's new in 4.1
+
+- **Your subscriptions instead of paid keys**: Gemini on your Google AI plan (official `gemini` CLI), on top of
+  ChatGPT on your plan. See [Multi-model](#multi-model-multi-user).
+- **Self-improvement handed to Claude** (Claude Agent SDK), and every change to its own code **published on GitHub as
+  a pull request** that you review and merge. See [Self-improvement](#recursive-self-improvement).
+- **Ready for the Internet and for the family**: permissions checked on every action, code reserved to the
+  administrator, third-party content never taken as orders, home network closed to other accounts, protected sessions.
+  See [Security](#security).
+- **Sturdier**: an action whose outcome is uncertain is never blindly redone, a frozen model is bypassed, Ely waits
+  for LM Studio when it starts later, and rolls back by itself if an update keeps crashing.
+- **Gmail sorting** (trash, archive, labels); on Telegram, the answer only arrives once the task is validated.
+
+All the details in the [changelog](CHANGELOG.md) (in French).
 
 ---
 
@@ -29,8 +46,9 @@ The interface is bilingual (English / French, formal "vous" by default), and Ely
 | "Add Marie Leroy, +33 6 12 34 56 78, she's my physiotherapist" | creates the contact, and remembers who Marie is |
 | "Every Monday at 8 am, give me a rundown of my week's appointments" | schedules the task and sends you the result as a notification |
 | "Compare these 3 quotes (attached PDFs) and make me an Excel table" | reads the PDFs, calculates, produces the file to download |
+| "File this week's newsletters under the Reading label" | finds the emails, files them under the label (created if missing) |
 | "Connect to my Home Assistant" (admin) | adds the MCP server: its tools become Ely's own |
-| "Improve yourself to be faster on Doctolib" (admin) | analyses its failures, writes a skill or fixes its own code, tests, redeploys |
+| "Improve yourself to be faster on Doctolib" (admin) | analyses its failures, writes a skill or fixes its own code, tests, publishes the change as a GitHub pull request, redeploys |
 
 ---
 
@@ -112,9 +130,13 @@ your request ─▶ persistent background task ─▶ think ─▶ act (tools, i
   only when the job is done, or when no further progress is possible (no infinite loop).
 - **Background tasks**: close the app, the task keeps going. You get a notification at the end.
 - **Resume after restart**: every step is recorded; after a restart, tasks pick up where they left off.
-  An action whose result was lost is never blindly replayed: Ely checks first.
+  An action whose result was lost is never blindly replayed: Ely checks first. An update waits for the family's
+  running tasks to finish before restarting.
+- **Uncertain outcome**: an email sent or a click that runs past its time limit isn't reported as a failure, since
+  it often went through. Ely checks (sent folder, page, calendar) before doing it again.
 - **Messages along the way**: "oh, and add bread too" is folded into the running task.
-- **Model outages**: automatic switch to the next provider, then patient retries.
+- **Model outages**: automatic switch to the next provider, then patient retries. A frozen model moves to the back of
+  the line for ten minutes; if Ely starts before LM Studio, it waits for it instead of giving up.
   As soon as the controller finds the goal isn't met, or when you ask for it ("use the strong model"), Ely moves up
   to the escalation model (`ELY_MODEL_STRONG`), if you've configured one.
 - **Questions to the user**: only for what it truly can't guess (SMS code, unknown password).
@@ -168,9 +190,10 @@ of dissatisfaction, cost) and improves on four levels, from the lightest to the 
 3. **New tools**: Ely writes its own Python plugins, hot-loaded, no restart. A plugin that
    crashes is rejected or disabled automatically.
 4. **Its own code**: Ely reads and changes its code in an **isolated git copy**, runs the **test suite**,
-   then commits, merges and **restarts**. The `ely.sh` launcher checks the health of the new version and
-   **automatically rolls back** to the previous one if it doesn't start. Every change is in the log, with its diff and
-   an "Undo" button.
+   then commits, **publishes the change on GitHub** (a pull request you review and merge), activates it and
+   **restarts**. A deployment that drops a test is refused. The `ely.sh` launcher checks the health of the new version
+   and **automatically rolls back** to the previous one if it doesn't start or keeps crashing (your local changes are
+   set aside, never overwritten). Every change is in the log, with its diff and an "Undo" button.
 
 To understand a failure, the session reads back the full course of past tasks (requests, actions, exact errors,
 controller refusals): "work out why you failed to order on that site" is enough.
@@ -180,7 +203,9 @@ A session runs every night at 4 am if there was any activity (can be turned off)
 by hand (Settings → Self-improvement), or simply ask in the chat: "improve yourself to…". These sessions use their
 own model (Settings → Models → Self-improvement; automatic: the escalation model).
 
-> For step 4 to be active, start Ely with `./ely.sh` (the supervisor) from a git clone.
+> For step 4 to be active, start Ely with `./ely.sh` (the supervisor) from a git clone, and sign the GitHub CLI in on
+> the Mac (`gh auth login`): if the change can't be published, the deployment is refused
+> (see [docs/auto-amelioration-github.md](docs/auto-amelioration-github.md), in French).
 
 ### Handing self-improvement to Claude (optional)
 
@@ -210,30 +235,45 @@ With an API key, Claude is billed per token: Ely never picks it on its own, you 
 - **Google Gemini subscription** (AI Pro…): Gemini without an API key, through the official CLI. On the Mac:
   `npm install -g @google/gemini-cli`, then `gemini` and "Sign in with Google"; finally Settings → Models →
   "Enable". Ely enforces the subscription (any `GEMINI_API_KEY` is never passed to the CLI), turns off the CLI's tools
-  and has it use her own. Subject to the plan's daily limits.
+  and has it use Ely's own. Subject to the plan's daily limits.
 - **Roles**: main agent, escalation, self-improvement, fast controller, local background tasks, embeddings. Everything is chosen
   automatically, and can be changed in Settings → Models with immediate effect. Each conversation can pin its own
   model (menu at the top).
 - **Users**: each has their own memory, connections, files, browser and tasks.
   - The first account is the administrator. It is created on Ely's own machine (http://localhost:8000).
   - The following ones sign up with an invitation link (single use, valid 7 days), or are created by the admin.
-  - Python and the terminal run on the machine: they are reserved to the administrator, unless
-    `ELY_ALLOW_CODE_FOR_ALL=true`. So is the home network (router, NAS, LM Studio).
-  - Changing a password closes the other sessions. Repeated password guesses are slowed down and the person is
-    notified. Behind a proxy running on another machine than the Mac, declare its address in `ELY_TRUSTED_PROXIES`.
   - Usage and cost per user in Settings → Usage.
+
+## Security
+
+Ely is built to be reachable from the Internet and shared with the family:
+
+- **Permissions checked on every action**: a tool reserved to the administrator is never run for another account,
+  even if the model asks for it (booby-trapped content, made-up name).
+- **Code reserved to the administrator**: Python and the terminal run on the machine, without Ely's secrets
+  (`ELY_ALLOW_CODE_FOR_ALL=true` opens them to everyone). The home network (router, NAS, LM Studio, the Mac's files) is
+  closed to other accounts.
+- **Third-party content fenced off**: web pages, emails and received files reach the model as information, never as
+  orders.
+- **Protected interface**: served files can't run, the page only runs its own scripts, and an image from another site
+  is shown as a link.
+- **Sessions**: never in an address; changing a password closes the other sessions; repeated password guesses are
+  slowed down without locking out the real owner, who is notified.
+- **Proxy**: behind a proxy running on another machine than the Mac, declare its address in `ELY_TRUSTED_PROXIES`
+  (with `tailscale serve` on the Mac, nothing to do).
 
 ## Connections
 
 | Service | How |
 |---|---|
-| **Gmail, Google Calendar, Contacts** | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (see `.env.example`), then each user clicks "Connect my Google account" |
+| **Gmail, Google Calendar, Contacts** | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (see `.env.example`), then each user clicks "Connect my Google account". Reading, sending and sorting emails (trash, archive, labels) |
 | **Any other mailbox** | Settings → Connections → Mailbox, with an app password (Gmail, Outlook, iCloud, and French providers such as Free, Orange, SFR, OVH…) |
 | **Calendar & contacts without Google** | built into Ely, with notification reminders and an iCal link to subscribe from your phone |
 | **LinkedIn** | via the API (`LINKEDIN_CLIENT_ID/SECRET`) or, with nothing to configure, through Ely's browser |
 | **Facebook** | page: page token; personal profile: Ely's browser |
 | **Telegram** | `TELEGRAM_BOT_TOKEN`, then Settings → Connections |
 | **MCP servers** | Settings → MCP extensions, or ask Ely to connect to one |
+| **GitHub** (self-improvement) | GitHub CLI `gh` signed in on the Mac (`gh auth login`): every improvement to Ely's code arrives as a pull request on its repository |
 | **Web search** | free by default (DuckDuckGo & co); SearXNG, Serper, Exa, SearchCans, Google, Tavily or Brave if you have them |
 | **Voice** | browser dictation (Chrome on Android); otherwise transcription by Groq or OpenAI if a key exists. Reading aloud: Chrome's Google voice, or macOS Premium voices (System Settings → Accessibility → Spoken Content → System Voice → Manage Voices), to try in Settings → Profile → Voice. **Cloned voice**: if the `voice/xtts` voice service runs on the Mac (port 8020, or `XTTS_URL`; see its `README.md`), its recorded voices come first, read sentence by sentence, falling back to the browser voice |
 
@@ -242,18 +282,21 @@ With an API key, Claude is billed per token: Ely never picks it on its own, you 
 ```
 ely/
   agent/      loop.py (loop + controller + compaction), runner.py (background tasks, resume, live stream), prompts.py
-  llm/        anthropic_provider.py, openai_compat.py, registry.py (roles, automatic choice, fallback)
+  llm/        anthropic_provider.py, openai_compat.py, registry.py (roles, automatic choice, fallback),
+              chatgpt_provider.py and gemini_cli.py (subscriptions), claude_agent.py (Claude Agent SDK)
   tools/      web, browser, comms (email), pim (calendar, contacts), social, files (+ Python/shell), memory,
               planning (scheduling, questions, notifications, credentials), media, delegate (sub-agents)
   memory/     store.py (profile, hybrid memories, history, skills), learner.py
-  selfdev/    metrics.py, plugins.py, pipeline.py (worktree, tests, deployment), tools.py
+  selfdev/    metrics.py, plugins.py, pipeline.py (worktree, tests, deployment), github.py (pull requests), tools.py
   integrations/ google.py, mail.py, social.py        channels/ telegram.py        mcp_client.py
   browser.py  built-in browser (Playwright)          chrome.py  bridge to the Chrome extension
+  netguard.py addresses allowed to regular accounts (no local network)
   api/        app.py, chat.py, settings_routes.py, admin.py
   web/        bilingual English/French PWA (Preact + htm, no build step)
 extension/    "Ely for Chrome" (MV3, no build step)
 voice/xtts/   local voice service: XTTS-v2 and cloned voice, on the Mac (port 8020)
-tests/        loop, tools, real browser, real Chrome extension, adapters (fake OpenAI/Anthropic servers), API, MCP, self-modification
+tests/        loop, tools, real browser, real Chrome extension, adapters (fake OpenAI/Anthropic servers, fake Gemini CLI),
+              API, MCP, self-modification, security, stability (about 200 behaviour tests)
 scripts/      mock_llm.py (fake model to try without tokens), e2e_ui.py (full interface walkthrough)
 ```
 
@@ -274,7 +317,8 @@ the task forward remains.
 - Some sites detect bots (captcha, verification): Ely tells you and you take over for a few seconds.
 - Without the Chrome extension, the first sign-in to a site (Doctolib, LinkedIn…) happens once in Ely's browser or through the credentials vault.
 - A small local model alone doesn't handle a long procedure well: keep at least one cloud key for the main agent.
-- Minimal security by design: Ely has full access (code, shell, credentials). Keep it behind Tailscale, not on the open Internet.
+- For the administrator, Ely has broad access (code, terminal, credentials): expose it over HTTPS (Tailscale, proxy) and pick strong passwords.
+- ChatGPT and Gemini subscriptions are subject to the plans' limits; once reached, Ely moves on to the next model and says so.
 
 ## License
 
