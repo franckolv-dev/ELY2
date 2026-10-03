@@ -221,6 +221,11 @@ def _error(message: str, code: int) -> LLMError:
     if code == AUTH_EXIT or "authenticat" in low or "auth method" in low or "manual authorization" in low:
         return LLMError("Gemini (abonnement) : le CLI n'est pas connecté à votre compte Google. Lancez « gemini » dans "
                         "un terminal du Mac et choisissez « Sign in with Google ».", kind="auth")
+    if "ineligibletier" in low or "no longer supported" in low:
+        # refus du serveur, définitif : depuis juin 2026, Google ne sert plus le CLI aux comptes personnels
+        return LLMError("Gemini (abonnement) : Google refuse ce compte au CLI Gemini. Les comptes personnels (Google AI "
+                        "Pro, Ultra, offre gratuite) n'y ont plus accès ; seules les licences Gemini Code Assist Standard "
+                        f"ou Enterprise le sont encore. ({message[:200]})", kind="auth")
     if "quota" in low or "resource_exhausted" in low or "429" in low or "rate limit" in low:
         return LLMError(f"Gemini (abonnement) : limite de l'abonnement atteinte ({message[:200]})", status=429)
     if "not found" in low or "404" in low:

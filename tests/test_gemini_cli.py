@@ -45,6 +45,11 @@ if mode == "quota":
     emit(type="result", status="error", error={{"type": "unknown", "message": "[API Error: 429 RESOURCE_EXHAUSTED: "
          "You have exhausted your daily quota on this model.]"}}, stats={{}})
     sys.exit(1)
+if mode == "ineligible":  # abonnement personnel (Google AI Pro) : refus du serveur, tel que le CLI 0.62 l'écrit
+    sys.stderr.write("An unexpected critical error occurred:IneligibleTierError: This client is no longer supported for "
+                     "Gemini Code Assist for individuals. To continue using Gemini, please migrate to the Antigravity "
+                     "suite of products: https://antigravity.google\n    at setupUser (file:///gemini.js:1:1)\n")
+    sys.exit(1)
 if mode == "hang":
     time.sleep(3600)
 if "<<résultat de l'outil file_list" in stdin:
@@ -139,6 +144,24 @@ async def test_gemini_not_signed_in_or_out_of_quota_hands_over(cli, fake):
         assert resp.model == "fake:agent", mode
         assert any("geminicli:gemini-3.8-flash indisponible" in w and reason in w for w in switches), (mode, switches)
     db.set_setting("model_fallbacks", "auto")
+
+
+async def test_a_personal_subscription_refused_by_google_hands_over_at_once(cli, fake):
+    """Google ne sert plus le CLI aux abonnements personnels (Google AI Pro) : ce refus est définitif. Ely passe tout de
+    suite au modèle suivant, sans trois essais de plusieurs secondes à chaque message, et dit pourquoi."""
+    fake.script = lambda **kw: "Réponse du modèle de secours."
+    db.set_setting("model_fallbacks", "fake:agent")
+    cli["mode"].write_text("ineligible")
+    switches = []
+
+    async def on_switch(ref, why):
+        switches.append(why)
+
+    resp = await registry.chat(system=["s"], messages=[{"role": "user", "content": "Bonjour"}], on_switch=on_switch)
+    db.set_setting("model_fallbacks", "auto")
+    assert resp.model == "fake:agent"
+    assert len(calls(cli["log"])) == 1, switches
+    assert any("indisponible" in w and "comptes personnels" in w for w in switches), switches
 
 
 async def test_a_stopped_task_stops_gemini_too(cli):
