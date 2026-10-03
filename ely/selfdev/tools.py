@@ -181,7 +181,7 @@ def start_session(user: dict, goal: str = "") -> int:
 
 @tool("ely_metrics", "Rapport de performances d'Ely (tâches, statuts, durées, erreurs d'outils, refus du contrôleur, insatisfactions, coûts).",
       {"days": {"type": "number", "description": "Période en jours (défaut 7)"}}, [], label="Métriques", icon="📊",
-      admin_only=True, available=_selfdev)
+      admin_only=True, available=_selfdev, effects=False)
 async def ely_metrics(ctx: ToolContext, days: float = 7) -> ToolResult:
     return ToolResult(metrics.report(days))
 
@@ -192,7 +192,8 @@ actions avec arguments et résultats, erreurs, refus du contrôleur).""",
       {"action": {"type": "string", "enum": ["list", "read"]}, "query": {"type": "string"},
        "days": {"type": "number", "description": "Période en jours (défaut 30)"}, "run_id": {"type": "integer"},
        "offset": {"type": "integer"}},
-      ["action"], label="Journal des tâches", icon="📜", admin_only=True, available=_selfdev, timeout=60)
+      ["action"], label="Journal des tâches", icon="📜", admin_only=True, available=_selfdev, timeout=60,
+      effects=False)
 async def ely_journal(ctx: ToolContext, action: str, query: str = "", days: float = 30, run_id: int = 0, offset: int = 0) -> ToolResult:
     if action == "read":
         if not run_id:
@@ -205,7 +206,7 @@ async def ely_journal(ctx: ToolContext, action: str, query: str = "", days: floa
 · diff (modifications en cours) · reset (repartir de la version active).""",
       {"action": {"type": "string", "enum": ["list", "read", "search", "diff", "reset"]}, "path": {"type": "string"},
        "pattern": {"type": "string"}, "offset": {"type": "integer"}},
-      ["action"], label="Code d'Ely", icon="🧬", admin_only=True, available=_selfdev, timeout=180)
+      ["action"], label="Code d'Ely", icon="🧬", admin_only=True, available=_selfdev, timeout=180, effects=False)
 async def ely_code(ctx: ToolContext, action: str, path: str = "", pattern: str = "", offset: int = 0) -> ToolResult:
     await pipeline.ensure_session()
     if action == "reset":
@@ -265,7 +266,7 @@ async def ely_edit(ctx: ToolContext, action: str, path: str, old: str = "", new:
 
 
 @tool("ely_test", "Lance la suite de tests d'Ely sur la copie de travail (pattern = filtre pytest -k facultatif).",
-      {"pattern": {"type": "string"}}, [], label="Tests", icon="🧪", admin_only=True, available=_selfdev, timeout=960)
+      {"pattern": {"type": "string"}}, [], label="Tests", icon="🧪", admin_only=True, available=_selfdev, timeout=960, effects=False)
 async def ely_test(ctx: ToolContext, pattern: str = "") -> ToolResult:
     await pipeline.ensure_session()
     ok, out = await pipeline.run_tests(pattern)
@@ -312,9 +313,10 @@ async def ely_plugin(ctx: ToolContext, action: str, name: str = "", code: str = 
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(code, encoding="utf-8")
         try:
+            await plugins.check_import(path)
             tools = plugins.load_one(name)
             result = await plugins.test_one(name)
-        except Exception as e:
+        except (Exception, SystemExit) as e:
             if old is not None:
                 path.write_text(old)
                 plugins.load_one(name)
@@ -329,7 +331,7 @@ async def ely_plugin(ctx: ToolContext, action: str, name: str = "", code: str = 
     if action == "test":
         try:
             return ToolResult(await plugins.test_one(name))
-        except Exception as e:
+        except (Exception, SystemExit) as e:
             return ToolResult(f"selftest en échec : {e}", is_error=True)
     if action in ("disable", "enable"):
         plugins.set_disabled(name, action == "disable")

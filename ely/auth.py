@@ -12,6 +12,9 @@ from fastapi import Depends, HTTPException, Request
 from .db import db, now
 
 SESSION_DAYS = 365
+MIN_PASSWORD = 6
+# comparé quand l'e-mail est inconnu : la réponse prend le même temps, elle ne dit pas qui a un compte
+DUMMY_HASH = "scrypt$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 
 
 def hash_password(password: str) -> str:
@@ -34,8 +37,7 @@ def create_user(email: str, name: str, password: str, role: str | None = None) -
     email = email.strip().lower()
     if not email or "@" not in email:
         raise HTTPException(400, "Adresse e-mail invalide")
-    if len(password) < 6:
-        raise HTTPException(400, "Mot de passe trop court (6 caractères minimum)")
+    check_password(password)
     if db.one("SELECT id FROM users WHERE email = ?", (email,)):
         raise HTTPException(409, "Un compte existe déjà avec cette adresse")
     if role is None:
@@ -45,6 +47,18 @@ def create_user(email: str, name: str, password: str, role: str | None = None) -
         role=role, settings="{}", created_at=now(),
     )
     return get_user(uid)
+
+
+def check_password(password: str) -> None:
+    if len(password) < MIN_PASSWORD:
+        raise HTTPException(400, f"Mot de passe trop court ({MIN_PASSWORD} caractères minimum)")
+
+
+def set_password(user_id: int, password: str, keep_token: str | None = None) -> None:
+    """Nouveau mot de passe : les autres sessions sont fermées (un jeton volé ne survit pas au changement)."""
+    check_password(password)
+    db.run("UPDATE users SET password_hash = ? WHERE id = ?", (hash_password(password), user_id))
+    db.run("DELETE FROM sessions WHERE user_id = ? AND token IS NOT ?", (user_id, keep_token))
 
 
 def get_user(uid: int) -> dict | None:
@@ -75,7 +89,7 @@ def token_from_request(request: Request) -> str | None:
     auth = request.headers.get("authorization", "")
     if auth.lower().startswith("bearer "):
         return auth[7:].strip()
-    return request.cookies.get("ely_token") or request.query_params.get("token")
+    return request.cookies.get("ely_token")  # jamais dans l'adresse : elle finit dans les journaux des proxys
 
 
 def current_user(request: Request) -> dict:

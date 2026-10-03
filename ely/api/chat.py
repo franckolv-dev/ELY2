@@ -5,6 +5,7 @@ import asyncio
 import base64
 import io
 import json
+import logging
 import mimetypes
 import re
 import threading
@@ -16,13 +17,14 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, 
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
-from .. import CODE_VERSION, auth
+from .. import CODE_VERSION, auth, chrome
 from ..agent.runner import public_message, runner
 from ..browser import manager
 from ..config import settings
 from ..db import db, now
 
 router = APIRouter()
+log = logging.getLogger("ely.api")
 
 
 # ---------------------------------------------------------------------- comptes
@@ -84,32 +86,76 @@ def register(body: Credentials, request: Request, response: Response):
     return _login_response(user, request, response)
 
 
-# Essais de mot de passe : Ely est souvent joignable depuis Internet, où des robots essaient des mots de passe en boucle
-LOGIN_TRIES, LOGIN_WINDOW = 5, 15 * 60
+# Essais de mot de passe : Ely est souvent joignable depuis Internet, où des robots essaient des mots de passe en boucle.
+# Une adresse IP est bloquée après LOGIN_TRIES échecs sur un compte (LOGIN_TRIES_IP sur tous) ; un compte ne l'est
+# jamais en entier : un inconnu ne doit pas pouvoir empêcher Franck de se connecter. La personne est prévenue.
+LOGIN_TRIES, LOGIN_TRIES_IP, LOGIN_WINDOW = 5, 20, 15 * 60
+ALERT_AFTER = 5  # échecs sur un compte (toutes adresses confondues) avant de prévenir la personne
+FAIL_DELAY = 0.5  # secondes de pause après un mauvais mot de passe
 _failures: dict[str, list[float]] = {}
 
 
 def _recent_failures(key: str) -> list[float]:
     times = [t for t in _failures.get(key, []) if t > time.time() - LOGIN_WINDOW]
-    _failures[key] = times
+    if times:
+        _failures[key] = times
+    else:
+        _failures.pop(key, None)
     return times
 
 
+def _forget_old_failures() -> None:
+    for key in list(_failures):
+        _recent_failures(key)
+
+
+def _fail(keys: tuple[str, ...], row: dict | None, ip: str) -> None:
+    for k in keys:
+        _failures.setdefault(k, []).append(time.time())
+    n = len(_recent_failures(keys[0]))
+    if row and n >= ALERT_AFTER and (n - ALERT_AFTER) % 10 == 0:  # au 5e échec, puis tous les 10
+        from ..notify import notify
+
+        asyncio.get_running_loop().create_task(notify(
+            row["id"], "Ely · tentatives de connexion",
+            f"{n} mots de passe incorrects sur votre compte en {LOGIN_WINDOW // 60} min (dernier essai depuis {ip}). "
+            "Si ce n'est pas vous, changez votre mot de passe (Réglages → Profil).", tag="login-failures"))
+
+
+_untrusted_proxies: set[str] = set()
+
+
+def client_ip(request: Request) -> str:
+    """Adresse du visiteur. Relayée par un proxy qui n'est pas déclaré de confiance, c'est celle du proxy : tous les
+    visiteurs partageraient alors la même limite d'essais. Ely le signale une fois dans son journal."""
+    ip = request.client.host if request.client else "?"
+    relayed = request.client and request.client.port != 0  # port 0 : adresse déjà tirée de l'en-tête d'un proxy de confiance
+    if request.headers.get("x-forwarded-for") and relayed and ip not in _untrusted_proxies and ip not in LOOPBACK:
+        _untrusted_proxies.add(ip)
+        log.warning("requêtes relayées par %s, absent de ELY_TRUSTED_PROXIES (%s) : ajoutez-le dans .env si c'est "
+                    "votre proxy", ip, settings.trusted_proxies)
+    return ip
+
+
 @router.post("/api/auth/login")
-def login(body: Credentials, request: Request, response: Response):
+async def login(body: Credentials, request: Request, response: Response):
+    _forget_old_failures()
     email = body.email.strip().lower()
-    keys = (f"email:{email}", f"ip:{request.client.host if request.client else '?'}")
-    blocked = [_recent_failures(k) for k in keys if len(_recent_failures(k)) >= LOGIN_TRIES]
+    ip = client_ip(request)
+    keys = (f"email:{email}", f"email-ip:{email}|{ip}", f"ip:{ip}")
+    limits = {keys[1]: LOGIN_TRIES, keys[2]: LOGIN_TRIES_IP}
+    blocked = [_recent_failures(k) for k, n in limits.items() if len(_recent_failures(k)) >= n]
     if blocked:
         wait = int(min(times[0] for times in blocked) + LOGIN_WINDOW - time.time()) // 60 + 1
         raise HTTPException(429, f"Trop d'essais de mot de passe : réessayez dans {wait} min")
     row = db.one("SELECT id, password_hash FROM users WHERE email = ?", (email,))
-    if not row or not auth.verify_password(body.password, row["password_hash"]):
-        for k in keys:
-            _failures.setdefault(k, []).append(time.time())
-        time.sleep(0.5)
+    # un e-mail inconnu coûte le même calcul qu'un compte existant : le temps de réponse ne dit pas qui a un compte
+    ok = await asyncio.to_thread(auth.verify_password, body.password, row["password_hash"] if row else auth.DUMMY_HASH)
+    if not row or not ok:
+        _fail(keys, row, ip)
+        await asyncio.sleep(FAIL_DELAY)
         raise HTTPException(401, "E-mail ou mot de passe incorrect")
-    for k in keys:
+    for k in keys[1:]:
         _failures.pop(k, None)
     return _login_response(auth.get_user(row["id"]), request, response)
 
@@ -136,15 +182,22 @@ class MeUpdate(BaseModel):
 
 
 @router.patch("/api/me")
-def update_me(body: MeUpdate, user=Depends(auth.current_user)):
+async def update_me(body: MeUpdate, request: Request, user=Depends(auth.current_user)):
     if body.name:
         db.run("UPDATE users SET name = ? WHERE id = ?", (body.name.strip(), user["id"]))
     if body.password:
         row = db.one("SELECT password_hash FROM users WHERE id = ?", (user["id"],))
         if not auth.verify_password(body.current_password or "", row["password_hash"]):
             raise HTTPException(403, "Mot de passe actuel incorrect")
-        db.run("UPDATE users SET password_hash = ? WHERE id = ?", (auth.hash_password(body.password), user["id"]))
+        token = auth.token_from_request(request)
+        auth.set_password(user["id"], body.password, keep_token=token)  # cette session reste ouverte, les autres non
+        await chrome.disconnect(user["id"], keep_token=token)
     if body.settings is not None:
+        from ..tools.pim import known_tz
+
+        tz = body.settings.get("timezone")
+        if tz is not None and not (isinstance(tz, str) and known_tz(tz)):
+            raise HTTPException(400, f"Fuseau horaire inconnu : {tz}")
         auth.update_user_settings(user["id"], **body.settings)
     return auth.get_user(user["id"])
 
@@ -205,10 +258,9 @@ def update_conversation(cid: int, body: ConvUpdate, user=Depends(auth.current_us
 @router.delete("/api/conversations/{cid}")
 async def delete_conversation(cid: int, user=Depends(auth.current_user)):
     _own(cid, user)
-    await runner.cancel(cid)
+    await runner.stop(cid)  # sa note « Tâche arrêtée » est écrite avant la suppression, pas dans le vide
     db.run("DELETE FROM messages_fts WHERE conversation_id = ?", (cid,))
     db.run("DELETE FROM conversations WHERE id = ?", (cid,))
-    runner.states.pop(cid, None)
     return {"ok": True}
 
 

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from .. import auth
+from ..config import settings
 from ..db import db, now
 from ..llm import registry
 from ..llm.registry import ROLES, price_of
@@ -85,26 +86,43 @@ class UserPatch(BaseModel):
 
 
 @router.patch("/api/admin/users/{uid}")
-def patch_user(uid: int, body: UserPatch, user=Depends(auth.admin_user)):
+async def patch_user(uid: int, body: UserPatch, user=Depends(auth.admin_user)):
     if body.role in ("admin", "user"):
         if uid == user["id"] and body.role != "admin":
             raise HTTPException(400, "Vous ne pouvez pas vous retirer vous-même le rôle administrateur")
         db.run("UPDATE users SET role = ? WHERE id = ?", (body.role, uid))
-    if body.password:
-        db.run("UPDATE users SET password_hash = ? WHERE id = ?", (auth.hash_password(body.password), uid))
+    if body.password:  # mot de passe réinitialisé par l'administrateur : toutes les sessions du compte sont fermées
+        from .. import chrome
+
+        auth.set_password(uid, body.password)
+        await chrome.disconnect(uid)
     if body.name:
         db.run("UPDATE users SET name = ? WHERE id = ?", (body.name, uid))
     return auth.get_user(uid)
 
 
 @router.delete("/api/admin/users/{uid}")
-def delete_user(uid: int, user=Depends(auth.admin_user)):
+async def delete_user(uid: int, user=Depends(auth.admin_user)):
+    """Tout ce qui appartient au compte disparaît avec lui : un compte créé ensuite peut reprendre le même numéro, il ne
+    doit rien en hériter (fichiers, profil du navigateur et ses connexions, compétences, statistiques)."""
     if uid == user["id"]:
         raise HTTPException(400, "Impossible de supprimer votre propre compte")
+    import shutil
+
+    from .. import chrome
+    from ..agent.runner import runner
+    from ..browser import manager
     from ..memory.store import purge_user_index
 
+    for cid in [s.conversation_id for s in list(runner.states.values()) if s.user_id == uid]:
+        await runner.stop(cid)
+    await chrome.disconnect(uid)
+    await manager.close_user(uid)
     purge_user_index(uid)
+    for table in ("runs", "usage", "tool_log"):  # sans clé étrangère vers users
+        db.run(f"DELETE FROM {table} WHERE user_id = ?", (uid,))
     db.run("DELETE FROM users WHERE id = ?", (uid,))
+    shutil.rmtree(settings.data_dir / "users" / str(uid), ignore_errors=True)
     return {"ok": True}
 
 
@@ -198,15 +216,14 @@ async def revert(iid: int, user=Depends(auth.admin_user)):
     if not imp or imp["kind"] != "code" or not imp["commit_sha"]:
         raise HTTPException(400, "Seules les modifications de code déployées peuvent être annulées ici")
     code, out = await pipeline.git("-c", "user.name=Ely", "-c", "user.email=ely@localhost", "revert", "--no-edit", imp["commit_sha"])
-    if code:
-        raise HTTPException(400, f"Annulation impossible : {out}")
+    if code:  # conflit avec une modification plus récente : le code reste tel quel, sans marqueurs de conflit
+        await pipeline.git("revert", "--abort")
+        raise HTTPException(400, f"Annulation impossible (modifiée depuis par une autre amélioration ?) : {out[-800:]}")
     db.update("improvements", "id = ?", (iid,), status="reverted")
     import os
 
     if os.environ.get("ELY_SUPERVISED") == "1":
-        import asyncio
-
-        asyncio.get_running_loop().call_later(2, pipeline.request_restart)
+        pipeline.restart_soon(2)
         return {"ok": True, "message": "Modification annulée, redémarrage…"}
     return {"ok": True, "message": "Modification annulée. Redémarre Ely pour l'appliquer."}
 
@@ -267,6 +284,35 @@ async def chatgpt_disconnect(user=Depends(auth.admin_user)):
     registry.build_providers()
     await registry.refresh()
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------- Gemini par l'abonnement Google (CLI gemini)
+@router.get("/api/admin/geminicli")
+async def geminicli_state(user=Depends(auth.admin_user)):
+    from ..llm import gemini_cli
+
+    return await gemini_cli.status()
+
+
+class GeminiCLIIn(BaseModel):
+    enabled: bool
+
+
+@router.put("/api/admin/geminicli")
+async def geminicli_toggle(body: GeminiCLIIn, user=Depends(auth.admin_user)):
+    from ..llm import gemini_cli
+
+    db.set_setting(gemini_cli.SETTING, body.enabled)
+    registry.build_providers()
+    await registry.refresh()
+    return {**await gemini_cli.status(), "roles": registry.roles_view()}
+
+
+@router.post("/api/admin/geminicli/test")
+async def geminicli_test(user=Depends(auth.admin_user)):
+    from ..llm import gemini_cli
+
+    return await gemini_cli.ping()
 
 
 # ---------------------------------------------------------------------- Claude par l'Agent SDK

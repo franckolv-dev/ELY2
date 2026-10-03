@@ -3,11 +3,15 @@ from __future__ import annotations
 
 import errno
 import logging
+import os
 import socket
 import subprocess
 import sys
+import threading
 
 PORT_BUSY = 3  # code de sortie : le superviseur (ely.sh) ne relance pas en boucle
+STARTUP_FAILED = 4  # démarrage en échec (plugin, base…) : relancé, puis retour arrière s'il suit une mise à jour
+SHUTDOWN_LIMIT = 20  # secondes entre l'ordre d'arrêt et l'arrêt forcé (connexions, tâches, navigateur, fils figés)
 
 
 def port_owner(port: int) -> str:
@@ -68,8 +72,29 @@ def main() -> None:
         sys.exit(PORT_BUSY)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s : %(message)s", datefmt="%H:%M:%S")
     logging.getLogger("httpx").setLevel(logging.WARNING)
-    uvicorn.run("ely.api.app:app", host=settings.host, port=settings.port, proxy_headers=True, forwarded_allow_ips="*",
-                timeout_graceful_shutdown=8, log_level="info")
+
+    class Server(uvicorn.Server):
+        def handle_exit(self, sig, frame) -> None:
+            # un fil encore occupé (envoi réseau sans délai…) retiendrait le processus indéfiniment, et avec lui le
+            # redémarrage après une mise à jour : passé SHUTDOWN_LIMIT, l'arrêt est forcé (les tâches seront reprises)
+            if not self.should_exit:
+                watchdog = threading.Timer(SHUTDOWN_LIMIT, os._exit, (0,))
+                watchdog.daemon = True
+                watchdog.start()
+            super().handle_exit(sig, frame)
+
+    server = Server(uvicorn.Config("ely.api.app:app", host=settings.host, port=settings.port, proxy_headers=True,
+                                   forwarded_allow_ips=settings.trusted_proxies, timeout_graceful_shutdown=8,
+                                   log_level="info"))
+    try:
+        server.run()
+    except KeyboardInterrupt:
+        pass
+    except SystemExit:  # uvicorn quitte avec 3 si le démarrage échoue : le même code que « port occupé »
+        if server.started:
+            raise
+    if not server.started:
+        sys.exit(STARTUP_FAILED)
 
 
 if __name__ == "__main__":

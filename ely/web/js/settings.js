@@ -307,6 +307,47 @@ function ChatGPTRow({ onChange }) {
   <//>`;
 }
 
+// Gemini par l'abonnement Google : Ely pilote le CLI officiel « gemini » avec le compte Google du Mac
+function GeminiRow({ onChange }) {
+  const [st, reload, error] = useLoad(() => get("/api/admin/geminicli"));
+  const [busy, setBusy] = useState(false);
+  if (error) return html`<${Row} title=${t("gem.title")} hint=${t("gem.hint")}>
+    <p class="desc">${t("gpt.unavailable", { e: /404|Not Found/i.test(error) ? t("gpt.restart") : error })}</p><//>`;
+  if (!st) return null;
+  const ready = st.installed && st.logged_in && !st.problem;
+  async function toggle(on) {
+    setBusy(true);
+    try { await put("/api/admin/geminicli", { enabled: on }); toast(t(on ? "gem.enabled" : "gem.disabled")); await reload(); onChange(); }
+    catch (e) { toast(e.message, 7000); }
+    setBusy(false);
+  }
+  async function test() {
+    setBusy(true);
+    try {
+      const r = await post("/api/admin/geminicli/test", {});
+      toast(r.ok ? t("gem.testOk", { m: r.model }) : t("gem.testFail", { e: r.error || "?" }), 8000);
+    } catch (e) { toast(e.message, 7000); }
+    setBusy(false);
+  }
+  const badge = st.enabled && ready ? html` <span class="pill ok">${t("gem.active")}</span>` : null;
+  return html`<${Row} title=${t("gem.title")} hint=${t("gem.hint")} badge=${badge}>
+    <p class="desc">${t("gem.desc")}</p>
+    ${st.installed ? html`<p class="desc">${t("gem.cli", { v: st.version || "?" })}${st.account ? " " + t("gem.account", { a: st.account }) : ""}</p>` : null}
+    ${ready ? null : html`<ol>
+        ${st.installed ? null : html`<li>${t("gem.step1")}</li>`}
+        ${st.logged_in && ["", "oauth-personal"].includes(st.auth_type) ? null : html`<li>${t("gem.step2")}</li>`}
+        <li>${t("gem.step3")}</li></ol>`}
+    ${st.api_key ? html`<p class="desc">${t("gem.apiKey")}</p>` : null}
+    <div class="row">
+      ${st.enabled
+        ? html`<button class="btn small danger" disabled=${busy} onClick=${() => toggle(false)}>${t("gem.disable")}</button>
+               <button class="btn" disabled=${busy || !ready} onClick=${test}>${busy ? t("claude.testing") : t("claude.test")}</button>`
+        : html`<button class="btn primary" disabled=${busy || !ready} onClick=${() => toggle(true)}>${t("gem.enable")}</button>`}
+    </div>
+    ${st.enabled && ready ? html`<p class="desc">${t("gem.models", { m: st.models.join(", ") })}</p>` : null}
+  <//>`;
+}
+
 // Claude par l'Agent SDK : moteur des missions d'auto-amélioration
 function ClaudeRow({ st, onChange }) {
   const [busy, setBusy] = useState(false);
@@ -388,6 +429,7 @@ function Models() {
     <//>`)}
     <${FallbackRow} fb=${data.roles.fallbacks} onSave=${async (v) => { await put("/api/admin/models", { fallbacks: v || "auto" }); reload(); toast(t("models.fallbackSaved")); }} />
     <${ChatGPTRow} onChange=${reload} />
+    <${GeminiRow} onChange=${reload} />
     <${ClaudeRow} st=${data.claude} onChange=${reload} />
     <${Row} title=${t("models.providers")} hint=${t("models.providersHint")}>
       <div class="list">${Object.entries(data.providers).map(([p, s]) => html`<div class="list-item center" key=${p}><div class="grow"><b>${p}</b><div class="sub">${s}</div></div>

@@ -15,6 +15,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from ..config import ROOT, settings
@@ -24,6 +25,7 @@ WORKTREE = settings.data_dir / "selfdev" / "worktree"
 BRANCH = "ely-self"
 RESTART_CODE = 42
 RESTART_DELAY = 4  # secondes laissées à la réponse en cours avant de redémarrer
+RESTART_WAIT = 15 * 60  # au plus : les tâches en cours des autres conversations se terminent avant le redémarrage
 PROTECTED = {".git", ".env", "data", ".venv"}
 
 
@@ -90,13 +92,41 @@ async def diff() -> str:
     return (await git("diff", "--cached", "--stat", cwd=WORKTREE))[1] + "\n\n" + (await git("diff", "--cached", cwd=WORKTREE))[1][:30000]
 
 
-async def run_tests(pattern: str = "", timeout: int = 900) -> tuple[bool, str]:
-    tmp = tempfile.mkdtemp(prefix="ely-test-")
+def _test_env(data: str, code: Path) -> dict:
     # Pas de .pyc : une retouche de même taille dans la même seconde serait testée sur l'ancien bytecode
-    env = {**os.environ, "ELY_DATA_DIR": tmp, "PYTHONPATH": str(WORKTREE), "PYTHONDONTWRITEBYTECODE": "1"}
+    env = {**os.environ, "ELY_DATA_DIR": data, "PYTHONPATH": str(code), "PYTHONDONTWRITEBYTECODE": "1"}
     for k in list(env):  # les tests n'appellent jamais de vrais modèles
         if k.endswith("_API_KEY") or k == "CLAUDE_CODE_OAUTH_TOKEN":
             env.pop(k)
+    return env
+
+
+async def collect(code: Path) -> set[str]:
+    """Identifiants des tests d'une version du code (vide si la collecte échoue)."""
+    tmp = tempfile.mkdtemp(prefix="ely-collect-")
+    proc = await asyncio.create_subprocess_exec(sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider",
+                                                cwd=str(code), env=_test_env(tmp, code), stdout=asyncio.subprocess.PIPE,
+                                                stderr=asyncio.subprocess.STDOUT)
+    try:
+        out, _ = await asyncio.wait_for(proc.communicate(), 300)
+    except asyncio.TimeoutError:
+        proc.kill()
+        return set()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return {line.strip() for line in out.decode(errors="replace").splitlines() if "::" in line and " " not in line.strip()}
+
+
+async def removed_tests() -> list[str]:
+    """Tests de la version active absents de la copie de travail : un test ne se supprime pas pour faire passer un
+    changement (la règle ne dépend pas de la bonne volonté du modèle)."""
+    active = await collect(ROOT)
+    return sorted(active - await collect(WORKTREE)) if active else []
+
+
+async def run_tests(pattern: str = "", timeout: int = 900) -> tuple[bool, str]:
+    tmp = tempfile.mkdtemp(prefix="ely-test-")
+    env = _test_env(tmp, WORKTREE)
     args = [sys.executable, "-m", "pytest", "-q", "-x", "--no-header", "-p", "no:cacheprovider"]
     if pattern:
         args += ["-k", pattern]
@@ -119,6 +149,11 @@ async def deploy(summary: str, restart: bool = True) -> dict:
     ok, out = await run_tests()
     if not ok:
         return {"ok": False, "message": "Les tests échouent, déploiement refusé :\n" + out[-3000:]}
+    gone = await removed_tests()
+    if gone:
+        return {"ok": False, "message": "Déploiement refusé : des tests de la version active ont disparu (supprimés ou "
+                "renommés). Rétablissez-les ; pour changer un comportement, adaptez le test sans le retirer :\n"
+                + "\n".join(f"- {t}" for t in gone[:20])}
     await git("add", "-A", cwd=WORKTREE)
     code, st = await git("diff", "--cached", "--quiet", cwd=WORKTREE)
     if code == 0:
@@ -148,7 +183,7 @@ async def deploy(summary: str, restart: bool = True) -> dict:
     (settings.data_dir / "selfdev" / "last_deploy.json").write_text(json.dumps({"prev": prev, "new": new_sha, "summary": summary, "at": now()}))
     supervised = os.environ.get("ELY_SUPERVISED") == "1"
     if supervised and restart:
-        asyncio.get_running_loop().call_later(RESTART_DELAY, request_restart)
+        restart_soon()
     if not supervised:
         after = "Redémarre Ely pour activer la nouvelle version."
     elif restart:
@@ -158,6 +193,30 @@ async def deploy(summary: str, restart: bool = True) -> dict:
     return {"ok": True, "sha": new_sha, "restart": supervised, "pr_url": pr_url,
             "message": "Déployé localement. " + after + f" PR GitHub ouverte : {pr_url}. "
                        "Demander à l'administrateur de la relire et de la fusionner ; ne pas la fusionner automatiquement."}
+
+
+_waiting: set[asyncio.Task] = set()
+
+
+def restart_soon(delay: float | None = None) -> None:
+    """Redémarrage pour activer une nouvelle version, quand les tâches des autres conversations sont finies."""
+    def start() -> None:
+        task = asyncio.ensure_future(restart_when_idle())
+        _waiting.add(task)
+        task.add_done_callback(_waiting.discard)
+
+    asyncio.get_running_loop().call_later(RESTART_DELAY if delay is None else delay, start)
+
+
+async def restart_when_idle() -> None:
+    """Attend (au plus RESTART_WAIT) que personne n'ait de tâche en plein travail hors auto-amélioration : une routine
+    ou la demande d'un membre de la famille n'est pas coupée par la mise à jour d'Ely."""
+    from ..agent.runner import runner
+
+    end = time.monotonic() + RESTART_WAIT
+    while runner.working(except_channel="selfdev") and time.monotonic() < end:
+        await asyncio.sleep(2)
+    request_restart()
 
 
 def request_restart() -> None:

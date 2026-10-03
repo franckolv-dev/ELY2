@@ -83,6 +83,7 @@ def fake():
     registry.catalog = {"fake": prov.models}
     registry.status = {"fake": "ok (2 modèles)"}
     registry.refreshed_at = 10**12
+    registry.stalled = {}
     for role, val in {"main": "fake:agent", "fast": "fake:fast", "local": "fake:fast", "embed": "", "strong": "", "fallbacks": ""}.items():
         db.set_setting(f"model_{role}", val or "auto")
     yield prov

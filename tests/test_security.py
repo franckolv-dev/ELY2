@@ -206,3 +206,131 @@ async def test_oauth_return_belongs_to_whoever_started_it(client, user, member, 
     lea = await login(client, member)
     r = await client.get(f"/api/integrations/google/callback?code=c&state={state}", headers=lea, follow_redirects=False)
     assert "ok=google" in r.headers["location"] and linked == [member["id"]]
+
+
+# ---------------------------------------------------------------------- lot 2 : exposition sur Internet
+async def test_a_session_is_never_taken_from_the_address(client, user):
+    """Un lien « …?token=… » envoyé par quelqu'un ne connecte personne à son compte (et l'adresse, qui finit dans
+    les journaux des proxys, ne vaut rien)."""
+    token = auth.create_session(user["id"])
+    assert (await client.get(f"/api/me?token={token}")).status_code == 401
+    assert (await client.get("/api/me", headers={"Authorization": f"Bearer {token}"})).status_code == 200
+
+
+async def test_a_new_password_closes_the_other_sessions(client, user, member):
+    """Franck change son mot de passe après la perte de son téléphone : la session du téléphone est fermée, celle de
+    l'ordinateur qui fait le changement reste ouverte. Un mot de passe réinitialisé par l'administrateur ferme toutes
+    les sessions du compte."""
+    phone, laptop = auth.create_session(member["id"]), auth.create_session(member["id"])
+    r = await client.patch("/api/me", headers={"Authorization": f"Bearer {laptop}"},
+                           json={"password": "court", "current_password": "motdepasse"})
+    assert r.status_code == 400  # trop court
+    r = await client.patch("/api/me", headers={"Authorization": f"Bearer {laptop}"},
+                           json={"password": "nouveau-secret", "current_password": "motdepasse"})
+    assert r.status_code == 200
+    assert (await client.get("/api/me", headers={"Authorization": f"Bearer {phone}"})).status_code == 401
+    assert (await client.get("/api/me", headers={"Authorization": f"Bearer {laptop}"})).status_code == 200
+    admin = await login(client, user)
+    r = await client.patch(f"/api/admin/users/{member['id']}", headers=admin, json={"password": "reinitialise"})
+    assert r.status_code == 200
+    assert (await client.get("/api/me", headers={"Authorization": f"Bearer {laptop}"})).status_code == 401
+
+
+async def test_what_a_stranger_learns_without_an_account(client, user):
+    """Sans compte : Ely répond qu'elle est en vie, sans la carte de son API, ses outils, ni l'état (et les erreurs)
+    de ses fournisseurs de modèles."""
+    health = (await client.get("/api/health")).json()
+    assert health["ok"] and "providers" not in health and "version" not in health
+    for path in ("/api/docs", "/api/openapi.json", "/api/redoc"):
+        assert (await client.get(path)).status_code == 404, path
+    assert (await client.get("/api/tools")).status_code == 401
+    h = await login(client, user)
+    assert "providers" in (await client.get("/api/health", headers=h)).json()
+
+
+async def test_the_interface_protects_itself(client, user):
+    """Défense en profondeur : seuls les scripts d'Ely s'exécutent dans sa page, aucune image n'est chargée depuis un
+    autre site, la page ne s'affiche pas dans le cadre d'un autre site ; les fichiers servis gardent leur bac à sable."""
+    r = await client.get("/")
+    csp = r.headers["content-security-policy"]
+    assert "script-src 'self'" in csp and "frame-ancestors 'none'" in csp and "img-src 'self' data: blob:;" in csp
+    assert r.headers["x-content-type-options"] == "nosniff" and r.headers["x-frame-options"] == "DENY"
+    assert (await client.get("/api/setup")).headers["x-content-type-options"] == "nosniff"
+    h = await login(client, user)
+    await client.post("/api/files/upload", headers=h, files={"file": ("page.html", b"<script>1</script>")})
+    r = await client.get("/files/Reçus/page.html", headers=h)
+    assert r.headers["content-security-policy"].startswith("sandbox")
+
+
+def test_claude_never_receives_elys_other_keys(monkeypatch):
+    """Le SDK transmet tout l'environnement au programme de Claude : les clés d'OpenAI, de Telegram ou de Google
+    n'y arrivent pas, seule la sienne."""
+    from pathlib import Path
+
+    from ely.llm import claude_agent
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:telegram")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "google-secret")
+    monkeypatch.setattr(settings, "claude_code_oauth_token", "jeton-claude")
+    env = claude_agent.options(claude_agent.Session(prompt="x", cwd=Path("."))).env
+    assert env["OPENAI_API_KEY"] == env["TELEGRAM_BOT_TOKEN"] == env["GOOGLE_CLIENT_SECRET"] == ""
+    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "jeton-claude"
+
+
+async def test_family_accounts_cannot_reach_the_home_network(client, user, member):
+    """Un membre de la famille (ou une page piégée lue pour lui) ne fait pas interroger par Ely la box, le NAS,
+    LM Studio ou les fichiers du Mac ; l'administrateur garde l'accès à son réseau."""
+    lea = ToolContext(user=member, conversation_id=new_conversation(member), run_id=0, emit=_noop)
+    for name, args in (("web_fetch", {"url": "http://127.0.0.1:1234/v1/models"}),
+                       ("web_fetch", {"url": "http://192.168.1.1/"}),
+                       ("browser", {"action": "open", "url": "http://localhost:8000/api/me"}),
+                       ("browser", {"action": "open", "url": "file:///etc/passwd"})):
+        r = await execute(lea, name, args)
+        assert r.is_error and "Adresse refusée" in r.content, (name, args, r.content)
+    franck = ToolContext(user=user, conversation_id=new_conversation(user), run_id=0, emit=_noop)
+    r = await execute(franck, "web_fetch", {"url": "http://127.0.0.1:9/"})
+    assert "Adresse refusée" not in r.content  # refusée par personne : la connexion échoue d'elle-même
+
+    h = await login(client, member)
+    r = await client.post("/api/integrations/email", headers=h,
+                          json={"address": "lea@exemple.fr", "password": "x", "imap_host": "192.168.1.20", "imap_port": 22})
+    assert r.status_code == 400 and "réseau local" in r.json()["detail"]
+    r = await client.post("/api/push/subscribe", headers=h,
+                          json={"subscription": {"endpoint": "http://127.0.0.1:8000/api/admin/mcp", "keys": {}}})
+    assert r.status_code == 400
+
+
+async def test_an_undeclared_proxy_is_reported_once(client, caplog):
+    """Proxy sur une autre machine, non déclaré : tous les visiteurs auraient son adresse et partageraient la même
+    limite d'essais. Ely le dit dans son journal (une fois), avec le réglage à faire."""
+    import logging
+
+    caplog.set_level(logging.WARNING, logger="ely.api")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app, client=("192.168.1.2", 51000)),
+                                 base_url="http://ely.test") as proxied:
+        for _ in range(2):
+            await proxied.post("/api/auth/login", json={"email": "x@y.fr", "password": "z"},
+                               headers={"X-Forwarded-For": "203.0.113.5"})
+    warnings = [r.getMessage() for r in caplog.records if "ELY_TRUSTED_PROXIES" in r.getMessage()]
+    assert len(warnings) == 1 and "192.168.1.2" in warnings[0]
+
+
+def test_the_extension_sends_its_session_in_its_first_message(user):
+    """La session de l'extension arrive dans son premier message, plus dans l'adresse ; les extensions déjà installées
+    (avant la 1.3) restent reliées ; une session refusée est signalée par le code 4001 (« reconnectez-vous »)."""
+    from starlette.testclient import TestClient
+    from starlette.websockets import WebSocketDisconnect
+
+    token = auth.create_session(user["id"])
+    c = TestClient(app)
+    with c.websocket_connect("/api/chrome/ws") as ws:
+        ws.send_json({"type": "auth", "token": token})
+        assert ws.receive_json()["type"] == "welcome"
+    with c.websocket_connect(f"/api/chrome/ws?token={token}") as ws:
+        assert ws.receive_json()["type"] == "welcome"
+    with c.websocket_connect("/api/chrome/ws") as ws:
+        ws.send_json({"type": "auth", "token": "jeton-perime"})
+        with pytest.raises(WebSocketDisconnect) as closed:
+            ws.receive_json()
+        assert closed.value.code == 4001

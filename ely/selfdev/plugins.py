@@ -8,16 +8,25 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import logging
+import os
+import shutil
 import sys
+import tempfile
 import traceback
 from pathlib import Path
 
-from ..config import settings
+from ..config import ROOT, settings
 from ..db import db, now
 
 log = logging.getLogger("ely.plugins")
 
 PLUGIN_DIR = settings.data_dir / "plugins"
+IMPORT_LIMIT = 30  # secondes pour se charger dans le processus d'essai
+CHECK = """import importlib.util, sys
+spec = importlib.util.spec_from_file_location("ely_plugin_essai", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+print("PLUGIN-OK")"""
 LOADED: dict[str, list[str]] = {}  # plugin -> noms d'outils
 SHADOWED: dict[str, dict] = {}  # plugin -> outils de base qu'il remplace (restaurés au déchargement)
 
@@ -66,12 +75,14 @@ def load_one(name: str) -> list[str]:
     sys.modules[spec.name] = module
     try:
         spec.loader.exec_module(module)
-    except Exception:
+    except BaseException as e:  # sys.exit() à l'import compris : Ely ne doit jamais s'arrêter pour un plugin
         for t in [t for t in TOOLS if TOOLS[t] is not before.get(t)]:
             TOOLS.pop(t, None)
         TOOLS.update({t: v for t, v in before.items() if t not in TOOLS})
         sys.modules.pop(spec.name, None)
-        raise
+        if isinstance(e, Exception):
+            raise
+        raise RuntimeError(f"le plugin a voulu arrêter Ely au chargement ({e.__class__.__name__})") from e
     new = sorted(t for t in TOOLS if TOOLS[t] is not before.get(t))
     for t in new:
         TOOLS[t].source = f"plugin:{name}"
@@ -99,6 +110,26 @@ def load_plugins() -> dict[str, str]:
                       detail=traceback.format_exc()[-2000:], status="disabled", created_at=now())
             log.warning("plugin %s désactivé : %s", name, e)
     return status
+
+
+async def check_import(path: Path) -> None:
+    """Charge le plugin dans un processus à part avant de l'accepter : s'il quitte, plante ou ne finit pas de se
+    charger, il est refusé (installé, il empêcherait Ely de redémarrer)."""
+    tmp = tempfile.mkdtemp(prefix="ely-plugin-")
+    env = {**os.environ, "ELY_DATA_DIR": tmp, "PYTHONPATH": str(ROOT)}
+    proc = await asyncio.create_subprocess_exec(sys.executable, "-c", CHECK, str(path), cwd=str(ROOT), env=env,
+                                                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+    try:
+        out, _ = await asyncio.wait_for(proc.communicate(), IMPORT_LIMIT)
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
+        raise RuntimeError(f"le plugin ne finit pas de se charger (plus de {IMPORT_LIMIT} s)") from None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    text = out.decode(errors="replace").strip()
+    if proc.returncode or "PLUGIN-OK" not in text:
+        raise RuntimeError(f"le plugin ne se charge pas sans arrêter Python : {text[-800:] or f'code {proc.returncode}'}")
 
 
 async def test_one(name: str) -> str:

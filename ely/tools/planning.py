@@ -53,7 +53,8 @@ async def schedule(ctx: ToolContext, action: str, instruction: str = "", when: s
             return ToolResult("Aucune tâche planifiée.")
         return ToolResult("\n".join(
             f"#{r['id']} {'(' + r['cron'] + ') ' if r['cron'] else ''}prochaine : "
-            f"{dt.datetime.fromtimestamp(r['next_run'], ZoneInfo(tz)):%d/%m/%Y %H:%M} — {r['instruction'][:150]}" for r in rows))
+            f"{dt.datetime.fromtimestamp(r['next_run'], ZoneInfo(tz)):%d/%m/%Y %H:%M} — {r['instruction'][:150]}"
+            + (f" (dernière exécution : {r['last_status']})" if r["last_status"] else "") for r in rows))
     if action == "cancel":
         n = db.run("UPDATE schedules SET enabled = 0 WHERE id = ? AND user_id = ?", (id, ctx.user_id))
         return ToolResult(f"Tâche #{id} annulée." if n else f"Tâche #{id} introuvable.", is_error=not n)

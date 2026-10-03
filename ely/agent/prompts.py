@@ -9,7 +9,6 @@ import datetime as dt
 from zoneinfo import ZoneInfo
 
 from ..auth import addresses_informally
-from ..config import settings
 from ..db import db
 from ..integrations import connected, get
 from ..memory import store
@@ -72,8 +71,11 @@ def integrations_status(user_id: int) -> str:
 
 
 def today_text(user: dict) -> str:
-    """« le jeudi 1 octobre 2026, il est 09:00 (Europe/Paris) », dans le fuseau de la personne."""
-    tz = (user.get("settings") or {}).get("timezone") or settings.timezone
+    """« le jeudi 1 octobre 2026, il est 09:00 (Europe/Paris) », dans le fuseau de la personne (le sien s'il est
+    illisible : celui d'Ely)."""
+    from ..tools.pim import user_tz
+
+    tz = user_tz(user)
     nowdt = dt.datetime.now(ZoneInfo(tz))
     jours = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
     mois = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
@@ -81,7 +83,9 @@ def today_text(user: dict) -> str:
 
 
 async def dynamic_block(user: dict, objective: str, channel: str = "web") -> str:
-    tz = (user.get("settings") or {}).get("timezone") or settings.timezone
+    from ..tools.pim import user_tz
+
+    tz = user_tz(user)
     address = "tutoiement (elle l'a demandé)" if addresses_informally(user) else "vouvoiement"
     parts = [f"# Personne\nNom : {user['name']} · e-mail du compte : {user['email']} · fuseau : {tz} · s'adresser à elle : {address}"]
     profile = store.get_profile(user["id"])

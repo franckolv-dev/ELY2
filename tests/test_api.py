@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 
 import httpx
 import pytest
@@ -188,28 +189,64 @@ async def test_self_improvement_session_starts_from_settings(client, user, fake)
     assert run and run["objective"] == "Sois plus rapide sur Doctolib" and run["status"] == "done"
 
 
-async def test_password_guessing_is_slowed_down(client, user, monkeypatch):
-    """Ely est souvent joignable depuis Internet : après 5 mauvais mots de passe, la connexion est suspendue un quart
-    d'heure pour ce compte et cette adresse, même avec le bon mot de passe. Un autre compte, ailleurs, n'est pas gêné."""
+async def test_password_guessing_is_slowed_down_without_locking_franck_out(user, monkeypatch):
+    """Ely est souvent joignable depuis Internet. Un robot qui devine le mot de passe de Franck est bloqué un quart
+    d'heure après 5 essais (même s'il tombe ensuite sur le bon) ; Franck, lui, se connecte normalement depuis chez
+    lui et il est prévenu des essais. Une adresse qui essaie tous les comptes est bloquée pour tous."""
+    from ely import auth
+    from ely import notify as notify_module
+    from ely.api import chat
+
+    monkeypatch.setattr(chat, "_failures", {})
+    monkeypatch.setattr(chat, "FAIL_DELAY", 0)
+    alerts = []
+
+    async def notify(user_id, title, body, **kw):
+        alerts.append((user_id, body))
+
+    monkeypatch.setattr(notify_module, "notify", notify)
+
+    def client_from(ip: str) -> httpx.AsyncClient:
+        return httpx.AsyncClient(transport=httpx.ASGITransport(app=app, client=(ip, 4000)), base_url="http://ely.test")
+
+    async with client_from("198.51.100.7") as robot, client_from("203.0.113.20") as home:
+        for _ in range(5):
+            r = await robot.post("/api/auth/login", json={"email": user["email"], "password": "devine"})
+            assert r.status_code == 401
+        r = await robot.post("/api/auth/login", json={"email": user["email"], "password": "motdepasse"})
+        assert r.status_code == 429 and "réessayez dans 15 min" in r.json()["detail"]
+        r = await home.post("/api/auth/login", json={"email": user["email"], "password": "motdepasse"})
+        assert r.status_code == 200  # Franck n'est pas enfermé dehors
+        await asyncio.sleep(0.05)
+        assert len(alerts) == 1 and alerts[0][0] == user["id"] and "198.51.100.7" in alerts[0][1]
+
+        others = [auth.create_user(f"cible{i}{time.time_ns()}@x.fr", "Cible", "123456") for i in range(4)]
+        for target in others:
+            for _ in range(4):
+                await robot.post("/api/auth/login", json={"email": target["email"], "password": "devine"})
+        r = await robot.post("/api/auth/login", json={"email": others[0]["email"], "password": "123456"})
+        assert r.status_code == 429  # 20 échecs depuis cette adresse, tous comptes confondus
+
+        for k in chat._failures:  # le délai passé, le bon mot de passe fonctionne de nouveau
+            chat._failures[k] = [t - chat.LOGIN_WINDOW for t in chat._failures[k]]
+        r = await robot.post("/api/auth/login", json={"email": user["email"], "password": "motdepasse"})
+        assert r.status_code == 200 and not chat._failures  # les essais périmés sont oubliés
+
+
+async def test_login_time_does_not_reveal_who_has_an_account(user, monkeypatch):
+    """Un e-mail inconnu coûte le même calcul de mot de passe qu'un compte existant."""
     from ely import auth
     from ely.api import chat
 
     monkeypatch.setattr(chat, "_failures", {})
-    monkeypatch.setattr(chat.time, "sleep", lambda s: None)
-    for _ in range(5):
-        r = await client.post("/api/auth/login", json={"email": user["email"], "password": "devine"})
-        assert r.status_code == 401
-    r = await client.post("/api/auth/login", json={"email": user["email"], "password": "motdepasse"})
-    assert r.status_code == 429 and "réessayez dans 15 min" in r.json()["detail"]
-    other = auth.create_user("marie.essais@x.fr", "Marie", "123456")
-    chat._failures.pop("ip:127.0.0.1", None)  # Marie se connecte d'ailleurs
-    r = await client.post("/api/auth/login", json={"email": other["email"], "password": "123456"})
-    assert r.status_code == 200
-    # le délai passé, le bon mot de passe fonctionne de nouveau
-    for k in chat._failures:
-        chat._failures[k] = [t - chat.LOGIN_WINDOW for t in chat._failures[k]]
-    r = await client.post("/api/auth/login", json={"email": user["email"], "password": "motdepasse"})
-    assert r.status_code == 200
+    monkeypatch.setattr(chat, "FAIL_DELAY", 0)
+    checked = []
+    real = auth.verify_password
+    monkeypatch.setattr(auth, "verify_password", lambda p, h: checked.append(h) or real(p, h))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://ely.test") as c:
+        await c.post("/api/auth/login", json={"email": "personne@nulle.part", "password": "devine"})
+        await c.post("/api/auth/login", json={"email": user["email"], "password": "devine"})
+    assert len(checked) == 2 and checked[0] == auth.DUMMY_HASH
 
 
 def test_session_tokens_never_reach_the_server_logs():

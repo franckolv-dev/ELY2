@@ -38,6 +38,16 @@ leur historique est dans [son journal](https://github.com/franckolv-dev/ElyAgent
   Il retrouve une tâche passée par quelques mots, puis en donne le déroulé complet : demandes, actions avec leurs
   arguments et résultats, erreurs exactes, refus du contrôleur. Les mots de passe restent masqués. Une session peut
   ainsi diagnostiquer précisément un échec, par exemple une commande en ligne qui n'a pas abouti.
+- **Abonnement Google Gemini (AI Pro…), sans clé d'API.** Ely pilote le CLI officiel `gemini`, connecté une fois au
+  compte Google (« Sign in with Google »). Réglages → Modèles → « Abonnement Google Gemini » : état du CLI et du
+  compte, « Activer », « Tester ». Le modèle `geminicli:gemini-3.8-flash` est alors proposé dans tous les rôles et
+  sert de secours gratuit.
+  - L'abonnement est imposé : le CLI ne reçoit ni clé Gemini ni autre secret. Il préférerait sinon la clé d'API
+    facturée, même lue dans un `.env` d'un dossier parent. La clé `GEMINI_API_KEY` peut donc rester dans `.env`.
+  - Le CLI travaille dans un dossier vide hors du dépôt. Le prompt d'Ely remplace le sien, et ses propres outils
+    sont tous refusés : Gemini se sert de ceux d'Ely, demandés par un bloc d'appels que l'interface n'affiche pas.
+  - CLI non connecté ou limite du jour atteinte : Ely passe au modèle suivant en disant pourquoi. Une tâche arrêtée
+    arrête le CLI.
 - **Rechargement automatique de l'interface** quand Ely redémarre sur une nouvelle version (mise à jour,
   auto-amélioration). Si un message est en cours d'écriture, Ely le garde et propose de recharger.
 
@@ -70,17 +80,73 @@ permettaient de prendre la main sur la machine.
     écrasé.
   - Le code de liaison expire après 30 minutes, et un chat n'est relié qu'à un seul compte.
 
+Second lot, durcissement :
+- **Jeton de session jamais lu dans l'adresse.** Seuls le cookie et l'en-tête `Authorization` comptent. L'extension
+  Chrome (1.3.0) envoie la session dans le premier message de sa connexion, et non plus dans l'adresse du
+  WebSocket, qui finit dans les journaux des proxys. Les extensions déjà installées restent reliées.
+- **Changer de mot de passe ferme les autres sessions**, celle qui fait le changement exceptée (téléphone perdu,
+  jeton volé), et coupe un Chrome relié avec une ancienne session. Un mot de passe réinitialisé par l'administrateur
+  ferme toutes les sessions du compte.
+- **Essais de mot de passe.** Un robot est bloqué un quart d'heure après 5 essais sur un compte (20 sur l'ensemble des
+  comptes) depuis son adresse, mais il ne peut plus enfermer Franck dehors : depuis une autre adresse, le bon mot de
+  passe passe. La personne est prévenue des essais (téléphone, Telegram). Un e-mail inconnu coûte le même calcul
+  qu'un compte existant : le temps de réponse ne dit plus qui a un compte.
+- **Adresse réelle des visiteurs.** `X-Forwarded-For` n'est plus cru que d'un proxy de confiance : un proxy sur ce
+  Mac par défaut, sinon `ELY_TRUSTED_PROXIES`. Avant, n'importe quel visiteur pouvait l'écrire et contourner la limite
+  d'essais. Un proxy non déclaré est signalé dans le journal.
+- **En-têtes de sécurité.** La page de l'interface n'exécute que ses propres scripts, ne charge aucune image d'un
+  autre site et ne s'affiche pas dans le cadre d'un autre site (CSP, `frame-ancestors`) ; toutes les réponses sont en
+  `nosniff`. Dans les réponses d'Ely, une image d'un autre site devient un lien : son adresse ne peut plus emporter
+  d'informations à l'affichage.
+- **Moins d'informations sans compte.** `/api/health` dit seulement qu'Ely est en vie (l'état des fournisseurs est
+  réservé à l'administrateur) ; la documentation de l'API (`/api/docs`) n'est plus publiée ; `/api/tools` demande
+  une session.
+- **Réseau de la maison fermé aux comptes ordinaires.** Ni leur navigateur, ni la lecture de pages, ni leur serveur
+  de messagerie ne peuvent viser le Mac, la box, le NAS ou LM Studio (`file:` compris) ; un abonnement aux
+  notifications doit viser un vrai service de notification. L'administrateur garde l'accès à son réseau.
+- **Claude ne reçoit plus les autres clés d'Ely** (OpenAI, Telegram, Google…) : le SDK lui transmettait tout
+  l'environnement.
+- **Un compte supprimé ne laisse rien derrière lui** : fichiers, profil du navigateur interne (et ses cookies),
+  compétences, statistiques, Chrome relié et tâches en cours. Un compte créé ensuite pouvait reprendre son numéro et
+  en hériter.
+
 ### Corrigé
+- **Stabilité, suite de la revue** :
+  - un outil qui agit (envoi d'e-mail, clic, publication…) et dépasse son délai n'est plus présenté comme un échec
+    (« essaie autrement ») mais comme un résultat incertain à vérifier : l'action a souvent eu lieu, et le modèle la
+    refaisait. Chrome qui se déconnecte en plein clic : même règle, et plus de second clic par JavaScript ;
+  - un modèle resté muet passe dix minutes en fin de chaîne : l'étape suivante ne l'attend plus ;
+  - un modèle de secours au contexte trop court passe la main au suivant ; s'il n'y en a pas, l'historique est
+    condensé à sa taille, et non à celle du modèle principal ;
+  - Ely démarrée avant LM Studio ne répond plus « aucun modèle » pendant 30 minutes : LM Studio est revérifié chaque
+    minute et la tâche patiente ;
+  - les photos jointes (Telegram, pièces jointes) ne sont plus renvoyées au modèle à chaque appel, et les captures de
+    plus de 30 jours quittent la base (une photo garde sa vignette) ;
+  - l'arrêt est borné : une tâche qui refuse de s'arrêter, ou un fil bloqué, ne retient plus le redémarrage après une
+    mise à jour (arrêt forcé au bout de 20 s) ;
+  - une mise à jour d'Ely attend que les tâches en cours des autres membres de la famille soient finies (15 min au
+    plus) avant de redémarrer ;
+  - une auto-amélioration qui plante trois fois en dix minutes est annulée par le lanceur, comme celle qui ne démarre
+    pas. Ce retour arrière met de côté les modifications locales (`git stash`) au lieu de les écraser. Un démarrage en
+    échec n'est plus confondu avec un port occupé ;
+  - un déploiement qui supprime ou renomme un test est refusé ;
+  - « Annuler » une amélioration modifiée depuis ne laisse plus de marqueurs de conflit dans le code ;
+  - un plugin qui quitte (`sys.exit`) ou ne finit pas de se charger est refusé avant d'être installé ; présent au
+    démarrage, il est désactivé au lieu d'empêcher Ely de démarrer ;
+  - une routine illisible (horaire invalide, fuseau inconnu) ne retient plus celles des autres ; un fuseau mal saisi
+    est refusé ; une routine en échec prévient la personne et garde son vrai résultat ;
+  - un serveur MCP qui s'arrête est détecté et reconnecté ; le navigateur interne planté est relancé ;
+  - supprimer une conversation pendant qu'Ely y travaille arrête proprement la tâche ;
+  - deux index manquants faisaient parcourir toute la base à chaque vérification d'objectif.
 - **Notifications push jamais envoyées.** La clé VAPID, enregistrée en PEM, était illisible pour `pywebpush`. Aucune
   notification ne partait, sans erreur visible : les questions d'Ely, les résultats des tâches planifiées et les
   rappels d'agenda n'arrivaient que par Telegram. Un service push muet est désormais abandonné au bout de 10 s.
 - **LM Studio (ou ChatGPT) qui ne répond plus du tout.** Ely passe au modèle suivant dès le premier délai réseau,
   au lieu de trois essais de 15 minutes, soit 45 minutes perdues à chaque étape.
 - **Sécurité, pour une Ely joignable depuis Internet** :
-  - la session de l'extension Chrome, qui passe dans l'adresse de son WebSocket, ne s'écrit plus en clair dans la
-    console. Il en va de même pour le jeton du flux iCal ;
-  - après 5 mauvais mots de passe, la connexion est suspendue un quart d'heure pour ce compte et pour cette adresse
-    IP.
+  - la session des extensions Chrome d'avant la 1.3, qui passe dans l'adresse de leur WebSocket, ne s'écrit plus en
+    clair dans la console. Il en va de même pour le jeton du flux iCal ;
+  - les mots de passe essayés en boucle sont freinés (voir Sécurité).
 - **Une tâche pouvait rester bloquée des heures sur un seul appel de modèle.** C'est arrivé le 30/09 : la routine du
   matin est restée dix heures sans réponse de Gemma (LM Studio).
   - Les modèles locaux reçoivent désormais, eux aussi, une longueur maximale de réponse.

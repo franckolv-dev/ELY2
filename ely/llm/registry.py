@@ -22,7 +22,7 @@ from typing import Awaitable, Callable
 
 from ..config import settings
 from ..db import db, now
-from . import claude_agent
+from . import claude_agent, gemini_cli
 from .anthropic_provider import AnthropicProvider
 from .chatgpt_provider import ChatGPTProvider
 from .base import DeltaCallback, LLMError, LLMResponse, ModelInfo
@@ -33,6 +33,11 @@ log = logging.getLogger("ely.llm")
 ROLES = ("main", "strong", "selfdev", "fast", "local", "embed")
 # Durée maximale d'un appel de modèle, flux compris : au-delà (génération sans fin, serveur figé), on passe au suivant
 CALL_DEADLINE = 20 * 60
+# Un modèle qui vient de rester muet passe en fin de chaîne pendant ce temps : l'étape suivante ne l'attend pas encore
+STALL_PENALTY = 10 * 60
+# Fournisseur local injoignable (LM Studio lancé après Ely, redémarré…) : revérifié au plus une fois par minute
+LOCAL = ("lmstudio", "ollama")
+RECHECK = 60
 
 # Préférences de choix automatique (motifs appliqués aux modèles découverts)
 PREFS: dict[str, list[tuple[str, list[str]]]] = {
@@ -40,6 +45,7 @@ PREFS: dict[str, list[tuple[str, list[str]]]] = {
         ("anthropic", [r"^claude-opus-5$", r"^claude-opus-4-8$", r"^claude-sonnet-5$"]),
         ("chatgpt", [r"^gpt-5\.\d+$", r"gpt"]),
         ("openai", [r"^gpt-5\.\d+$", r"^gpt-5$", r"^gpt-4\.1$", r"^gpt-4o$"]),
+        ("geminicli", [r"pro", r"flash", r".*"]),  # abonnement Google : avant l'API Gemini, facturée au token
         ("gemini", [r"^gemini-3(\.\d+)?-pro", r"^gemini-2\.5-pro$"]),
         ("openrouter", [r"^anthropic/claude-opus-5$", r"^anthropic/claude-sonnet", r"^openai/gpt-5"]),
         ("deepseek", [r"deepseek-v\d+-pro", r"^deepseek-chat$"]),
@@ -52,6 +58,7 @@ PREFS: dict[str, list[tuple[str, list[str]]]] = {
     "fast": [
         ("anthropic", [r"^claude-haiku-4-5$"]),
         ("openai", [r"^gpt-5(\.\d+)?-mini$", r"^gpt-4\.1-mini$", r"^gpt-4o-mini$"]),
+        ("geminicli", [r"flash"]),
         ("gemini", [r"^gemini-\d(\.\d+)?-flash$", r"flash"]),
         ("deepseek", [r"deepseek-v\d+-flash", r"^deepseek-chat$"]),
         ("mistral", [r"^mistral-small-latest$"]),
@@ -61,6 +68,7 @@ PREFS: dict[str, list[tuple[str, list[str]]]] = {
     "local": [
         ("lmstudio", [r"gemma-4-26b", r"qwen3\.5", r"gemma-4-12b", r"qwen3", r"gpt-oss", r"gemma-4-e4b", r"ministral"]),
         ("ollama", [r".*"]),
+        ("geminicli", [r"flash"]),
     ],
     "embed": [
         ("lmstudio", [r"nomic-embed", r"embed"]),
@@ -79,7 +87,7 @@ STATIC_FALLBACK = {
     "openrouter": ["anthropic/claude-opus-5"],
 }
 # Sans coût au token : un repli automatique peut y aller même si personne ne les a choisis
-FREE_PROVIDERS = ("chatgpt", "lmstudio", "ollama")
+FREE_PROVIDERS = ("chatgpt", "geminicli", "lmstudio", "ollama")
 # Prix indicatifs ($ / million de tokens entrée, sortie) pour le tableau de bord
 PRICES = {
     "claude-fable-5": (10, 50), "claude-opus-5-5": (4, 20), "claude-opus-5": (5, 25), "claude-opus-4": (5, 25),
@@ -101,6 +109,8 @@ class Registry:
         self.catalog: dict[str, list[ModelInfo]] = {}
         self.status: dict[str, str] = {}
         self.refreshed_at = 0.0
+        self.checked_local = 0.0
+        self.stalled: dict[str, float] = {}  # modèle -> fin de sa mise à l'écart
         self._lock = asyncio.Lock()
         self.build_providers()
 
@@ -110,6 +120,8 @@ class Registry:
             p["anthropic"] = AnthropicProvider(settings.anthropic_api_key)
         if db.get_setting("chatgpt_auth"):  # abonnement ChatGPT importé depuis le CLI Codex
             p["chatgpt"] = ChatGPTProvider()
+        if gemini_cli.enabled():  # abonnement Google, par le CLI gemini (activé dans Réglages → Modèles)
+            p[gemini_cli.NAME] = gemini_cli.GeminiCLIProvider()
         for name, (url, key) in settings.openai_compat_keys().items():
             p[name] = OpenAICompatProvider(name, url, key)
         if settings.lmstudio_url:
@@ -118,8 +130,8 @@ class Registry:
             p["ollama"] = OpenAICompatProvider("ollama", settings.ollama_url, "ollama", timeout=900)
         self.providers = p
 
-    async def refresh(self) -> None:
-        """Interroge chaque fournisseur pour connaître ses modèles (en parallèle)."""
+    async def refresh(self, names: list[str] | None = None) -> None:
+        """Interroge chaque fournisseur (ou ceux nommés) pour connaître ses modèles, en parallèle."""
         async with self._lock:
             async def one(name, prov):
                 try:
@@ -135,12 +147,20 @@ class Registry:
                     self.catalog[name] = fallback
                     prov.models = fallback
                     self.status[name] = f"injoignable : {str(e)[:120]}"
-            await asyncio.gather(*(one(n, p) for n, p in self.providers.items()))
-            self.refreshed_at = time.time()
+            await asyncio.gather(*(one(n, p) for n, p in self.providers.items() if names is None or n in names))
+            if names is None:
+                self.refreshed_at = time.time()
 
     async def ensure_catalog(self) -> None:
         if not self.refreshed_at or time.time() - self.refreshed_at > 1800:
             await self.refresh()
+        elif (down := self.unreachable_local()) and time.time() - self.checked_local > RECHECK:
+            self.checked_local = time.time()
+            await self.refresh(down)
+
+    def unreachable_local(self) -> list[str]:
+        """Fournisseurs locaux configurés mais injoignables : écartés du choix automatique tant qu'ils le restent."""
+        return [n for n in LOCAL if n in self.providers and not self.reachable(n)]
 
     def reachable(self, name: str) -> bool:
         return self.status.get(name, "").startswith("ok")
@@ -158,7 +178,7 @@ class Registry:
         for prov, patterns in PREFS.get(role, []):
             if prov not in self.providers or prov in exclude_providers:
                 continue
-            if prov in ("lmstudio", "ollama") and not self.reachable(prov):
+            if prov in LOCAL and not self.reachable(prov):
                 continue
             kind = "embeddings" if role == "embed" else "llm"
             models = [m for m in self.catalog.get(prov, []) if m.kind == kind or (role == "embed" and "embed" in m.id)]
@@ -233,10 +253,14 @@ class Registry:
                    on_switch: Callable[[str, str], Awaitable[None]] | None = None) -> LLMResponse:
         await self.ensure_catalog()
         chain = self.chain(role, model)
-        if not chain:
-            raise LLMError("Aucun modèle disponible : configure une clé d'API ou lance LM Studio.", kind="not_found")
+        if not chain:  # LM Studio pas encore prêt : réessayable, il sera revérifié à l'essai suivant
+            raise LLMError("Aucun modèle disponible : configure une clé d'API ou lance LM Studio.", kind="not_found",
+                           retryable=bool(self.unreachable_local()))
+        t = time.time()
+        chain = [r for r in chain if self.stalled.get(r, 0) <= t] + [r for r in chain if self.stalled.get(r, 0) > t]
         errors = []
         transient = False
+        too_long = ""  # modèle de secours au contexte trop court : on passe au suivant
         for i, ref in enumerate(chain):
             failure = ""
             try:
@@ -252,16 +276,22 @@ class Registry:
                     except TimeoutError:
                         raise LLMError(f"pas de réponse complète en {CALL_DEADLINE // 60} min", retryable=True, kind="timeout") from None
                     self.record_usage(user_id, resp, purpose)
+                    self.stalled.pop(ref, None)
                     return resp
                 except LLMError as e:
                     log.warning("modèle %s (essai %d) : %s", ref, attempt + 1, e)
                     errors.append(f"{ref}: {e}")
                     failure = str(e)
                     if e.kind == "context":
-                        raise  # la boucle condense l'historique et réessaie le même modèle, sans en changer
+                        if i == 0:  # la boucle condense l'historique pour ce modèle et le réessaie, sans en changer
+                            e.model = ref
+                            raise
+                        too_long = too_long or ref
+                        break
                     transient = transient or e.retryable
-                    if e.kind == "timeout":
-                        break  # le même modèle ferait sans doute pareil : on passe au suivant
+                    if e.kind == "timeout":  # le même modèle ferait sans doute pareil : on passe au suivant
+                        self.stalled[ref] = time.time() + STALL_PENALTY
+                        break
                     if e.retryable and attempt < 2:
                         await asyncio.sleep(2 * (3 ** attempt))
                         if on_switch:
@@ -271,6 +301,8 @@ class Registry:
             if i + 1 < len(chain) and on_switch:
                 why = f" ({failure[:160]})" if failure else ""
                 await on_switch(chain[i + 1], f"{ref} indisponible{why}, bascule sur {chain[i + 1]}")
+        if too_long:  # aucun autre n'a répondu : condenser pour le secours au contexte le plus court rencontré
+            raise LLMError(f"contexte trop long pour {too_long}", kind="context", model=too_long)
         raise LLMError("Aucun modèle n'a pu répondre : " + " | ".join(errors[-4:]), retryable=transient)
 
     async def complete(self, prompt: str, *, role: str = "fast", system: str = "", max_tokens: int = 4000,

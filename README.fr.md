@@ -206,6 +206,10 @@ Avec une clé d'API, Claude est facturé au token : Ely ne le choisit jamais d'e
   Zhipu, Cerebras, Together, LM Studio, Ollama, ou toute adresse personnalisée.
 - **Abonnement ChatGPT** : GPT avec votre forfait, sans payer au token. Sur le Mac : `codex login` (CLI Codex
   d'OpenAI), puis Réglages → Modèles → « Importer ». Mécanisme non officiel, soumis aux limites du forfait.
+- **Abonnement Google Gemini** (AI Pro…) : Gemini sans clé d'API, par le CLI officiel. Sur le Mac :
+  `npm install -g @google/gemini-cli`, puis `gemini` et « Sign in with Google » ; enfin Réglages → Modèles →
+  « Activer ». Ely impose l'abonnement (sa clé `GEMINI_API_KEY` éventuelle n'est jamais transmise au CLI), désactive
+  les outils du CLI et lui fait utiliser les siens. Soumis aux limites quotidiennes de l'abonnement.
 - **Rôles** : agent principal, escalade, auto-amélioration, contrôleur rapide, tâches de fond locales, vecteurs. Tout est choisi
   automatiquement, et modifiable dans Réglages → Modèles avec effet immédiat. Chaque conversation peut imposer son
   modèle (menu en haut).
@@ -213,7 +217,10 @@ Avec une clé d'API, Claude est facturé au token : Ely ne le choisit jamais d'e
   - Le premier compte est l'administrateur. Il se crée sur la machine d'Ely elle-même (http://localhost:8000).
   - Les suivants s'inscrivent par lien d'invitation (usage unique, valable 7 jours), ou sont créés par l'admin.
   - Python et le terminal s'exécutent sur la machine : ils sont réservés à l'administrateur, sauf
-    `ELY_ALLOW_CODE_FOR_ALL=true`.
+    `ELY_ALLOW_CODE_FOR_ALL=true`. Le réseau de la maison (box, NAS, LM Studio) l'est aussi.
+  - Changer de mot de passe ferme les autres sessions. Les mots de passe essayés en boucle sont freinés, et la
+    personne est prévenue. Derrière un proxy installé sur une autre machine que le Mac, déclarez son adresse dans
+    `ELY_TRUSTED_PROXIES`.
   - Consommation et coût par utilisateur dans Réglages → Consommation.
 
 ## Connexions

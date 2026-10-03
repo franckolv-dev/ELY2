@@ -7,11 +7,12 @@ import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.datastructures import MutableHeaders
 
-from .. import CODE_VERSION, __version__
+from .. import CODE_VERSION, __version__, auth
 from ..agent.runner import runner
 from .. import chrome
 from ..browser import manager
@@ -41,6 +42,39 @@ def hide_tokens_in_logs() -> None:
         logger = logging.getLogger(name)
         if not any(isinstance(f, HideTokens) for f in logger.filters):
             logger.addFilter(HideTokens())
+
+
+# Défense en profondeur pour l'interface : seuls ses propres scripts s'exécutent, aucune image ni connexion vers un
+# autre site (une réponse manipulée ne peut pas faire fuiter de données par l'adresse d'une image), pas d'affichage
+# dans le cadre d'un autre site.
+APP_CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+           "media-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; "
+           "frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+SECURITY_HEADERS = {"x-content-type-options": "nosniff", "referrer-policy": "same-origin", "x-frame-options": "DENY"}
+
+
+class SecurityHeaders:
+    """En-têtes de sécurité sur toutes les réponses ; ceux qu'une route fixe elle-même (fichiers servis) priment.
+    La politique de contenu (APP_CSP) est posée par la page de l'interface elle-même."""
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+
+        async def send_with_headers(message):
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                for k, v in SECURITY_HEADERS.items():
+                    if k not in headers:
+                        headers[k] = v
+                if scope.get("scheme") == "https":
+                    headers.setdefault("strict-transport-security", "max-age=31536000")
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
 
 
 class Static(StaticFiles):
@@ -73,30 +107,37 @@ async def lifespan(app: FastAPI):
     yield
     for t in background:
         t.cancel()
-    await runner.shutdown()
-    await manager.shutdown()
-    await mcp.stop_all()
+    for step in (runner.shutdown(), manager.shutdown(), mcp.stop_all()):  # une étape bloquée n'empêche pas les suivantes
+        try:
+            await asyncio.wait_for(step, 5)
+        except Exception as e:
+            log.warning("arrêt incomplet : %r", e)
 
 
 def create_app() -> FastAPI:
     hide_tokens_in_logs()
-    app = FastAPI(title="Ely", version=__version__, lifespan=lifespan, docs_url="/api/docs", openapi_url="/api/openapi.json")
+    # pas de carte de l'API en libre accès sur Internet
+    app = FastAPI(title="Ely", version=__version__, lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    app.add_middleware(SecurityHeaders)
     app.include_router(chat.router)
     app.include_router(settings_routes.router)
     app.include_router(admin.router)
     app.include_router(chrome.router)
 
     @app.get("/api/health")
-    async def health():
+    async def health(request: Request):
         from ..db import db
 
         db.val("SELECT 1")
         ok = len(TOOLS) >= 15
-        return JSONResponse({"ok": ok, "version": __version__, "code": CODE_VERSION, "tools": len(TOOLS),
-                             "providers": registry.status}, status_code=200 if ok else 503)
+        body = {"ok": ok, "code": CODE_VERSION, "tools": len(TOOLS)}
+        user = auth.user_from_token(auth.token_from_request(request))
+        if user and user["role"] == "admin":  # l'état des fournisseurs (et leurs erreurs) ne regarde que l'administrateur
+            body.update(version=__version__, providers=registry.status)
+        return JSONResponse(body, status_code=200 if ok else 503)
 
     @app.get("/api/tools")
-    def tools():
+    def tools(user=Depends(auth.current_user)):
         return [{"name": t.name, "label": t.label, "icon": t.icon, "source": t.source} for t in TOOLS.values()]
 
     app.mount("/static", Static(directory=WEB), name="static")
@@ -119,7 +160,9 @@ def create_app() -> FastAPI:
     @app.get("/")
     @app.get("/share")
     def index():
-        return page("index.html")
+        response = page("index.html")
+        response.headers["Content-Security-Policy"] = APP_CSP
+        return response
 
     return app
 

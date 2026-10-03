@@ -166,3 +166,107 @@ async def test_journal_gives_the_full_story_of_a_failed_task(dev_ctx, user):
     # longue tâche : lecture par morceaux
     r = await execute(dev_ctx, "ely_journal", {"action": "read", "run_id": run, "offset": 5})
     assert "[5]" in r.content and "[0]" not in r.content
+
+
+async def test_a_plugin_that_quits_or_hangs_never_takes_ely_down(dev_ctx, monkeypatch):
+    """Un plugin qui appelle sys.exit() ou boucle au chargement est refusé avant d'être installé ; déjà présent au
+    démarrage, il est désactivé au lieu d'empêcher Ely de démarrer ; un outil qui quitte rend une erreur."""
+    r = await execute(dev_ctx, "ely_plugin", {"action": "write", "name": "sortie", "code": "import sys\nsys.exit(0)\n"})
+    assert r.is_error and "Plugin refusé" in r.content and not plugins.plugin_path("sortie").exists()
+    monkeypatch.setattr(plugins, "IMPORT_LIMIT", 2)
+    r = await execute(dev_ctx, "ely_plugin", {"action": "write", "name": "boucle", "code": "while True:\n    pass\n"})
+    assert r.is_error and "ne finit pas de se charger" in r.content and not plugins.plugin_path("boucle").exists()
+
+    plugins.plugin_path("depart").write_text("import sys\nsys.exit(3)\n")  # écrit par une version précédente
+    status = plugins.load_plugins()
+    assert "désactivé" in status["depart"] and "depart" in plugins.disabled()
+
+    code = '''import sys
+from ely.tools import ToolContext, ToolResult, tool
+
+@tool("quitter", "Quitte", {}, [])
+async def quitter(ctx: ToolContext) -> ToolResult:
+    sys.exit(1)
+'''
+    r = await execute(dev_ctx, "ely_plugin", {"action": "write", "name": "quitte", "code": code})
+    assert not r.is_error, r.content
+    r = await execute(dev_ctx, "quitter", {})
+    assert r.is_error and "SystemExit" in r.content
+    await execute(dev_ctx, "ely_plugin", {"action": "disable", "name": "quitte"})
+
+
+async def test_deploy_refuses_to_drop_a_test(dev_ctx, fake_repo):
+    """Corriger le code en supprimant le test qui le surveillait ne passe pas, même si la suite est verte."""
+    await execute(dev_ctx, "ely_code", {"action": "read", "path": "app.py"})
+    await execute(dev_ctx, "ely_edit", {"action": "replace", "path": "app.py", "old": "a - b", "new": "a + b"})
+    await execute(dev_ctx, "ely_edit", {"action": "write", "path": "tests/test_app.py",
+                                        "content": "def test_rien():\n    assert True\n"})
+    r = await execute(dev_ctx, "ely_deploy", {"summary": "corrige add"})
+    assert r.is_error and "tests/test_app.py::test_add" in r.content, r.content
+    assert "return a - b" in (fake_repo / "app.py").read_text()  # rien n'est passé dans la version active
+
+
+def _commit(repo: Path, path: str, text: str, message: str) -> str:
+    (repo / path).write_text(text)
+    for cmd in (["git", "add", "-A"], ["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", message]):
+        subprocess.run(cmd, cwd=repo, check=True)
+    return subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True).stdout.strip()
+
+
+async def test_cancelling_an_improvement_never_leaves_conflict_markers(user, fake_repo):
+    """« Annuler » une amélioration modifiée depuis par une autre : refus net, et le code reste intact (sans marqueurs
+    de conflit qui casseraient Ely au redémarrage)."""
+    import httpx
+
+    from ely import auth
+    from ely.api.app import create_app
+    from ely.db import now
+
+    first = _commit(fake_repo, "app.py", "def add(a, b):\n    return a + b\n", "ely-self: corrige add")
+    _commit(fake_repo, "app.py", "def add(a, b):\n    return sum((a, b))\n", "ely-self: add plus lisible")
+    iid = db.insert("improvements", kind="code", title="corrige add", commit_sha=first, status="deployed", created_at=now())
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app()), base_url="http://ely.test") as c:
+        r = await c.post(f"/api/admin/improvements/{iid}/revert",
+                         headers={"Authorization": f"Bearer {auth.create_session(user['id'])}"})
+    assert r.status_code == 400 and "Annulation impossible" in r.json()["detail"]
+    status = subprocess.run(["git", "status", "--porcelain"], cwd=fake_repo, capture_output=True, text=True).stdout
+    assert status == "" and not (fake_repo / ".git" / "REVERT_HEAD").exists()
+    assert (fake_repo / "app.py").read_text() == "def add(a, b):\n    return sum((a, b))\n"
+
+
+async def test_an_update_waits_for_the_familys_tasks_before_restarting(fake, user, monkeypatch):
+    """Une amélioration déployée pendant que Léa fait commander ses courses : Ely attend la fin de sa tâche pour
+    redémarrer, au lieu de la couper en plein vol."""
+    import asyncio
+
+    from conftest import wait_idle
+
+    from ely import auth
+    from ely.agent.runner import runner
+    from ely.db import now
+
+    restarts = []
+    monkeypatch.setattr(pipeline, "request_restart", lambda: restarts.append(now()))
+    lea = auth.create_user(f"lea{now()}@x.fr", "Léa", "motdepasse")
+    shopping_done = asyncio.Event()
+
+    async def script(model, system, messages, tools):
+        if model == "fast":
+            return '{"done": true}'
+        await shopping_done.wait()
+        return "Courses commandées."
+
+    fake.script = script
+    cid = new_conversation(lea)
+    await runner.submit(lea, cid, "Commande mes courses du samedi chez Carrefour")
+    await asyncio.sleep(0.2)
+    pipeline.restart_soon(0)
+    await asyncio.sleep(2.5)
+    assert restarts == []  # Léa est en pleine commande
+    shopping_done.set()
+    await wait_idle(cid)
+    for _ in range(50):
+        if restarts:
+            break
+        await asyncio.sleep(0.1)
+    assert len(restarts) == 1

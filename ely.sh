@@ -56,6 +56,24 @@ elyport() { local port="${ELY_PORT:-$(env_value ELY_PORT)}"; echo "${port:-8000}
 
 json_get() { "$PY" -c "import json,sys; print(json.load(open(sys.argv[1])).get(sys.argv[2],''))" "$1" "$2" 2>/dev/null; }
 
+rollback() {  # $1 : version précédente, $2 : raison ; $data : dossier de données
+  local bad
+  bad="$(git rev-parse HEAD)"
+  echo "✗ $2 : retour à ${1:0:10}"
+  if ! git reset -q --keep "$1" 2>/dev/null; then
+    # fichiers suivis modifiés à la main : mis de côté (git stash list), jamais écrasés
+    if git stash push -q -m "modifications locales mises de côté avant le retour arrière d'Ely" && git reset -q --keep "$1"; then
+      echo "  vos modifications locales sont mises de côté : « git stash list », puis « git stash pop » pour les retrouver"
+    else
+      echo "✗ retour arrière impossible : Ely reste en ${bad:0:10}"
+      return 1
+    fi
+  fi
+  printf '{"bad": "%s", "prev": "%s", "reason": "%s"}' "$bad" "$1" "$2" > "$data/selfdev/rollback.json"
+  deps_changed && install
+  return 0
+}
+
 healthy() {  # attend jusqu'à 90 s que /api/health réponde ok
   local port="$1"
   for _ in $(seq 1 90); do
@@ -78,22 +96,21 @@ start() {
   mkdir -p "$data/selfdev"
   trap 'kill "$CHILD" 2>/dev/null; wait "$CHILD" 2>/dev/null; exit 0' INT TERM
   echo "→ Ely $(version) démarre sur http://localhost:${port}"
+  local watch="" crashes=0 started
   while true; do
     rm -f "$data/selfdev/restart_requested"
     "$PY" -m ely &
     CHILD=$!
+    started=$(date +%s)
     if [ -f "$data/selfdev/pending_check" ]; then
       prev="$(cat "$data/selfdev/pending_check")"
       rm -f "$data/selfdev/pending_check"
       if healthy "$port"; then
         echo "✓ nouvelle version d'Ely en bonne santé"
+        watch="$prev"; crashes=0  # encore surveillée : des plantages répétés ramènent à la version précédente
       else
-        bad="$(git rev-parse HEAD)"
-        echo "✗ la nouvelle version ne démarre pas : retour à ${prev:0:10}"
         kill "$CHILD" 2>/dev/null; wait "$CHILD" 2>/dev/null
-        git reset --keep "$prev" || git reset --hard "$prev"
-        printf '{"bad": "%s", "prev": "%s", "reason": "échec du contrôle de santé après mise à jour"}' "$bad" "$prev" > "$data/selfdev/rollback.json"
-        deps_changed && install
+        rollback "$prev" "échec du contrôle de santé après mise à jour"
         continue
       fi
     fi
@@ -113,6 +130,15 @@ start() {
       exit 3
     fi
     if [ "$code" -ne 0 ] && [ "$code" -ne 130 ] && [ "$code" -ne 143 ]; then
+      if [ -n "$watch" ] && [ $(( $(date +%s) - started )) -lt 600 ]; then
+        crashes=$((crashes + 1))
+        if [ "$crashes" -ge 3 ] && rollback "$watch" "plantages répétés après mise à jour"; then
+          watch=""; crashes=0
+          continue
+        fi
+      else
+        watch=""; crashes=0  # a tenu dix minutes : la nouvelle version est adoptée
+      fi
       echo "✗ Ely s'est arrêtée (code $code), redémarrage dans 5 s…"
       sleep 5
       continue

@@ -18,6 +18,8 @@ from ..llm.base import message_text
 from ..memory.store import index_message
 
 log = logging.getLogger("ely.runner")
+# statut final d'une tâche planifiée (outil schedule, action list)
+FINAL_STATUS = {"done": "terminée", "error": "en échec", "cancelled": "arrêtée", "stopped": "interrompue (limite d'étapes)"}
 
 
 @dataclass
@@ -193,6 +195,7 @@ class Runner:
                 st.live_tools.clear()
                 status = db.val("SELECT status FROM runs WHERE id = ?", (run_id,))
                 await self.emit(st, "run_end", {"status": status})
+                await self._scheduled_end(run_id, user, st.conversation_id, status)
                 if st.queue:  # messages arrivés trop tard pour la tâche : nouvelle tâche
                     pending = st.queue[:]
                     st.queue.clear()
@@ -206,6 +209,28 @@ class Runner:
 
         st.task = asyncio.create_task(body())
 
+    def working(self, except_channel: str = "") -> list[ConvState]:
+        """Tâches en plein travail (une question en attente ne compte pas : elle survit au redémarrage), hors canal donné."""
+        busy = [s for s in self.states.values() if s.task and not s.task.done() and s.status == "running"]
+        return [s for s in busy if not except_channel
+                or db.val("SELECT channel FROM conversations WHERE id = ?", (s.conversation_id,)) != except_channel]
+
+    async def _scheduled_end(self, run_id: int, user: dict, conversation_id: int, status: str) -> None:
+        """Tâche planifiée finie : son statut final dans la liste des tâches, et la personne prévenue d'un échec (une
+        réussite l'est par la boucle, avec la réponse)."""
+        try:
+            sid = json.loads(db.val("SELECT state FROM runs WHERE id = ?", (run_id,)) or "{}").get("schedule_id")
+            if not sid:
+                return
+            db.update("schedules", "id = ?", (sid,), last_status=FINAL_STATUS.get(status, status))
+            if status == "error":
+                from ..notify import notify
+
+                error = db.val("SELECT error FROM runs WHERE id = ?", (run_id,)) or "erreur inconnue"
+                await notify(user["id"], "Ely · tâche planifiée en échec", error[:300], url=f"/?c={conversation_id}")
+        except Exception:
+            log.exception("fin de la tâche planifiée %s", run_id)
+
     async def cancel(self, conversation_id: int) -> bool:
         st = self.states.get(conversation_id)
         if st and st.task and not st.task.done():
@@ -213,6 +238,13 @@ class Runner:
             st.task.cancel()
             return True
         return False
+
+    async def stop(self, conversation_id: int) -> None:
+        """Arrête la tâche d'une conversation et attend qu'elle ait fini de se ranger (avant de supprimer celle-ci)."""
+        st = self.states.get(conversation_id)
+        if await self.cancel(conversation_id):
+            await asyncio.wait({st.task}, timeout=10)
+        self.states.pop(conversation_id, None)
 
     async def resume_all(self) -> int:
         """Au démarrage : reprend toutes les tâches interrompues."""

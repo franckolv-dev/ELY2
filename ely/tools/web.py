@@ -11,6 +11,7 @@ import time
 import httpx
 
 from ..config import settings
+from ..netguard import refusal
 from . import ToolContext, ToolResult, tool
 
 log = logging.getLogger("ely.web")
@@ -137,7 +138,7 @@ def _providers():
       {"query": {"type": "string", "description": "Requête de recherche"},
        "category": {"type": "string", "enum": ["general", "news"], "description": "news pour l'actualité"},
        "max_results": {"type": "integer", "description": "Nombre de résultats (défaut 8)"}},
-      ["query"], label="Recherche web", icon="🔎", timeout=60, untrusted=True)
+      ["query"], label="Recherche web", icon="🔎", timeout=60, untrusted=True, effects=False)
 async def web_search(ctx: ToolContext, query: str, category: str = "general", max_results: int = 8) -> ToolResult:
     cat = None if category == "general" else category
     errors = []
@@ -204,10 +205,12 @@ async def fetch_text(url: str, max_chars: int = 20000) -> tuple[str, str]:
 
 @tool("web_fetch", "Lit le contenu d'une page web ou d'un PDF en ligne (texte principal, en markdown).",
       {"url": {"type": "string"}, "max_chars": {"type": "integer", "description": "Longueur max (défaut 15000)"}},
-      ["url"], label="Lecture de page", icon="📄", timeout=90, untrusted=True)
+      ["url"], label="Lecture de page", icon="📄", timeout=90, untrusted=True, effects=False)
 async def web_fetch(ctx: ToolContext, url: str, max_chars: int = 15000) -> ToolResult:
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
+    if why := await refusal(url, ctx.is_admin):
+        return ToolResult(f"Adresse refusée : {why}.", is_error=True)
     title, text = await fetch_text(url, max_chars)
     if not text.strip():
         return ToolResult(f"Page vide ou illisible : {url}. Essaie browser action=open.", is_error=True)
@@ -223,7 +226,7 @@ WMO = {0: "ciel dégagé", 1: "plutôt dégagé", 2: "partiellement nuageux", 3:
 
 @tool("weather", "Météo actuelle et prévisions (jusqu'à 14 jours) pour un lieu.",
       {"location": {"type": "string", "description": "Ville ou lieu"}, "days": {"type": "integer", "description": "Jours de prévision (défaut 3)"}},
-      ["location"], label="Météo", icon="🌤️", timeout=30)
+      ["location"], label="Météo", icon="🌤️", timeout=30, effects=False)
 async def weather(ctx: ToolContext, location: str, days: int = 3) -> ToolResult:
     async with httpx.AsyncClient(timeout=15) as c:
         g = await c.get("https://geocoding-api.open-meteo.com/v1/search", params={"name": location, "count": 1, "language": "fr"})
