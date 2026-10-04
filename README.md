@@ -19,7 +19,17 @@ The interface is bilingual (English / French, formal "vous" by default), and Ely
 
 ---
 
-## What's new in 4.1
+## What's new in 4.2
+
+- **The right effort in the right place**: reasoning effort is set per role (Medium or High). Everyday requests (news,
+  emails…) no longer make the most powerful model think at length; escalation and self-improvement keep High effort.
+  See [Multi-model](#multi-model-multi-user).
+- **Every model of your ChatGPT plan** (GPT-6 Astra, Sol, Luna…), listed in `CHATGPT_MODELS`.
+- **Ely has a GitHub account of its own**: improvements arrive as pull requests under that name, and Ely shows up
+  among the repository's contributors. See [Self-improvement](#recursive-self-improvement).
+- **Gmail holds up under load**: several tasks running in parallel no longer get turned away by Gmail.
+
+### And in 4.1
 
 - **Self-improvement handed to Claude** (Claude Agent SDK), and every change to its own code **published on GitHub as
   a pull request** that you review and merge. See [Self-improvement](#recursive-self-improvement).

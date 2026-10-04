@@ -16,7 +16,17 @@ Un seul processus, une seule base SQLite, zéro service à maintenir.
 
 ---
 
-## Nouveautés de la 4.1
+## Nouveautés de la 4.2
+
+- **Le bon effort au bon endroit** : l'effort de raisonnement se règle par rôle (Moyen ou Élevé). Les demandes
+  courantes (actualités, e-mails…) ne font plus réfléchir longuement le modèle le plus puissant ; l'escalade et
+  l'auto-amélioration gardent l'effort Élevé. Voir [Multi-modèles](#multi-modèles-multi-utilisateurs).
+- **Tous les modèles de votre forfait ChatGPT** (GPT-6 Astra, Sol, Luna…), listés dans `CHATGPT_MODELS`.
+- **Ely a son propre compte GitHub** : ses améliorations arrivent en pull requests à son nom, et elle figure parmi les
+  contributeurs du dépôt. Voir [Auto-amélioration](#auto-amélioration-récursive).
+- **Gmail tient la charge** : plusieurs tâches menées en parallèle ne se font plus refuser par Gmail.
+
+### Et dans la 4.1
 
 - **Auto-amélioration confiée à Claude** (Claude Agent SDK), et chaque modification de son propre code **publiée sur
   GitHub en pull request**, que vous relisez et fusionnez. Voir [Auto-amélioration](#auto-amélioration-récursive).
