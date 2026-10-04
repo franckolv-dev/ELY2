@@ -2,9 +2,9 @@
 
 [English](README.md) · **Français**
 
-**Vous lui parlez, il agit.** Ely prend un rendez-vous chez le médecin, publie sur LinkedIn ou Facebook, rédige et envoie
+**Vous lui parlez, Ely agit.** Ely prend un rendez-vous chez le médecin, publie sur LinkedIn ou Facebook, rédige et envoie
 vos e-mails, ajoute un contact ou un rendez-vous, cherche, compare, rédige des documents… depuis votre ordinateur ou votre
-téléphone Android. Et **il ne s'arrête pas tant que l'objectif n'est pas atteint.**
+téléphone Android. Et **Ely ne s'arrête pas tant que l'objectif n'est pas atteint.**
 
 ![Ely réserve un rendez-vous dans son navigateur](docs/images/rdv.png)
 
@@ -28,7 +28,7 @@ Un seul processus, une seule base SQLite, zéro service à maintenir.
 
 ### Et dans la 4.1
 
-- **Auto-amélioration confiée à Claude** (Claude Agent SDK), et chaque modification de son propre code **publiée sur
+- **Auto-amélioration confiée à GPT6-Astra ou n'importe quel modèle cloud ou local**, et chaque modification de son propre code **publiée sur
   GitHub en pull request**, que vous relisez et fusionnez. Voir [Auto-amélioration](#auto-amélioration-récursive).
 - **Prête pour Internet et pour la famille** : droits vérifiés à chaque action, code réservé à l'administrateur,
   contenus de tiers jamais pris pour des ordres, réseau de la maison fermé aux autres comptes, sessions protégées.
@@ -58,7 +58,7 @@ Tout le détail dans le [journal des versions](CHANGELOG.md).
 
 ---
 
-## Démarrage (Mac Studio)
+## Démarrage
 
 ```bash
 git clone https://github.com/franckolv-dev/ELY2.git
