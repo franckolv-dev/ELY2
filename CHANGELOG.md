@@ -13,13 +13,14 @@ leur historique est dans [son journal](https://github.com/franckolv-dev/ElyAgent
 ## [4.2.0] — 2026-10-04
 
 > **Le bon effort au bon endroit.** L'effort de raisonnement se règle par rôle : les demandes courantes ne font plus
-> réfléchir longuement le modèle le plus puissant. Tous les modèles du forfait ChatGPT peuvent être proposés, et Ely
-> peut publier ses améliorations sous son propre compte GitHub.
+> réfléchir longuement le modèle le plus puissant. Tous les modèles du forfait ChatGPT peuvent être proposés, Ely
+> peut publier ses améliorations sous son propre compte GitHub, et elle s'installe aussi sous Linux et Windows (WSL2).
 >
 > **En mettant à jour depuis la 4.1.0** (`./ely.sh update`) :
 > - l'agent principal passe en effort Moyen ; Réglages → Modèles permet de le remettre en Élevé ;
 > - pour qu'Ely publie à son nom, suivez [docs/auto-amelioration-github.md](docs/auto-amelioration-github.md)
->   (`ELY_GITHUB_TOKEN`) ; sans ce réglage, rien ne change.
+>   (`ELY_GITHUB_TOKEN`) ; sans ce réglage, rien ne change ;
+> - Linux ou Windows : voir les rubriques « Linux » et « Windows (WSL2) » du README.
 
 ### Ajouté
 - **Effort de raisonnement par rôle** (Réglages → Modèles) : Moyen ou Élevé pour l'agent principal, l'escalade et
@@ -32,6 +33,10 @@ leur historique est dans [son journal](https://github.com/franckolv-dev/ElyAgent
   d'auto-amélioration portent l'adresse de ce compte, et `gh` ouvre ses PR avec son jeton : elles sont à son nom, et Ely
   figure parmi les contributeurs une fois ses PR fusionnées. Un jeton refusé arrête tout avant le commit, sans rien
   activer. Sans ce jeton, rien ne change.
+- **Linux et Windows (WSL2)** : `./ely.sh service` crée un service systemd de l'utilisateur, au lieu d'un simple
+  message. Ely démarre alors avec la session, et `./ely.sh update` et `./ely.sh unservice` le prennent en charge.
+  L'installation signale les bibliothèques système qui manquent à Chromium, avec la commande à lancer. Le README
+  explique l'installation sous Linux et sous Windows par WSL2.
 
 ### Modifié
 - **L'agent principal réfléchit en effort Moyen par défaut**, au lieu d'Élevé. L'escalade et l'auto-amélioration
