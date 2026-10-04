@@ -203,7 +203,9 @@ own model (Settings → Models → Self-improvement; automatic: the escalation m
 
 > For step 4 to be active, start Ely with `./ely.sh` (the supervisor) from a git clone, and sign the GitHub CLI in on
 > the Mac (`gh auth login`): if the change can't be published, the deployment is refused
-> (see [docs/auto-amelioration-github.md](docs/auto-amelioration-github.md), in French).
+> (see [docs/auto-amelioration-github.md](docs/auto-amelioration-github.md), in French). With a GitHub account of
+> Ely's own (`ELY_GITHUB_TOKEN`), commits and pull requests carry that account's name, and Ely shows up among the
+> contributors.
 
 ### Handing self-improvement to Claude (optional)
 

@@ -107,3 +107,78 @@ async def test_publication_failure_prevents_local_activation(fake_repo, monkeypa
     assert "GitHub indisponible" in result["message"]
     assert await pipeline.head() == previous
     assert "a - b" in (fake_repo / "app.py").read_text()
+
+
+FAKE_GH = r'''#!{python}
+"""Faux CLI gh : note le jeton reçu ; le compte d'Ely s'appelle ely-assistante (id 4242)."""
+import json, os, sys
+with open({log!r}, "a") as f:
+    f.write(json.dumps({{"args": sys.argv[1:], "token": os.environ.get("GH_TOKEN")}}) + "\n")
+if sys.argv[1:3] == ["api", "user"]:
+    if os.environ.get("GH_TOKEN") != "ghp-ely":
+        sys.stderr.write("HTTP 401: Bad credentials\n"); sys.exit(1)
+    print(json.dumps({{"login": "ely-assistante", "id": 4242}}))
+'''
+
+
+@pytest.fixture
+def fake_gh(tmp_path, monkeypatch):
+    import os
+    import sys
+
+    log = tmp_path / "gh.jsonl"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "gh").write_text(FAKE_GH.format(python=sys.executable, log=str(log)))
+    (bin_dir / "gh").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    return lambda: [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+
+
+async def test_ely_signs_and_publishes_with_its_own_github_account(fake_repo, fake_gh, monkeypatch):
+    """Ely a son compte GitHub (invité sur le dépôt) : ses commits portent l'adresse noreply de ce compte, ce qui la
+    fait figurer parmi les contributeurs, et gh agit avec son jeton, pas avec la connexion de l'administrateur."""
+    import subprocess
+
+    from ely.config import settings
+
+    monkeypatch.setattr(settings, "ely_github_token", "ghp-ely")
+    published = []
+
+    async def publish(summary, sha):
+        published.append(sha)
+        await github.gh("pr", "list")  # comme la vraie publication : gh, avec le jeton d'Ely
+        return URL
+
+    monkeypatch.setattr(github, "publish_improvement", publish)
+    await pipeline.prepare()
+    target = pipeline.WORKTREE / "app.py"
+    target.write_text(target.read_text().replace("a - b", "a + b"))
+    result = await pipeline.deploy("Correction de l'addition", restart=False)
+    assert result["ok"], result
+    author = subprocess.run(["git", "log", "-1", "--format=%an <%ae>", published[0]], cwd=fake_repo,
+                            capture_output=True, text=True, check=True).stdout.strip()
+    assert author == "Ely <4242+ely-assistante@users.noreply.github.com>"
+    assert [c["token"] for c in fake_gh()] == ["ghp-ely", "ghp-ely"]
+
+
+async def test_a_refused_ely_github_token_stops_before_any_commit(fake_repo, fake_gh, monkeypatch):
+    """Jeton du compte d'Ely refusé par GitHub (expiré, révoqué) : rien n'est commité ni activé, et Ely dit quoi
+    vérifier. Sans jeton, les commits restent signés « Ely <ely@localhost> », par la connexion gh du Mac."""
+    from ely.config import settings
+
+    monkeypatch.setattr(settings, "ely_github_token", "ghp-expire")
+    await pipeline.prepare()
+    target = pipeline.WORKTREE / "app.py"
+    target.write_text(target.read_text().replace("a - b", "a + b"))
+    previous = await pipeline.head()
+    result = await pipeline.deploy("Correction", restart=False)
+    assert not result["ok"] and "ELY_GITHUB_TOKEN" in result["message"] and "Aucun commit" in result["message"]
+    assert (await pipeline.git("rev-parse", "HEAD", cwd=pipeline.WORKTREE))[1] == previous
+    assert await pipeline.head() == previous
+
+    monkeypatch.setattr(settings, "ely_github_token", "")
+    assert await github.author() == ("Ely", "ely@localhost")
+    await github.gh("pr", "list")
+    assert fake_gh()[-1]["token"] is None

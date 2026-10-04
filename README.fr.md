@@ -204,7 +204,8 @@ utilisent leur propre modèle (Réglages → Modèles → Auto-amélioration ; a
 
 > Pour que l'étape 4 soit active, lancez Ely avec `./ely.sh` (le superviseur) depuis un clone git, et connectez le CLI
 > GitHub sur le Mac (`gh auth login`) : sans publication possible, le déploiement est refusé
-> (voir [docs/auto-amelioration-github.md](docs/auto-amelioration-github.md)).
+> (voir [docs/auto-amelioration-github.md](docs/auto-amelioration-github.md)). Avec son propre compte GitHub
+> (`ELY_GITHUB_TOKEN`), Ely signe ses commits et ouvre ses PR à son nom : elle figure parmi les contributeurs.
 
 ### Confier l'auto-amélioration à Claude (facultatif)
 
