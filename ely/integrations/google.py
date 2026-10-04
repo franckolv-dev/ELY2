@@ -5,7 +5,9 @@ import asyncio
 import base64
 import time
 from email.message import EmailMessage
+from contextlib import nullcontext
 from urllib.parse import urlencode
+from weakref import WeakKeyDictionary, WeakValueDictionary
 
 import httpx
 
@@ -70,21 +72,41 @@ async def _token(user_id: int) -> str:
 
 
 async def api(user_id: int, method: str, url: str, **kw) -> dict:
-    token = await _token(user_id)
-    for attempt in range(3):  # 429 : requête refusée sans être exécutée, on peut la refaire
-        async with httpx.AsyncClient(timeout=40) as c:
-            r = await c.request(method, url, headers={"Authorization": f"Bearer {token}"}, **kw)
-        if r.status_code != 429 or attempt == 2:
-            break
-        await asyncio.sleep(1 + 2 * attempt)
-    if r.status_code >= 400:
-        raise RuntimeError(f"Google API {r.status_code} : {r.text[:400]}")
-    return r.json() if r.content else {}
+    # Un seul budget Gmail partagé par toutes les tâches de cet utilisateur,
+    # lectures ET écritures. Contacts et Agenda gardent leur propre débit.
+    gate = _gmail_limiter(user_id) if url == GMAIL or url.startswith(GMAIL + "/") else nullcontext()
+    async with gate:
+        token = await _token(user_id)
+        for attempt in range(3):  # reprises 429 bornées, sans changer les erreurs métier
+            async with httpx.AsyncClient(timeout=40) as c:
+                r = await c.request(method, url, headers={"Authorization": f"Bearer {token}"}, **kw)
+            if r.status_code != 429 or attempt == 2:
+                break
+            await asyncio.sleep(1 + 2 * attempt)
+        if r.status_code >= 400:
+            raise RuntimeError(f"Google API {r.status_code} : {r.text[:400]}")
+        return r.json() if r.content else {}
 
 
 # ---------------------------------------------------------------------- Gmail
 GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me"
-GMAIL_PARALLEL = 5  # Gmail refuse au-delà d'une dizaine de requêtes simultanées (429 « Too many concurrent requests »)
+GMAIL_PARALLEL = 5  # budget partagé dans le processus, par utilisateur et boucle asyncio
+# Références faibles : les sémaphores inactifs et les anciennes boucles de tests
+# ne restent pas retenus. Les appels actifs/en attente gardent leur gate en vie.
+_gmail_limits: WeakKeyDictionary = WeakKeyDictionary()
+
+
+def _gmail_limiter(user_id: int) -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    users = _gmail_limits.get(loop)
+    if users is None:
+        users = WeakValueDictionary()
+        _gmail_limits[loop] = users
+    gate = users.get(user_id)
+    if gate is None:
+        gate = asyncio.Semaphore(GMAIL_PARALLEL)
+        users[user_id] = gate
+    return gate
 
 
 def _header(msg: dict, name: str) -> str:
