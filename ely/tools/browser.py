@@ -74,8 +74,15 @@ async def _browser(ctx: ToolContext, action: str, url: str = "", ref: int | None
                    submit: bool = False, key: str = "", direction: str = "down", seconds: float = 2,
                    tab: int | None = None, js: str = "", new_tab: bool = False) -> ToolResult:
     ub = await manager.for_user(ctx.user_id)
-    page_key = ctx.extra.get("browser_key", "main")
-    async with ub.lock(page_key):
+    # La page courante appartient à la conversation (elle survit à une réponse
+    # utilisateur), jamais à toutes les routines d'un même compte. Les sous-agents
+    # gardent leur propre page, dans l'espace de leur conversation parente.
+    scope = f"conversation-{ctx.conversation_id}" if ctx.conversation_id else f"run-{ctx.run_id}"
+    page_key = f"{scope}:{ctx.extra.get('browser_key', 'main')}"
+    # active_key et on_frame sont partagés par le navigateur : sérialiser l'action
+    # entière, pas seulement les appels utilisant une même page. Le verrou est
+    # libéré entre appels d'outils, y compris sur erreur ou annulation.
+    async with ub.lock("tool-actions"):
         page = await ub.page(page_key)
         ub.on_frame = ctx.emit
 
