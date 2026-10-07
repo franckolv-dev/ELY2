@@ -144,8 +144,9 @@ async def run_tests(pattern: str = "", timeout: int = 900) -> tuple[bool, str]:
 
 
 async def deploy(summary: str, restart: bool = True) -> dict:
-    """Tests, commit, fusion dans la version active. Sous le lanceur, Ely redémarre aussitôt ; avec restart=False,
-    c'est à l'appelant de le demander (session Claude : à la fin de la mission, pas au milieu)."""
+    """Tests, commit et PR, puis activation locale sauf si le lanceur lui-même change.
+    Un lanceur modifié nécessite une fusion et une relance complète par l'administrateur.
+    Sinon, restart=False reporte le redémarrage à l'appelant (par exemple une session Claude)."""
     ok, out = await run_tests()
     if not ok:
         return {"ok": False, "message": "Les tests échouent, déploiement refusé :\n" + out[-3000:]}
@@ -172,6 +173,19 @@ async def deploy(summary: str, restart: bool = True) -> dict:
                 "message": f"Commit {new_sha} créé, mais publication GitHub non confirmée : {exc}. "
                            "Aucune activation locale. Vérifier la branche ely-improvement/" + new_sha + "."}
     prev = await head()
+    # Le superviseur bash conserve ses anciennes fonctions en mémoire : un
+    # redémarrage de Python seul ne charge pas un lanceur corrigé.
+    code, changed = await git("diff", "--name-only", prev, new_sha)
+    if code:
+        return {"ok": False, "sha": new_sha, "pr_url": pr_url, "activated": False, "restart": False,
+                "message": "PR publiée mais fichiers modifiés invérifiables. Aucune activation locale.\n" + changed}
+    if "ely.sh" in changed.splitlines():
+        db.insert("improvements", kind="code", title=summary[:200],
+                  detail=f"PR : {pr_url} ; lanceur modifié, activation manuelle après fusion", diff=patch,
+                  commit_sha=new_sha, status="published", created_at=now())
+        return {"ok": True, "sha": new_sha, "pr_url": pr_url, "activated": False, "restart": False,
+                "message": f"PR GitHub publiée : {pr_url}. Le lanceur ely.sh est modifié : aucune activation locale ni redémarrage automatique. "
+                           "Demander à l'administrateur de fusionner puis de relancer le superviseur complet (pas seulement Python)."}
     code, out = await git("merge", "--ff-only", BRANCH)
     if code:
         return {"ok": False, "pr_url": pr_url,
