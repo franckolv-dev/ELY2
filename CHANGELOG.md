@@ -10,6 +10,36 @@ leur historique est dans [son journal](https://github.com/franckolv-dev/ElyAgent
 
 ---
 
+## [Non publié]
+
+Hormis la correction de `./ely.sh update`, les améliorations de cette section ont été écrites par Ely elle-même
+(auto-amélioration), puis relues et fusionnées.
+
+### Sécurité
+- **Les mots de passe ne sont plus recopiés dans ce qu'Ely lit d'une page.** Dans l'instantané du navigateur interne,
+  que le modèle lit et que le journal des tâches conserve, un champ mot de passe ou code à usage unique affiche
+  « [masquée] » au lieu de sa valeur. Le champ reste utilisable.
+
+### Corrigé
+- **Deux tâches d'un même compte se disputaient la page du navigateur interne.** Une routine pouvait changer la page
+  d'une conversation en cours et lui faire cliquer au mauvais endroit. Chaque conversation a désormais sa page,
+  conservée d'une réponse à l'autre, et chaque sous-agent a la sienne. Les actions d'un même compte s'exécutent l'une
+  après l'autre.
+- **Le superviseur et Ely ne lisaient pas toujours le même port.** Avec une valeur mal tapée dans `ELY_PORT` (« 800O »),
+  Ely écoutait sur 8000 mais le superviseur contrôlait sa santé ailleurs, et jugeait à tort une mise à jour en échec.
+  Le lanceur convertit désormais le port exactement comme Ely.
+
+- **`./ely.sh update` pouvait redémarrer un autre programme que Ely.** Sur un Mac où le nom de service `fr.ely.agent`
+  lançait encore une ancienne installation (Node.js), la mise à jour redémarrait ce programme en annonçant « service Ely
+  redémarré », et Ely restait sur l'ancienne version. Le lanceur vérifie désormais que le service lance bien son propre
+  dossier. Sinon, il n'y touche pas et le dit : `./ely.sh service` le remplace (en gardant une copie de l'ancien dans
+  `data/`), et `./ely.sh unservice` ne le supprime jamais.
+
+### Modifié
+- **Une auto-amélioration qui modifie le lanceur `ely.sh` est publiée sans être activée.** Le superviseur déjà lancé
+  garde l'ancien lanceur en mémoire : l'administrateur fusionne la PR, puis relance le superviseur complet
+  (`./ely.sh update` avec le service, sinon Ctrl+C puis `./ely.sh`).
+
 ## [4.2.0] — 2026-10-04
 
 > **Le bon effort au bon endroit.** L'effort de raisonnement se règle par rôle : les demandes courantes ne font plus
