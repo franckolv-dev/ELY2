@@ -12,8 +12,8 @@ leur historique est dans [son journal](https://github.com/franckolv-dev/ElyAgent
 
 ## [Non publié]
 
-Les trois améliorations de cette section ont été écrites par Ely elle-même (auto-amélioration), puis relues et
-fusionnées.
+Hormis la correction de `./ely.sh update`, les améliorations de cette section ont été écrites par Ely elle-même
+(auto-amélioration), puis relues et fusionnées.
 
 ### Sécurité
 - **Les mots de passe ne sont plus recopiés dans ce qu'Ely lit d'une page.** Dans l'instantané du navigateur interne,
@@ -28,6 +28,12 @@ fusionnées.
 - **Le superviseur et Ely ne lisaient pas toujours le même port.** Avec une valeur mal tapée dans `ELY_PORT` (« 800O »),
   Ely écoutait sur 8000 mais le superviseur contrôlait sa santé ailleurs, et jugeait à tort une mise à jour en échec.
   Le lanceur convertit désormais le port exactement comme Ely.
+
+- **`./ely.sh update` pouvait redémarrer un autre programme que Ely.** Sur un Mac où le nom de service `fr.ely.agent`
+  lançait encore une ancienne installation (Node.js), la mise à jour redémarrait ce programme en annonçant « service Ely
+  redémarré », et Ely restait sur l'ancienne version. Le lanceur vérifie désormais que le service lance bien son propre
+  dossier. Sinon, il n'y touche pas et le dit : `./ely.sh service` le remplace (en gardant une copie de l'ancien dans
+  `data/`), et `./ely.sh unservice` ne le supprime jamais.
 
 ### Modifié
 - **Une auto-amélioration qui modifie le lanceur `ely.sh` est publiée sans être activée.** Le superviseur déjà lancé

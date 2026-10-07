@@ -360,3 +360,81 @@ def test_install_on_linux_points_out_missing_chromium_libraries(tmp_path):
     assert "playwright install-deps chromium" in r.stdout and "sudo" in r.stdout
     (tmp_path / "bin" / "ldd").write_text("#!/bin/sh\necho '\tlibnss3.so => /usr/lib/libnss3.so'\n")
     assert "install-deps" not in _ely_sh(box, env, "install").stdout
+
+
+FAKE_PLUTIL = """#!{python}
+import plistlib, sys
+# plutil -extract ProgramArguments.0 raw <fichier>
+with open(sys.argv[-1], "rb") as f:
+    print(plistlib.load(f)["ProgramArguments"][0])
+"""
+OLD_SERVICE = {"Label": "fr.ely.agent", "ProgramArguments": ["/opt/homebrew/Cellar/node@20/20.20.2/bin/node", "server.js"],
+               "RunAtLoad": True, "KeepAlive": True}
+
+
+def _mac_tools(tmp_path: Path, service: dict | None) -> tuple[dict, Path, Path]:
+    """Un Mac simulé : uname répond Darwin, launchctl note ses appels, et un service fr.ely.agent éventuel."""
+    import plistlib
+
+    bin_dir, home, log = tmp_path / "bin", tmp_path / "home", tmp_path / "launchctl.log"
+    bin_dir.mkdir()
+    for name, body in {"uname": "#!/bin/sh\necho Darwin\n", "launchctl": f'#!/bin/sh\necho "$*" >> "{log}"\n',
+                       "plutil": FAKE_PLUTIL.format(python=sys.executable)}.items():
+        (bin_dir / name).write_text(body)
+        (bin_dir / name).chmod(0o755)
+    plist = home / "Library" / "LaunchAgents" / "fr.ely.agent.plist"
+    plist.parent.mkdir(parents=True)
+    if service:
+        plist.write_bytes(plistlib.dumps(service))
+    env = {**os.environ, "HOME": str(home), "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+           "GIT_AUTHOR_NAME": "Test", "GIT_AUTHOR_EMAIL": "t@t.fr", "GIT_COMMITTER_NAME": "Test",
+           "GIT_COMMITTER_EMAIL": "t@t.fr", "ELY_PORT": "9"}
+    return env, plist, log
+
+
+def _new_version(dev: Path) -> None:
+    (dev / "menu.txt").write_text("nouveau menu\n")
+    _git(dev, "add", "-A")
+    _git(dev, "commit", "-qm", "Nouveau menu")
+    _git(dev, "push", "-q")
+
+
+def test_update_never_restarts_another_program_that_holds_the_service_name(tmp_path):
+    """Sur le Mac de Franck, le service fr.ely.agent lançait encore Node (ancienne installation) : `./ely.sh update`
+    le redémarrait en annonçant « service Ely redémarré », alors qu'Ely restait sur l'ancienne version."""
+    dev, mac = _published_and_installed(tmp_path)
+    _new_version(dev)
+    env, plist, log = _mac_tools(tmp_path, OLD_SERVICE)
+    r = _ely_sh(mac, env, "update")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "ne lance pas cette installation" in r.stdout and "node" in r.stdout and "./ely.sh service" in r.stdout
+    assert "↻ service Ely redémarré" not in r.stdout
+    assert not log.exists() or "kickstart" not in log.read_text()
+
+
+def test_update_restarts_the_launchd_service_of_this_install(tmp_path):
+    dev, mac = _published_and_installed(tmp_path)
+    _new_version(dev)
+    env, plist, log = _mac_tools(tmp_path, {"Label": "fr.ely.agent", "ProgramArguments": [str(mac / "ely.sh")]})
+    r = _ely_sh(mac, env, "update")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "↻ service Ely redémarré" in r.stdout and "kickstart -k" in log.read_text()
+
+
+def test_service_takes_over_the_name_from_another_program_and_unservice_spares_it(tmp_path):
+    """`./ely.sh service` remplace un ancien service du même nom en le gardant de côté ; `./ely.sh unservice`, lui,
+    ne supprime jamais le service d'un autre programme."""
+    import plistlib
+
+    box, env, _ = _linux_install(tmp_path / "linux")  # installation à jour (fausse Python, .env, dépendances)
+    env, plist, log = _mac_tools(tmp_path, OLD_SERVICE)
+    r = _ely_sh(box, env, "unservice")
+    assert r.returncode == 1 and "laissé tel quel" in r.stdout and plist.exists()
+    r = _ely_sh(box, env, "service")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert plistlib.loads(plist.read_bytes())["ProgramArguments"] == [f"{box}/ely.sh"]
+    kept = box / "data" / "fr.ely.agent.plist.ancien"
+    assert plistlib.loads(kept.read_bytes())["ProgramArguments"][0].endswith("/node") and "remplacé" in r.stdout
+    assert "load" in log.read_text()
+    r = _ely_sh(box, env, "unservice")
+    assert r.returncode == 0 and not plist.exists()

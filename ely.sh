@@ -14,6 +14,7 @@ cd "$(dirname "$0")"
 ROOT="$(pwd)"
 PY="$ROOT/.venv/bin/python"
 UNIT="$HOME/.config/systemd/user/ely.service"  # service systemd de l'utilisateur (Linux, WSL)
+PLIST="$HOME/Library/LaunchAgents/fr.ely.agent.plist"  # service launchd (macOS)
 
 env_value() { grep -E "^(export[[:space:]]+)?$1=" .env 2>/dev/null | tail -1 | cut -d= -f2- | sed 's/[[:space:]]*#.*//' | tr -d '"' | tr -d "'" ; }
 
@@ -52,6 +53,12 @@ chromium_libs() {  # Linux : Chromium a besoin de bibliothèques système que Pl
 }
 
 installed() { [ -x "$PY" ] && [ -f .env ] && ! deps_changed; }
+
+launched() { plutil -extract ProgramArguments.0 raw "$PLIST" 2>/dev/null; }  # programme lancé par le service macOS
+
+# Un autre programme peut porter le même nom de service (une ancienne installation, par exemple) : on n'y touche que
+# s'il lance bien cette installation-ci.
+ours() { [ -f "$PLIST" ] && [ "$(launched)" = "$ROOT/ely.sh" ]; }
 
 deps_changed() {
   local now
@@ -180,7 +187,11 @@ update() {
   fi
   deps_changed && install
   echo "✓ Ely est à jour : version $(version)"
-  if [ "$(uname)" = "Darwin" ] && [ -f "$HOME/Library/LaunchAgents/fr.ely.agent.plist" ]; then
+  if [ "$(uname)" = "Darwin" ] && [ -f "$PLIST" ] && ! ours; then
+    echo "⚠ le service macOS fr.ely.agent ne lance pas cette installation d'Ely mais : $(launched)"
+    echo "  il n'est pas redémarré. Pour qu'Ely 4 démarre avec le Mac à sa place : ./ely.sh service"
+  fi
+  if [ "$(uname)" = "Darwin" ] && ours; then
     launchctl kickstart -k "gui/$(id -u)/fr.ely.agent" && echo "↻ service Ely redémarré sur la nouvelle version"
   elif [ "$(uname)" != "Darwin" ] && [ -f "$UNIT" ]; then
     systemctl --user restart ely.service && echo "↻ service Ely redémarré sur la nouvelle version"
@@ -193,8 +204,13 @@ update() {
 
 service() {
   [ "$(uname)" = "Darwin" ] || { systemd_service; return; }
-  local plist="$HOME/Library/LaunchAgents/fr.ely.agent.plist"
+  local plist="$PLIST"
   mkdir -p "$HOME/Library/LaunchAgents" "$ROOT/data"
+  if [ -f "$plist" ] && ! ours; then
+    cp "$plist" "$ROOT/data/fr.ely.agent.plist.ancien"
+    echo "→ le service fr.ely.agent lançait un autre programme ($(launched)) : il est remplacé par Ely."
+    echo "  Copie de l'ancien : $ROOT/data/fr.ely.agent.plist.ancien"
+  fi
   cat > "$plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -245,9 +261,12 @@ SERVICE
 }
 
 unservice() {
-  if [ "$(uname)" = "Darwin" ]; then
-    launchctl unload "$HOME/Library/LaunchAgents/fr.ely.agent.plist" 2>/dev/null
-    rm -f "$HOME/Library/LaunchAgents/fr.ely.agent.plist"
+  if [ "$(uname)" = "Darwin" ] && [ -f "$PLIST" ] && ! ours; then
+    echo "✗ le service fr.ely.agent ne lance pas cette installation d'Ely ($(launched)) : laissé tel quel."
+    return 1
+  elif [ "$(uname)" = "Darwin" ]; then
+    launchctl unload "$PLIST" 2>/dev/null
+    rm -f "$PLIST"
   elif [ -f "$UNIT" ]; then
     systemctl --user disable --now ely.service 2>/dev/null
     rm -f "$UNIT"
