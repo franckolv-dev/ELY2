@@ -209,6 +209,8 @@ def test_a_failed_startup_is_not_mistaken_for_a_busy_port(tmp_path):
 
 
 FAKE_PYTHON = """#!/bin/bash
+# -c sert aussi à normaliser le port ; ce n'est pas un démarrage du serveur.
+if [ "${{1:-}}" = "-c" ]; then exec {python} "$@"; fi
 # Fausse Ely pour le superviseur : la « bonne » version s'arrête proprement ; la « mauvaise » passe le contrôle de
 # santé à son premier démarrage, puis plante à chaque fois.
 if grep -q mauvaise version.txt; then

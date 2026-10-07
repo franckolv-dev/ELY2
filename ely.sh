@@ -65,7 +65,17 @@ version() {
   echo "${v:+$v · }$(git log -1 --format='%h (%cd)' --date=format:%d/%m/%Y 2>/dev/null)"
 }
 
-elyport() { local port="${ELY_PORT:-$(env_value ELY_PORT)}"; echo "${port:-8000}"; }
+elyport() {
+  # Même conversion que config._int : une faute de frappe ne doit pas faire
+  # échouer le contrôle de santé alors que Python écoute sur le port par défaut.
+  # Une variable d'environnement définie mais vide prime aussi sur le .env.
+  "$PY" -c 'import sys
+try:
+    port = int(sys.argv[1].strip() or 8000)
+except ValueError:
+    port = 8000
+print(port)' "${ELY_PORT-$(env_value ELY_PORT)}"
+}
 
 json_get() { "$PY" -c "import json,sys; print(json.load(open(sys.argv[1])).get(sys.argv[2],''))" "$1" "$2" 2>/dev/null; }
 
