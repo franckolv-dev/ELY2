@@ -71,7 +71,11 @@ SNAPSHOT_JS = r"""
     if (tag === 'select') kind = 'liste';
     let line = '[' + n + '] ' + kind + ' "' + nameOf(el) + '"';
     if (tag === 'input' && ['checkbox', 'radio'].includes(el.type)) line += el.checked ? ' ☑' : ' ☐';
-    else if (tag === 'input' || tag === 'textarea') { if (el.value) line += ' valeur="' + clean(el.value).slice(0, 60) + '"'; }
+    else if (tag === 'input' || tag === 'textarea') {
+      // Garder le champ actionnable sans recopier ses secrets dans les journaux.
+      const sensitive = el.type === 'password' || /(?:^|\s)(?:current-password|new-password|one-time-code)(?:\s|$)/i.test(el.getAttribute('autocomplete') || '');
+      if (el.value) line += sensitive ? ' valeur="[masquée]"' : ' valeur="' + clean(el.value).slice(0, 60) + '"';
+    }
     if (tag === 'select') {
       const opts = [...el.options].slice(0, 12).map(o => (o.selected ? '*' : '') + clean(o.text).slice(0, 30));
       line += ' options=[' + opts.join(' | ') + (el.options.length > 12 ? ' | …' : '') + ']';
