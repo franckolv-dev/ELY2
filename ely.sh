@@ -3,7 +3,7 @@
 #   ./ely.sh            installe si besoin puis lance Ely (supervisé)
 #   ./ely.sh update     récupère la dernière version (en gardant les améliorations faites par Ely) et redémarre le service
 #   ./ely.sh install    installe / met à jour les dépendances
-#   ./ely.sh service    démarrage automatique à l'ouverture de session (macOS)
+#   ./ely.sh service    démarrage automatique à l'ouverture de session (macOS : launchd ; Linux et WSL : systemd)
 #   ./ely.sh unservice  retire le démarrage automatique
 #   ./ely.sh test       lance la suite de tests
 #
@@ -13,6 +13,7 @@ set -uo pipefail
 cd "$(dirname "$0")"
 ROOT="$(pwd)"
 PY="$ROOT/.venv/bin/python"
+UNIT="$HOME/.config/systemd/user/ely.service"  # service systemd de l'utilisateur (Linux, WSL)
 
 env_value() { grep -E "^(export[[:space:]]+)?$1=" .env 2>/dev/null | tail -1 | cut -d= -f2- | sed 's/[[:space:]]*#.*//' | tr -d '"' | tr -d "'" ; }
 
@@ -31,6 +32,7 @@ install() {
   if [ -z "$(env_value ELY_BROWSER_CHANNEL)" ] && [ -z "$(env_value ELY_BROWSER_EXECUTABLE)" ]; then
     echo "→ navigateur Chromium pour l'agent…"
     "$PY" -m playwright install chromium >/dev/null
+    chromium_libs
   fi
   if [ ! -f .env ]; then
     cp .env.example .env
@@ -39,6 +41,17 @@ install() {
   sha1sum pyproject.toml 2>/dev/null | cut -d' ' -f1 > .venv/.deps || shasum pyproject.toml | cut -d' ' -f1 > .venv/.deps
   echo "✓ installation terminée"
 }
+
+chromium_libs() {  # Linux : Chromium a besoin de bibliothèques système que Playwright n'installe pas sans sudo
+  [ "$(uname)" = "Linux" ] || return 0
+  local chrome
+  chrome=$(ls -d "${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/ms-playwright}"/chromium-*/chrome-linux*/chrome 2>/dev/null | tail -1)
+  if [ -n "$chrome" ] && ldd "$chrome" 2>/dev/null | grep -q "not found"; then
+    echo "⚠ il manque à Chromium des bibliothèques du système. Lancez une fois : sudo $PY -m playwright install-deps chromium"
+  fi
+}
+
+installed() { [ -x "$PY" ] && [ -f .env ] && ! deps_changed; }
 
 deps_changed() {
   local now
@@ -159,6 +172,8 @@ update() {
   echo "✓ Ely est à jour : version $(version)"
   if [ "$(uname)" = "Darwin" ] && [ -f "$HOME/Library/LaunchAgents/fr.ely.agent.plist" ]; then
     launchctl kickstart -k "gui/$(id -u)/fr.ely.agent" && echo "↻ service Ely redémarré sur la nouvelle version"
+  elif [ "$(uname)" != "Darwin" ] && [ -f "$UNIT" ]; then
+    systemctl --user restart ely.service && echo "↻ service Ely redémarré sur la nouvelle version"
   elif curl -fs "http://127.0.0.1:$(elyport)/api/health" >/dev/null 2>&1; then
     echo "⚠ Ely tourne encore avec l'ancienne version : arrêtez-la (Ctrl+C dans sa fenêtre), puis relancez ./ely.sh"
   else
@@ -167,9 +182,7 @@ update() {
 }
 
 service() {
-  if [ "$(uname)" != "Darwin" ]; then
-    echo "Sur Linux, crée un service systemd qui lance : $ROOT/ely.sh"; exit 1
-  fi
+  [ "$(uname)" = "Darwin" ] || { systemd_service; return; }
   local plist="$HOME/Library/LaunchAgents/fr.ely.agent.plist"
   mkdir -p "$HOME/Library/LaunchAgents" "$ROOT/data"
   cat > "$plist" <<PLIST
@@ -191,12 +204,54 @@ PLIST
   echo "✓ Ely démarrera automatiquement. Journal : $ROOT/data/ely.log"
 }
 
+systemd_service() {  # Linux, et Windows par WSL2 (systemd activé)
+  if ! command -v systemctl >/dev/null 2>&1 || ! systemctl --user show-environment >/dev/null 2>&1; then
+    echo "✗ systemd n'est pas disponible dans cette session : lancez Ely avec ./ely.sh."
+    echo "  Sous WSL, activez-le : « [boot] systemd=true » dans /etc/wsl.conf, puis « wsl --shutdown » depuis Windows."
+    exit 1
+  fi
+  mkdir -p "$(dirname "$UNIT")" "$ROOT/data"
+  cat > "$UNIT" <<SERVICE
+[Unit]
+Description=Ely, agent personnel
+After=network-online.target
+
+[Service]
+WorkingDirectory=$ROOT
+ExecStart="$ROOT/ely.sh"
+Restart=always
+RestartSec=5
+Environment=PATH=$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin
+StandardOutput=append:$ROOT/data/ely.log
+StandardError=append:$ROOT/data/ely.log
+
+[Install]
+WantedBy=default.target
+SERVICE
+  systemctl --user daemon-reload
+  systemctl --user enable --now ely.service
+  echo "✓ Ely démarrera automatiquement avec votre session. Journal : $ROOT/data/ely.log"
+  echo "  Pour qu'elle démarre avec la machine, sans attendre une session : loginctl enable-linger ${USER:-$(id -un)}"
+}
+
+unservice() {
+  if [ "$(uname)" = "Darwin" ]; then
+    launchctl unload "$HOME/Library/LaunchAgents/fr.ely.agent.plist" 2>/dev/null
+    rm -f "$HOME/Library/LaunchAgents/fr.ely.agent.plist"
+  elif [ -f "$UNIT" ]; then
+    systemctl --user disable --now ely.service 2>/dev/null
+    rm -f "$UNIT"
+    systemctl --user daemon-reload 2>/dev/null
+  fi
+  echo "✓ retiré"
+}
+
 case "${1:-start}" in
   install) install ;;
   update) update ;;
   start) start ;;
-  service) install && service ;;
-  unservice) launchctl unload "$HOME/Library/LaunchAgents/fr.ely.agent.plist" 2>/dev/null; rm -f "$HOME/Library/LaunchAgents/fr.ely.agent.plist"; echo "✓ retiré" ;;
+  service) { installed || install; } && service ;;
+  unservice) unservice ;;
   test) [ -x "$PY" ] || install; "$PY" -m pytest -q ;;
   *) echo "usage : ./ely.sh [start|update|install|service|unservice|test]"; exit 1 ;;
 esac

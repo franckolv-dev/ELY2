@@ -19,7 +19,19 @@ The interface is bilingual (English / French, formal "vous" by default), and Ely
 
 ---
 
-## What's new in 4.1
+## What's new in 4.2
+
+- **The right effort in the right place**: reasoning effort is set per role (Medium or High). Everyday requests (news,
+  emails…) no longer make the most powerful model think at length; escalation and self-improvement keep High effort.
+  See [Multi-model](#multi-model-multi-user).
+- **Every model of your ChatGPT plan** (GPT-6 Astra, Sol, Luna…), listed in `CHATGPT_MODELS`.
+- **Ely has a GitHub account of its own**: improvements arrive as pull requests under that name, and Ely shows up
+  among the repository's contributors. See [Self-improvement](#recursive-self-improvement).
+- **Gmail holds up under load**: several tasks running in parallel no longer get turned away by Gmail.
+- **Linux and Windows (WSL2)**: automatic start through systemd, and the steps explained. See
+  [Getting started](#getting-started).
+
+### And in 4.1
 
 - **Self-improvement handed to Claude** (Claude Agent SDK), and every change to its own code **published on GitHub as
   a pull request** that you review and merge. See [Self-improvement](#recursive-self-improvement).
@@ -50,7 +62,7 @@ All the details in the [changelog](CHANGELOG.md) (in French).
 
 ---
 
-## Getting started (Mac Studio)
+## Getting started
 
 ```bash
 git clone https://github.com/franckolv-dev/ELY2.git
@@ -61,7 +73,7 @@ cd ELY2
 1. Open the generated `.env` file and add **at least one API key** (for example `ANTHROPIC_API_KEY`), or simply start LM Studio.
    Later, after any change to `.env`, Settings → Models → "Refresh models" is enough: no restart needed.
 2. Run `./ely.sh` again and open **http://localhost:8000**: the first account created becomes the administrator.
-3. To start Ely automatically with the Mac: `./ely.sh service`.
+3. To start Ely automatically with your session: `./ely.sh service` (launchd on the Mac, systemd on Linux and WSL).
 
 **Updating Ely**: `./ely.sh update`, then restart Ely (the service restarts on its own). Prefer it to `git pull`:
 Ely sometimes changes its own code (self-improvement), and `git pull` then refuses to reconcile the two histories;
@@ -72,6 +84,35 @@ Other commands: `./ely.sh install` (dependencies), `./ely.sh test` (tests), `./e
 **"Port 8000 is already in use"**: another program holds it, often the old Docker-based Ely
 (`docker compose down` in its folder) or an instance of Ely already running as a service. Ely shows which program it is;
 you can also simply pick another port with `ELY_PORT=8001` in `.env`.
+
+### Linux
+
+Same commands as on the Mac (`bash`, `git` and `curl` are enough: `./ely.sh` installs Python itself). Two differences:
+
+- **Chromium**: on a fresh system (Ubuntu, Debian…), it often lacks system libraries that Playwright can't install
+  without administrator rights. `./ely.sh` points it out; then run once
+  `sudo .venv/bin/python -m playwright install-deps chromium`.
+- **Automatic start**: `./ely.sh service` creates a systemd user service that starts with your session. To start Ely
+  with the machine, even with nobody logged in: `loginctl enable-linger $USER`.
+
+### Windows (WSL2)
+
+Ely doesn't run directly on Windows: its launcher and its terminal tool rely on `bash`. It runs very well, though, in
+**WSL2**, the Linux built into Windows 10 and 11:
+
+1. In PowerShell as administrator: `wsl --install` (installs Ubuntu), then restart Windows.
+2. In the Ubuntu terminal: the Linux steps above.
+3. Open **http://localhost:8000** in Chrome on Windows; the Chrome extension connects to it the same way.
+
+- **LM Studio installed on Windows** can't be reached from WSL2 by default. Add `networkingMode=mirrored` under
+  `[wsl2]` in `%USERPROFILE%\.wslconfig`, then `wsl --shutdown`, or put the Windows address in `LMSTUDIO_BASE_URL`.
+- **Automatic start**: `./ely.sh service` works when systemd is enabled in WSL (the default in recent Ubuntu releases;
+  otherwise, `[boot]` then `systemd=true` in `/etc/wsl.conf`, and `wsl --shutdown`). Add `loginctl enable-linger
+  $USER`. WSL doesn't start with Windows: create a Windows scheduled task, at log on, that runs
+  `wsl.exe --exec sleep infinity` to keep it running.
+
+Only the cloned-voice service (`voice/xtts`) is set up for Apple silicon: on a PC, set `XTTS_DEVICE=cuda` (NVIDIA
+card) or `cpu`, much slower.
 
 ### LM Studio
 
@@ -203,7 +244,9 @@ own model (Settings → Models → Self-improvement; automatic: the escalation m
 
 > For step 4 to be active, start Ely with `./ely.sh` (the supervisor) from a git clone, and sign the GitHub CLI in on
 > the Mac (`gh auth login`): if the change can't be published, the deployment is refused
-> (see [docs/auto-amelioration-github.md](docs/auto-amelioration-github.md), in French).
+> (see [docs/auto-amelioration-github.md](docs/auto-amelioration-github.md), in French). With a GitHub account of
+> Ely's own (`ELY_GITHUB_TOKEN`), commits and pull requests carry that account's name, and Ely shows up among the
+> contributors.
 
 ### Handing self-improvement to Claude (optional)
 

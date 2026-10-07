@@ -1,17 +1,29 @@
-"""Publication des auto-améliorations sur GitHub, sans fusionner la PR."""
+"""Publication des auto-améliorations sur GitHub, sans fusionner la PR.
+
+Avec son propre compte GitHub (ELY_GITHUB_TOKEN, compte invité comme collaborateur), Ely signe ses commits de
+l'adresse noreply de ce compte et ouvre ses PR à son nom : GitHub la compte parmi les contributeurs du dépôt une
+fois ses PR fusionnées. Sans ce jeton : commits « Ely <ely@localhost> », PR ouvertes par la connexion `gh` du Mac.
+"""
 from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 
+from ..config import settings
 from . import pipeline
+
+
+def gh_env() -> dict[str, str] | None:
+    """Environnement de gh : le jeton du compte d'Ely s'il en a un, sinon celui de la connexion `gh` du Mac."""
+    return {**os.environ, "GH_TOKEN": settings.ely_github_token} if settings.ely_github_token else None
 
 
 async def gh(*args: str) -> str:
     try:
         proc = await asyncio.create_subprocess_exec(
-            "gh", *args, cwd=str(pipeline.WORKTREE),
+            "gh", *args, cwd=str(pipeline.WORKTREE), env=gh_env(),
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         )
     except FileNotFoundError as exc:
@@ -26,6 +38,20 @@ async def gh(*args: str) -> str:
         # Les erreurs de CLI peuvent contenir des informations de connexion.
         raise RuntimeError(f"GitHub CLI a échoué ({' '.join(args[:2])}) ; vérifier gh auth status et l'accès au dépôt.")
     return out.decode().strip()
+
+
+async def author() -> tuple[str, str]:
+    """(nom, adresse) des commits d'Ely : l'adresse noreply de son compte GitHub, qui lui attribue ses commits."""
+    if not settings.ely_github_token:
+        return "Ely", "ely@localhost"
+    try:
+        me = json.loads(await gh("api", "user"))
+        login, uid = str(me["login"]), int(me["id"])
+    except (RuntimeError, ValueError, KeyError, TypeError) as exc:
+        raise RuntimeError("Compte GitHub d'Ely inaccessible : vérifier ELY_GITHUB_TOKEN (jeton valide, droit « repo »).") from exc
+    if not re.fullmatch(r"[A-Za-z0-9-]{1,39}", login):
+        raise RuntimeError("Compte GitHub d'Ely : identifiant inattendu.")
+    return "Ely", f"{uid}+{login}@users.noreply.github.com"
 
 
 async def publish_improvement(summary: str, sha: str) -> str:

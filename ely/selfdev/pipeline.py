@@ -159,7 +159,13 @@ async def deploy(summary: str, restart: bool = True) -> dict:
     if code == 0:
         return {"ok": False, "message": "Aucune modification à déployer."}
     patch = (await git("diff", "--cached", cwd=WORKTREE))[1][:50000]
-    code, out = await git("-c", "user.name=Ely", "-c", "user.email=ely@localhost", "commit", "-m", f"ely-self: {summary}", cwd=WORKTREE)
+    from . import github
+
+    try:
+        name, email = await github.author()
+    except RuntimeError as exc:
+        return {"ok": False, "message": f"{exc} Aucun commit créé, rien n'est activé."}
+    code, out = await git("-c", f"user.name={name}", "-c", f"user.email={email}", "commit", "-m", f"ely-self: {summary}", cwd=WORKTREE)
     if code:
         return {"ok": False, "message": f"commit impossible : {out}"}
     new_sha = (await git("rev-parse", "HEAD", cwd=WORKTREE))[1]

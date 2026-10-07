@@ -266,3 +266,95 @@ def test_repeated_crashes_after_an_update_bring_back_the_previous_version(tmp_pa
     assert "plantages répétés" in (data / "selfdev" / "rollback.json").read_text()
     assert (data / "demarrages").read_text().strip() == "3"
     assert "réglage fait à la main par Franck" in _git(mac, "stash", "show", "-p")
+
+
+def _linux_tools(tmp_path: Path, systemd: bool = True, extra: dict | None = None) -> tuple[dict, Path]:
+    """Une session Linux (ou WSL) simulée : uname répond Linux, systemctl note ses appels (systemd absent : refus)."""
+    bin_dir, home, log = tmp_path / "bin", tmp_path / "home", tmp_path / "systemctl.log"
+    bin_dir.mkdir()
+    home.mkdir()
+    absent = "" if systemd else '[ "$2" = show-environment ] && exit 1\n'
+    tools = {"uname": "#!/bin/sh\necho Linux\n", "systemctl": f'#!/bin/sh\necho "$*" >> "{log}"\n{absent}exit 0\n',
+             **(extra or {})}
+    for name, body in tools.items():
+        (bin_dir / name).write_text(body)
+        (bin_dir / name).chmod(0o755)
+    return {**os.environ, "HOME": str(home), "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "USER": "franck"}, log
+
+
+def _linux_install(tmp_path: Path, **tools) -> tuple[Path, dict, Path]:
+    """Ely installée sous Linux, dépendances à jour."""
+    box = tmp_path / "ely"
+    venv = box / ".venv" / "bin"
+    venv.mkdir(parents=True)
+    (box / "ely.sh").write_text((ROOT / "ely.sh").read_text())
+    (box / "pyproject.toml").write_text("[project]\nname = 'ely'\n")
+    (box / ".env").write_text("")
+    (venv / "python").write_text("#!/bin/sh\nexit 0\n")
+    (venv / "python").chmod(0o755)
+    deps = subprocess.run(["sha1sum", "pyproject.toml"], cwd=box, capture_output=True, text=True).stdout.split()[0]
+    (box / ".venv" / ".deps").write_text(deps + "\n")
+    env, log = _linux_tools(tmp_path, **tools)
+    return box, env, log
+
+
+def _ely_sh(box: Path, env: dict, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["bash", str(box / "ely.sh"), *args], env=env, capture_output=True, text=True, timeout=60)
+
+
+def test_on_linux_ely_starts_with_the_session_through_systemd(tmp_path):
+    """Linux, ou Windows par WSL2 : `./ely.sh service` crée un service systemd de l'utilisateur qui lance le superviseur
+    (relancé s'il s'arrête) et le démarre ; `./ely.sh unservice` le retire."""
+    box, env, log = _linux_install(tmp_path)
+    r = _ely_sh(box, env, "service")
+    assert r.returncode == 0, r.stdout + r.stderr
+    unit = Path(env["HOME"]) / ".config" / "systemd" / "user" / "ely.service"
+    text = unit.read_text()
+    assert f'ExecStart="{box}/ely.sh"' in text and f"WorkingDirectory={box}" in text
+    assert "Restart=always" in text and "WantedBy=default.target" in text and f"{box}/data/ely.log" in text
+    assert "--user enable --now ely.service" in log.read_text()
+    assert "loginctl enable-linger franck" in r.stdout
+    r = _ely_sh(box, env, "unservice")
+    assert r.returncode == 0 and not unit.exists()
+    assert "--user disable --now ely.service" in log.read_text()
+
+
+def test_without_systemd_ely_says_how_to_turn_it_on(tmp_path):
+    """WSL sans systemd : pas de service à moitié créé, et la marche à suivre pour l'activer."""
+    box, env, log = _linux_install(tmp_path, systemd=False)
+    r = _ely_sh(box, env, "service")
+    assert r.returncode == 1 and "systemd=true" in r.stdout and "wsl --shutdown" in r.stdout
+    assert not (Path(env["HOME"]) / ".config" / "systemd" / "user" / "ely.service").exists()
+
+
+def test_update_restarts_the_linux_service_on_the_new_version(tmp_path):
+    dev, mac = _published_and_installed(tmp_path)
+    env, log = _linux_tools(tmp_path)
+    unit = Path(env["HOME"]) / ".config" / "systemd" / "user" / "ely.service"
+    unit.parent.mkdir(parents=True)
+    unit.write_text("[Service]\n")
+    (dev / "menu.txt").write_text("nouveau menu\n")
+    _git(dev, "add", "-A")
+    _git(dev, "commit", "-qm", "Nouveau menu")
+    _git(dev, "push", "-q")
+    env.update(GIT_AUTHOR_NAME="Test", GIT_AUTHOR_EMAIL="t@t.fr", GIT_COMMITTER_NAME="Test",
+               GIT_COMMITTER_EMAIL="t@t.fr", ELY_PORT="9")
+    r = _ely_sh(mac, env, "update")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "↻ service Ely redémarré" in r.stdout and "--user restart ely.service" in log.read_text()
+
+
+def test_install_on_linux_points_out_missing_chromium_libraries(tmp_path):
+    """Linux neuf : Playwright télécharge Chromium mais pas les bibliothèques du système (il lui faudrait sudo). Ely
+    le signale avec la commande à lancer, au lieu d'un navigateur qui refusera de démarrer plus tard."""
+    chrome = tmp_path / "pw" / "chromium-1194" / "chrome-linux" / "chrome"
+    chrome.parent.mkdir(parents=True)
+    chrome.write_text("")
+    missing = "#!/bin/sh\necho '\tlibnss3.so => not found'\n"
+    box, env, _ = _linux_install(tmp_path, extra={"uv": "#!/bin/sh\nexit 0\n", "ldd": missing})
+    env["PLAYWRIGHT_BROWSERS_PATH"] = str(tmp_path / "pw")
+    r = _ely_sh(box, env, "install")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "playwright install-deps chromium" in r.stdout and "sudo" in r.stdout
+    (tmp_path / "bin" / "ldd").write_text("#!/bin/sh\necho '\tlibnss3.so => /usr/lib/libnss3.so'\n")
+    assert "install-deps" not in _ely_sh(box, env, "install").stdout

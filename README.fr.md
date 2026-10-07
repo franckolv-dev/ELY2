@@ -16,7 +16,18 @@ Un seul processus, une seule base SQLite, zéro service à maintenir.
 
 ---
 
-## Nouveautés de la 4.1
+## Nouveautés de la 4.2
+
+- **Le bon effort au bon endroit** : l'effort de raisonnement se règle par rôle (Moyen ou Élevé). Les demandes
+  courantes (actualités, e-mails…) ne font plus réfléchir longuement le modèle le plus puissant ; l'escalade et
+  l'auto-amélioration gardent l'effort Élevé. Voir [Multi-modèles](#multi-modèles-multi-utilisateurs).
+- **Tous les modèles de votre forfait ChatGPT** (GPT-6 Astra, Sol, Luna…), listés dans `CHATGPT_MODELS`.
+- **Ely a son propre compte GitHub** : ses améliorations arrivent en pull requests à son nom, et elle figure parmi les
+  contributeurs du dépôt. Voir [Auto-amélioration](#auto-amélioration-récursive).
+- **Gmail tient la charge** : plusieurs tâches menées en parallèle ne se font plus refuser par Gmail.
+- **Linux et Windows (WSL2)** : démarrage automatique par systemd, et procédure expliquée. Voir [Démarrage](#démarrage).
+
+### Et dans la 4.1
 
 - **Auto-amélioration confiée à GPT6-Astra ou n'importe quel modèle cloud ou local**, et chaque modification de son propre code **publiée sur
   GitHub en pull request**, que vous relisez et fusionnez. Voir [Auto-amélioration](#auto-amélioration-récursive).
@@ -59,7 +70,7 @@ cd ELY2
 1. Ouvrez le fichier `.env` créé et mettez **au moins une clé d'API** (par exemple `ANTHROPIC_API_KEY`), ou lancez simplement LM Studio.
    Plus tard, après toute modification du `.env`, Réglages → Modèles → « Actualiser les modèles » suffit : pas besoin de redémarrer.
 2. Relancez `./ely.sh`, ouvrez **http://localhost:8000** : le premier compte créé devient administrateur.
-3. Pour qu'Ely démarre toute seule avec le Mac : `./ely.sh service`.
+3. Pour qu'Ely démarre toute seule avec votre session : `./ely.sh service` (launchd sur Mac, systemd sous Linux et WSL).
 
 **Mettre Ely à jour** : `./ely.sh update`, puis relancez Ely (le service, lui, redémarre tout seul). Préférez-le à `git pull` :
 Ely modifie parfois son propre code (auto-amélioration), et `git pull` refuse alors de réunir les deux historiques ;
@@ -70,6 +81,36 @@ Les autres commandes : `./ely.sh install` (dépendances), `./ely.sh test` (tests
 **« Le port 8000 est déjà utilisé »** : un autre programme l'occupe, souvent l'ancien Ely en Docker
 (`docker compose down` dans son dossier) ou une instance d'Ely déjà lancée en service. Ely affiche qui l'occupe ;
 vous pouvez aussi simplement choisir un autre port avec `ELY_PORT=8001` dans `.env`.
+
+### Linux
+
+Mêmes commandes que sur Mac (`bash`, `git` et `curl` suffisent : `./ely.sh` installe Python lui-même). Deux différences :
+
+- **Chromium** : sur un système neuf (Ubuntu, Debian…), il lui manque souvent des bibliothèques du système, que
+  Playwright n'installe pas sans droits administrateur. `./ely.sh` le signale ; lancez alors une fois
+  `sudo .venv/bin/python -m playwright install-deps chromium`.
+- **Démarrage automatique** : `./ely.sh service` crée un service systemd de l'utilisateur, qui démarre avec votre
+  session. Pour qu'Ely démarre avec la machine, même sans session ouverte : `loginctl enable-linger $USER`.
+
+### Windows (WSL2)
+
+Ely ne tourne pas directement sous Windows : son lanceur et son outil terminal reposent sur `bash`. Elle tourne en
+revanche très bien dans **WSL2**, le Linux intégré à Windows 10 et 11 :
+
+1. Dans PowerShell en administrateur : `wsl --install` (installe Ubuntu), puis redémarrez Windows.
+2. Dans le terminal Ubuntu : la procédure Linux ci-dessus.
+3. Ouvrez **http://localhost:8000** dans le Chrome de Windows ; l'extension Chrome s'y relie de la même façon.
+
+- **LM Studio installé sous Windows** n'est pas joignable par défaut depuis WSL2. Ajoutez `networkingMode=mirrored` sous
+  `[wsl2]` dans `%USERPROFILE%\.wslconfig`, puis `wsl --shutdown`, ou indiquez l'adresse de Windows dans
+  `LMSTUDIO_BASE_URL`.
+- **Démarrage automatique** : `./ely.sh service` fonctionne si systemd est activé dans WSL (c'est le cas par défaut dans
+  les versions récentes d'Ubuntu ; sinon, `[boot]` puis `systemd=true` dans `/etc/wsl.conf`, et `wsl --shutdown`).
+  Ajoutez `loginctl enable-linger $USER`. WSL ne démarre pas avec Windows : créez une tâche planifiée Windows, à
+  l'ouverture de session, qui lance `wsl.exe --exec sleep infinity` pour le garder ouvert.
+
+Seul le service de voix clonée (`voice/xtts`) est réglé pour les puces Apple : sur un PC, indiquez `XTTS_DEVICE=cuda`
+(carte NVIDIA) ou `cpu`, nettement plus lent.
 
 ### LM Studio
 
@@ -204,7 +245,8 @@ utilisent leur propre modèle (Réglages → Modèles → Auto-amélioration ; a
 
 > Pour que l'étape 4 soit active, lancez Ely avec `./ely.sh` (le superviseur) depuis un clone git, et connectez le CLI
 > GitHub sur le Mac (`gh auth login`) : sans publication possible, le déploiement est refusé
-> (voir [docs/auto-amelioration-github.md](docs/auto-amelioration-github.md)).
+> (voir [docs/auto-amelioration-github.md](docs/auto-amelioration-github.md)). Avec son propre compte GitHub
+> (`ELY_GITHUB_TOKEN`), Ely signe ses commits et ouvre ses PR à son nom : elle figure parmi les contributeurs.
 
 ### Confier l'auto-amélioration à Claude (facultatif)
 
