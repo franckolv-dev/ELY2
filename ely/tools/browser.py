@@ -83,8 +83,53 @@ async def _browser(ctx: ToolContext, action: str, url: str = "", ref: int | None
     # entière, pas seulement les appels utilisant une même page. Le verrou est
     # libéré entre appels d'outils, y compris sur erreur ou annulation.
     async with ub.lock("tool-actions"):
-        page = await ub.page(page_key)
         ub.on_frame = ctx.emit
+        ub.active_key = page_key
+
+        def same_page(a, b):
+            return a is b or (a is not None and b is not None
+                             and getattr(a, "tab_id", None) is not None
+                             and a.tab_id == getattr(b, "tab_id", None))
+
+        # Lister, choisir et fermer sont des opérations sans création de page.
+        # page() crée un onglet si la conversation n'en a plus : ne pas l'appeler ici.
+        if action in {"tabs", "switch_tab", "close_tab"}:
+            pages = await ub.list_pages()
+            current = ub.pages.get(page_key)
+            page = next((p for p in pages if same_page(p, current)), None)
+            if action == "tabs":
+                lines = [f"{i}: {await p.title()} — {p.url}{' (actif)' if same_page(p, page) else ''}"
+                         for i, p in enumerate(pages)]
+                if not lines:
+                    return ToolResult("aucun onglet")
+                if ub.kind == "chrome":
+                    lines.append("(onglets de la fenêtre d'Ely dans Chrome)")
+                return ToolResult("\n".join(lines))
+            if action == "switch_tab":
+                if tab is None or not (0 <= tab < len(pages)):
+                    return ToolResult("index d'onglet invalide (voir action=tabs)", is_error=True)
+                page = pages[tab]
+                await page.bring_to_front()
+                ub.pages[page_key] = page
+                snap = await ub.snapshot(page)
+                await _emit_frame(ctx, ub, page)
+                return ToolResult(snap)
+            if page is None:
+                ub.pages.pop(page_key, None)
+                return ToolResult("Aucun onglet courant à fermer pour cette conversation ; aucun onglet créé ou fermé.")
+            await page.close()
+            remaining = await ub.list_pages()
+            if any(same_page(p, page) for p in remaining):
+                return ToolResult("Fermeture non confirmée : l'onglet est toujours présent. Aucun nouvel onglet créé.", is_error=True)
+            for k, p in list(ub.pages.items()):
+                if same_page(p, page):
+                    ub.pages.pop(k, None)
+            return ToolResult(f"Onglet fermé et absence vérifiée. {len(remaining)} onglet(s) restant(s). "
+                              "Aucun onglet de remplacement créé ; utilise tabs puis switch_tab pour en choisir un.")
+
+        if action == "open" and not url:
+            return ToolResult("url manquante", is_error=True)
+        page = await ub.new_page(page_key) if action == "open" and new_tab else await ub.page(page_key)
 
         def loc():
             if ref is None:
@@ -100,12 +145,8 @@ async def _browser(ctx: ToolContext, action: str, url: str = "", ref: int | None
 
         note = ""
         if action == "open":
-            if not url:
-                return ToolResult("url manquante", is_error=True)
             if not url.startswith(("http://", "https://", "file:", "about:")):
                 url = "https://" + url
-            if new_tab:
-                page = await ub.new_page(page_key)
             try:
                 await page.goto(url, wait_until="domcontentloaded", timeout=45000)
             except Exception as e:
@@ -167,22 +208,6 @@ async def _browser(ctx: ToolContext, action: str, url: str = "", ref: int | None
         elif action == "text":
             body = await page.evaluate("() => document.body ? document.body.innerText : ''")
             return ToolResult(f"URL : {page.url}\n\n{body}")
-        elif action == "tabs":
-            pages = await ub.list_pages()
-            lines = [f"{i}: {await p.title()} — {p.url}{' (actif)' if p is page else ''}" for i, p in enumerate(pages)]
-            if ub.kind == "chrome":
-                lines.append("(onglets de la fenêtre d'Ely dans Chrome)")
-            return ToolResult("\n".join(lines) or "aucun onglet")
-        elif action == "switch_tab":
-            pages = await ub.list_pages()
-            if tab is None or not (0 <= tab < len(pages)):
-                return ToolResult("index d'onglet invalide (voir action=tabs)", is_error=True)
-            page = pages[tab]
-            ub.pages[page_key] = page
-            await page.bring_to_front()
-        elif action == "close_tab":
-            await page.close()
-            page = await ub.page(page_key)
         elif action == "eval":
             code = js.strip()
             if code.startswith(("(", "function", "async")):
