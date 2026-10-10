@@ -110,9 +110,26 @@ async def ask_user(ctx: ToolContext, question: str, options: list[str] | None = 
       "(c'est ainsi qu'on lui écrit sur Telegram). Utile pour les tâches planifiées ou longues.",
       {"title": {"type": "string"}, "message": {"type": "string"}}, ["message"], label="Notification", icon="🔔", timeout=30)
 async def notify(ctx: ToolContext, message: str, title: str = "Ely") -> ToolResult:
-    n = await send_notification(ctx.user_id, title, message, url=f"/?c={ctx.conversation_id}")
-    return ToolResult(f"Notification envoyée ({n} appareil(s))." if n else
-                      "Aucun appareil abonné aux notifications : le message reste visible dans la conversation.")
+    receipt: dict = {}
+    n = await send_notification(ctx.user_id, title, message, url=f"/?c={ctx.conversation_id}", receipt=receipt)
+    lines = [f"Push : {receipt['push_accepted']}/{receipt['push_total']} abonnement(s) accepté(s) par le service."]
+    status = receipt["telegram_status"]
+    ids, total = receipt["telegram_ids"], receipt["telegram_total"]
+    if status == "not_linked":
+        lines.append("Telegram : non relié ; aucun envoi Telegram effectué.")
+    else:
+        lines.append(f"Telegram : {len(ids)}/{total} partie(s) confirmée(s) par l'API ; message_id : "
+                     + (", ".join(map(str, ids)) or "aucun") + ".")
+        if status != "accepted":
+            lines.append("Envoi Telegram incomplet ou non confirmé : " + receipt.get("telegram_error", "accusé absent")
+                         + ". Ne pas renvoyer automatiquement le message entier : risque de doublon, "
+                         "y compris pour une partie dont la réponse réseau a été perdue.")
+        else:
+            lines.append("Acceptation Telegram vérifiée ; lecture par le destinataire inconnue. "
+                         "Pas de contrôle supplémentaire dans Telegram Web nécessaire.")
+    if not n:
+        lines.append("Aucune destination entièrement confirmée ; ne pas annoncer un envoi complet.")
+    return ToolResult("\n".join(lines), is_error=not n or status in ("partial", "unconfirmed"))
 
 
 @tool("credentials", """Coffre des identifiants de l'utilisateur pour se connecter aux sites (Doctolib, LinkedIn, impots.gouv…).

@@ -56,19 +56,68 @@ def _push_sync(sub: dict, payload: dict, keys: dict) -> int:
         return 0
 
 
-async def telegram_send(chat_id: int | str, text: str) -> None:
+def telegram_chunks(text: str) -> list[str]:
+    """Conserve tout le texte, avec une marge sous 4096 unités UTF-16 (emoji compris)."""
+    chunks, start, units = [], 0, 0
+    for i, char in enumerate(text):
+        size = 2 if ord(char) > 0xFFFF else 1
+        if units + size > 4000:
+            chunks.append(text[start:i])
+            start, units = i, 0
+        units += size
+    if text[start:]:
+        chunks.append(text[start:])
+    return chunks
+
+
+class TelegramSendError(RuntimeError):
+    """Erreur sûre à journaliser ; conserve les accusés des parties déjà acceptées."""
+
+    def __init__(self, reason: str, message_ids: list[int], total: int):
+        super().__init__(reason)
+        self.message_ids = list(message_ids)
+        self.total = total
+
+
+async def telegram_send(chat_id: int | str, text: str) -> list[int]:
+    chunks = telegram_chunks(text)
+    ids: list[int] = []
     if not settings.telegram_bot_token:
-        return
-    async with httpx.AsyncClient(timeout=20) as c:
-        for i in range(0, len(text), 4000):
-            await c.post(f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendMessage",
-                         json={"chat_id": chat_id, "text": text[i:i + 4000]})
+        raise TelegramSendError("bot non configuré", ids, len(chunks))
+    if not chunks:
+        raise TelegramSendError("texte vide", ids, 0)
+    try:
+        async with httpx.AsyncClient(timeout=20) as c:
+            for chunk in chunks:
+                r = await c.post(f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendMessage",
+                                 json={"chat_id": chat_id, "text": chunk})
+                # Ne jamais exposer l'URL de l'exception HTTP : elle contient le jeton du bot.
+                if not 200 <= r.status_code < 300:
+                    raise TelegramSendError(f"HTTP {r.status_code}", ids, len(chunks))
+                data = r.json()
+                result = data.get("result") if isinstance(data, dict) else None
+                mid = result.get("message_id") if isinstance(result, dict) else None
+                if not isinstance(data, dict) or data.get("ok") is not True:
+                    raise TelegramSendError("refus de l'API Telegram", ids, len(chunks))
+                if type(mid) is not int or mid <= 0:
+                    raise TelegramSendError("accusé Telegram invalide", ids, len(chunks))
+                ids.append(mid)
+    except TelegramSendError:
+        raise
+    except Exception:
+        # Timeout/connexion coupée : la partie en cours peut avoir été acceptée. Pas de renvoi automatique.
+        raise TelegramSendError("réponse Telegram non confirmée (transport ou format)", ids, len(chunks)) from None
+    return ids
 
 
-async def notify(user_id: int, title: str, body: str, url: str = "/", tag: str = "") -> int:
-    """Envoie une notification sur tous les appareils de l'utilisateur. Renvoie le nombre d'envois réussis."""
+async def notify(user_id: int, title: str, body: str, url: str = "/", tag: str = "",
+                 receipt: dict | None = None) -> int:
+    """Nombre de destinations acceptées ; détail facultatif sans changer le contrat des appelants existants."""
+    receipt = receipt if receipt is not None else {}
+    receipt.update(push_accepted=0, push_total=0, telegram_status="not_linked", telegram_ids=[], telegram_total=0)
     sent = 0
     subs = db.all("SELECT endpoint, data FROM push_subscriptions WHERE user_id = ?", (user_id,))
+    receipt["push_total"] = len(subs)
     if subs:
         keys = vapid_keys()
         payload = {"title": title, "body": body[:400], "url": url, "tag": tag or url}
@@ -78,11 +127,23 @@ async def notify(user_id: int, title: str, body: str, url: str = "/", tag: str =
                 db.run("DELETE FROM push_subscriptions WHERE endpoint = ?", (s["endpoint"],))
             elif 200 <= status < 300:
                 sent += 1
+    receipt["push_accepted"] = sent
     tg = get(user_id, "telegram")
     if tg.get("chat_id"):
+        text = f"{title}\n\n{body}"
+        receipt.update(telegram_status="unconfirmed", telegram_total=len(telegram_chunks(text)))
         try:
-            await telegram_send(tg["chat_id"], f"{title}\n\n{body}")
-            sent += 1
-        except Exception as e:
-            log.info("telegram : %s", e)
+            ids = await telegram_send(tg["chat_id"], text)
+            if (isinstance(ids, list) and len(ids) == receipt["telegram_total"]
+                    and all(type(mid) is int and mid > 0 for mid in ids)):
+                receipt.update(telegram_status="accepted", telegram_ids=ids)
+                sent += 1
+        except TelegramSendError as e:
+            receipt.update(telegram_status="partial" if e.message_ids else "unconfirmed",
+                           telegram_ids=e.message_ids, telegram_total=e.total, telegram_error=str(e))
+            log.info("telegram : %s (%s/%s parties confirmées)", e, len(e.message_ids), e.total)
+        except Exception:
+            # Même un transport remplacé par un plugin ne doit pas divulguer le jeton dans ses erreurs.
+            receipt["telegram_error"] = "envoi non confirmé"
+            log.info("telegram : envoi non confirmé")
     return sent
