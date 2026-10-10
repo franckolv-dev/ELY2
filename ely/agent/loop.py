@@ -372,6 +372,10 @@ class AgentLoop:
         await self.emit("status", {"status": "running", "detail": "Résumé du contexte…"})
         try:
             summary = await summarize(history[:cut], self.user["id"])
+            if not isinstance(summary, str) or not summary.strip():
+                # Un fournisseur peut répondre sans texte : ce n'est pas un
+                # résumé et ne doit jamais faire avancer summary_upto.
+                raise ValueError("résumé vide : historique conservé")
         except Exception as e:
             log.warning("résumé impossible : %s", e)
             return
