@@ -140,6 +140,11 @@ def estimate_tokens(messages: list[dict]) -> int:
     total = 0
     for m in messages:
         total += len(message_text(m)) // 3
+        # Ces blocs sont rejoués par les adaptateurs (Responses/Anthropic), même
+        # quand le texte visible est vide. Le chiffrement interdit un comptage
+        # exact : conserver ici la même heuristique prudente en caractères/3.
+        if m.get("thinking"):
+            total += len(json.dumps(m["thinking"], ensure_ascii=False)) // 3
         for tc in m.get("tool_calls") or []:
             total += len(json.dumps(tc.get("arguments", {}), ensure_ascii=False)) // 3
         total += 1200 * len(m.get("images") or [])
