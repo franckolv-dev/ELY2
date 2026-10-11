@@ -1,6 +1,7 @@
 """E-mails : envoi, brouillon, réponse, recherche, lecture (Gmail API ou IMAP/SMTP)."""
 from __future__ import annotations
 
+import json
 import mimetypes
 from email.message import EmailMessage
 
@@ -91,25 +92,37 @@ async def email_send(ctx: ToolContext, body: str, to: str = "", subject: str = "
 
 
 @tool("email_search", """Cherche des e-mails dans la boîte de l'utilisateur. Sans requête : les plus récents.
-Avec Gmail, la requête suit la syntaxe Gmail (from:, subject:, is:unread, newer_than:7d, has:attachment…).""",
-      {"query": {"type": "string"}, "limit": {"type": "integer", "description": "défaut 15"},
-       "unread_only": {"type": "boolean"}, "folder": {"type": "string", "description": "Dossier IMAP (défaut INBOX)"}},
+Avec Gmail, la requête suit la syntaxe Gmail (from:, subject:, is:unread, newer_than:7d, has:attachment…).
+Résultats paginés : reprendre le next_page_token avec les mêmes query/unread_only/limit dans page_token.
+Pour un scan complet, borner les dates, collecter les pages et dédupliquer les IDs AVANT le tri ; une boîte peut évoluer.""",
+      {"query": {"type": "string"}, "limit": {"type": "integer", "description": "défaut 15, maximum effectif 50 par page"},
+       "unread_only": {"type": "boolean"}, "folder": {"type": "string", "description": "Dossier IMAP (défaut INBOX)"},
+       "page_token": {"type": "string", "description": "Gmail seulement : next_page_token renvoyé par la page précédente"}},
       [], label="Recherche e-mail", icon="📬", timeout=90, untrusted=True, effects=False)
-async def email_search(ctx: ToolContext, query: str = "", limit: int = 15, unread_only: bool = False, folder: str = "INBOX") -> ToolResult:
+async def email_search(ctx: ToolContext, query: str = "", limit: int = 15, unread_only: bool = False,
+                       folder: str = "INBOX", page_token: str = "") -> ToolResult:
     backend = _backend(ctx)
     if not backend:
         return ToolResult(NO_MAIL, is_error=True)
     limit = max(1, min(limit, 50))
     if backend == "gmail":
         q = (query + (" is:unread" if unread_only else "")).strip() or "in:inbox"
-        items = await g.gmail_search(ctx.user_id, q, limit)
+        page = await g.gmail_search_page(ctx.user_id, q, limit, page_token)
+        items = page["messages"]
+        token = page.get("next_page_token")
+        footer = (f"Résultats partiels : suite disponible. next_page_token={json.dumps(token)}"
+                  if token else "Fin des résultats pour cette requête à cet instant.")
     else:
+        if page_token:
+            return ToolResult("page_token est disponible seulement avec Gmail ; aucun scan IMAP effectué.", is_error=True)
         items = await mail.search(ctx.user_id, query, limit, unread_only, folder)
+        footer = "IMAP : résultat borné, exhaustivité non vérifiée ; affiner la période si nécessaire."
     if not items:
-        return ToolResult("Aucun e-mail trouvé.")
+        return ToolResult("Aucun e-mail sur cette page.\n" + footer)
     lines = [f"[{m['id']}] {'● ' if m.get('unread') else ''}{m['date'][:25]} — {m['from']}\n   {m['subject']}\n   {m['snippet'][:160]}"
              for m in items]
-    return ToolResult(f"{len(items)} e-mail(s) :\n" + "\n".join(lines))
+    return ToolResult(f"{len(items)} e-mail(s) sur cette page (limite effective : {limit}) :\n"
+                      + "\n".join(lines) + "\n\n" + footer)
 
 
 MANAGED = {"trash": "mis à la corbeille", "archive": "archivé(s)", "label": "classé(s) sous « {} »",
