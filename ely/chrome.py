@@ -379,7 +379,15 @@ class ChromePage:
         return ChromeLocator(self, m.group(1))
 
     async def evaluate(self, js: str, arg=_NO_ARG):
-        expr = f"({js})({'' if arg is _NO_ARG else json.dumps(arg)})" if _FUNC.match(js) else js
+        expr = js
+        if _FUNC.match(js):
+            # La détection par préfixe reconnaît aussi une IIFE : son résultat
+            # n'est pas forcément une fonction. Évaluer une seule fois, puis
+            # appeler uniquement une valeur appelable (comme Playwright).
+            args = '' if arg is _NO_ARG else json.dumps(arg)
+            source = js.rstrip().rstrip(';')
+            expr = (f"((__ely_value) => typeof __ely_value === 'function' "
+                    f"? __ely_value({args}) : __ely_value)({source}\n)")
         r = await self.cdp("Runtime.evaluate", expression=expr, returnByValue=True, awaitPromise=True, userGesture=True)
         if r.get("exceptionDetails"):
             d = r["exceptionDetails"]

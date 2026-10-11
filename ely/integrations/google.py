@@ -132,7 +132,15 @@ def _body(part: dict) -> tuple[str, str]:
 
 
 async def gmail_search(user_id: int, query: str, limit: int) -> list[dict]:
-    res = await api(user_id, "GET", f"{GMAIL}/messages", params={"q": query, "maxResults": limit})
+    """Compatibilité pour les appelants attendant uniquement une liste."""
+    return (await gmail_search_page(user_id, query, limit))["messages"]
+
+
+async def gmail_search_page(user_id: int, query: str, limit: int, page_token: str = "") -> dict:
+    params = {"q": query, "maxResults": limit}
+    if page_token:
+        params["pageToken"] = page_token
+    res = await api(user_id, "GET", f"{GMAIL}/messages", params=params)
     ids = [m["id"] for m in res.get("messages", [])]
     slots = asyncio.Semaphore(GMAIL_PARALLEL)
 
@@ -143,7 +151,8 @@ async def gmail_search(user_id: int, query: str, limit: int) -> list[dict]:
         return {"id": mid, "from": _header(m, "From"), "to": _header(m, "To"), "subject": _header(m, "Subject"),
                 "date": _header(m, "Date"), "snippet": m.get("snippet", ""), "unread": "UNREAD" in m.get("labelIds", [])}
 
-    return list(await asyncio.gather(*(meta(i) for i in ids)))
+    return {"messages": list(await asyncio.gather(*(meta(i) for i in ids))),
+            "next_page_token": res.get("nextPageToken", "")}
 
 
 async def gmail_read(user_id: int, mid: str) -> dict:
