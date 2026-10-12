@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import time
+from collections import OrderedDict
 from email.message import EmailMessage
 from contextlib import nullcontext
 from urllib.parse import urlencode
@@ -53,22 +55,78 @@ async def exchange_code(user_id: int, code: str, base: str) -> dict:
     return data
 
 
+# Un renouvellement à la fois par compte et boucle ; les verrous inactifs
+# disparaissent. Le cache négatif est borné, bref et ne contient aucun jeton brut.
+_token_locks: WeakKeyDictionary = WeakKeyDictionary()
+_token_failures: OrderedDict = OrderedDict()
+TOKEN_FAILURE_TTL = 60
+TOKEN_FAILURE_LIMIT = 256
+RECONNECT = "Reconnexion Google nécessaire (invalid_grant) : jeton expiré ou révoqué. Réglages → Connexions → Google."
+
+
+def _token_lock(user_id: int) -> asyncio.Lock:
+    loop = asyncio.get_running_loop()
+    users = _token_locks.get(loop)
+    if users is None:
+        users = WeakValueDictionary()
+        _token_locks[loop] = users
+    lock = users.get(user_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        users[user_id] = lock
+    return lock
+
+
+def _token_fingerprint(data: dict) -> bytes:
+    # Inclure toute la connexion : une reconnexion, même avec le même refresh
+    # token, invalide immédiatement l'échec précédent.
+    return hashlib.sha256(repr(sorted(data.items())).encode()).digest()
+
+
 async def _token(user_id: int) -> str:
-    data = get(user_id, "google")
-    if not data:
-        raise RuntimeError("Compte Google non connecté (Réglages → Connexions)")
-    if data["expires_at"] > time.time():
-        return data["access_token"]
-    async with httpx.AsyncClient(timeout=20) as c:
-        r = await c.post("https://oauth2.googleapis.com/token", data={
-            "client_id": settings.google_client_id, "client_secret": settings.google_client_secret,
-            "refresh_token": data["refresh_token"], "grant_type": "refresh_token"})
-        if r.status_code >= 400:
-            raise RuntimeError(f"Reconnexion Google nécessaire : {r.text[:200]}")
-        tok = r.json()
-    data.update(access_token=tok["access_token"], expires_at=time.time() + int(tok.get("expires_in", 3600)) - 60)
-    put(user_id, "google", data)
-    return data["access_token"]
+    async with _token_lock(user_id):
+        # Relire après l'attente : un autre appel a pu renouveler la connexion.
+        for _ in range(3):
+            data = get(user_id, "google")
+            if not data:
+                _token_failures.pop(user_id, None)
+                raise RuntimeError("Compte Google non connecté (Réglages → Connexions)")
+            if data["expires_at"] > time.time():
+                _token_failures.pop(user_id, None)
+                return data["access_token"]
+            fingerprint = _token_fingerprint(data)
+            failure = _token_failures.get(user_id)
+            if failure and failure[0] == fingerprint and failure[1] > time.monotonic():
+                raise RuntimeError(RECONNECT)
+            _token_failures.pop(user_id, None)
+            async with httpx.AsyncClient(timeout=20) as c:
+                r = await c.post("https://oauth2.googleapis.com/token", data={
+                    "client_id": settings.google_client_id, "client_secret": settings.google_client_secret,
+                    "refresh_token": data["refresh_token"], "grant_type": "refresh_token"})
+            # Ne jamais écraser une reconnexion/déconnexion survenue pendant HTTP.
+            if get(user_id, "google") != data:
+                continue
+            if r.status_code >= 400:
+                try:
+                    error = r.json().get("error")
+                except (ValueError, AttributeError):
+                    error = None
+                if r.status_code in (400, 401) and error == "invalid_grant":
+                    _token_failures[user_id] = (fingerprint, time.monotonic() + TOKEN_FAILURE_TTL)
+                    while len(_token_failures) > TOKEN_FAILURE_LIMIT:
+                        _token_failures.popitem(last=False)
+                    raise RuntimeError(RECONNECT)
+                # Une panne réseau/serveur ou de configuration n'est pas la preuve
+                # d'un jeton révoqué ; elle reste réessayable, sans cache négatif.
+                raise RuntimeError(f"Échec du renouvellement Google OAuth (HTTP {r.status_code}) ; "
+                                   "reconnexion utilisateur non établie.")
+            tok = r.json()
+            data.update(access_token=tok["access_token"], expires_at=time.time() + int(tok.get("expires_in", 3600)) - 60)
+            if tok.get("refresh_token"):
+                data["refresh_token"] = tok["refresh_token"]
+            put(user_id, "google", data)
+            return data["access_token"]
+        raise RuntimeError("Connexion Google modifiée pendant le renouvellement ; réessayer.")
 
 
 async def api(user_id: int, method: str, url: str, **kw) -> dict:
