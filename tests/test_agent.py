@@ -93,6 +93,25 @@ async def test_verifier_knows_today_date(fake, user):
     assert prompts and today_text(user).split(", il est")[0] in prompts[0]
 
 
+async def test_user_only_blocker_is_accepted_without_relaunch(fake, user):
+    """Compte Google à reconnecter : le contrôleur sait qu'un tel blocage se signale, il ne relance pas l'agent."""
+    def fn(model, system, messages, tools):
+        text = last_user_text(messages)
+        if "contrôleur qualité" in text:
+            accepted = "seul l'utilisateur peut lever" in text and "invalid_grant" in text
+            return json.dumps({"done": accepted, "missing": "" if accepted else "reconnecter Google"})
+        return script(lambda m, t: "Accès Google expiré (invalid_grant) : reconnectez le compte dans Réglages → Connexions → Google.")(
+            model, system, messages, tools)
+
+    fake.script = fn
+    cid = new_conversation(user)
+    res = await runner.submit(user, cid, "Nettoie ma boîte Gmail")
+    await wait_idle(cid)
+    run = db.one("SELECT * FROM runs WHERE id = ?", (res["run_id"],))
+    datas = [json.loads(m["data"]) for m in db.all("SELECT data FROM messages WHERE conversation_id = ? ORDER BY id", (cid,))]
+    assert run["status"] == "done" and not any(d.get("kind") == "control" for d in datas)
+
+
 async def test_no_endless_loop_without_progress(fake, user):
     fake.script = script(lambda m, t: "Impossible.", verdicts=[{"done": False, "missing": "rien n'est fait"}] * 20)
     cid = new_conversation(user)
