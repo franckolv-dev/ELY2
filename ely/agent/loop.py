@@ -144,6 +144,9 @@ Règles :
   autrement (code reçu par SMS, mot de passe inconnu, choix strictement personnel sans défaut raisonnable).
 - Si l'agent déclare un blocage : non satisfaite s'il reste des alternatives raisonnables (autre site, navigateur,
   autre méthode, recherche).
+- Blocage que seul l'utilisateur peut lever (compte à reconnecter, ex. invalid_grant ; connexion ou autorisation
+  exigée sans identifiants enregistrés) : satisfaite si les résultats d'outils le prouvent, que l'agent a tenté l'autre
+  accès disponible, n'annonce rien de faux et dit précisément à l'utilisateur quoi faire. Ne pas relancer.
 Réponds uniquement en JSON : {{"done": true ou false, "missing": "ce qui manque et comment y arriver (1-2 phrases)"}}"""
     for attempt in range(2):
         try:
