@@ -334,8 +334,12 @@ class ChromeLocator:
             raise ChromeError("champ de fichier introuvable")
         try:
             await self.page.cdp("DOM.setFileInputFiles", files=[str(file)], objectId=oid)
-            got = await self._on_element("return e.files && e.files.length ? [e.files[0].name, e.files[0].size] : null;")
-            if got == [file.name, size]:
+            # un champ retiré aussitôt a été consommé par la page (Google Drive envoie puis le remplace) :
+            # le fichier est parti, un second dépôt ferait doublon
+            got = await self.page.evaluate(
+                f"(n) => {{ const e = ({FIND_JS})(n); if (!e) return 'retiré';"
+                " return e.files && e.files.length ? [e.files[0].name, e.files[0].size] : null; }", self.ref)
+            if got == "retiré" or got == [file.name, size]:
                 return
         except ChromeError:
             pass
