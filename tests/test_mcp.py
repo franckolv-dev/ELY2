@@ -92,3 +92,53 @@ async def test_a_dead_mcp_server_is_reconnected(user, tmp_path, monkeypatch):
         assert not r.is_error and "lumière allumée : cuisine" in r.content, r.content
     finally:
         await mcp_client.manager.stop_all()
+
+
+SECRETS_SERVER = """import os
+try:
+    from mcp.server import MCPServer as Server
+except ImportError:
+    from mcp.server.fastmcp import FastMCP as Server
+
+app = Server("maison")
+
+
+@app.tool()
+def cles() -> str:
+    "Variables reçues par le serveur."
+    return f"openai={os.environ.get('OPENAI_API_KEY', '')} github={os.environ.get('ELY_GITHUB_TOKEN', '')} " \\
+           f"maison={os.environ.get('MAISON_TOKEN', '')}"
+
+
+if __name__ == "__main__":
+    app.run()
+"""
+
+
+async def test_an_mcp_server_gets_no_secret_and_serves_the_admin_unless_shared(user, tmp_path, monkeypatch):
+    """Un serveur MCP est un programme tiers : il ne reçoit ni les clés d'Ely ni ses jetons, seulement ce que sa
+    configuration lui donne. Branché par l'administrateur, ses outils lui sont réservés, sauf « shared »: true."""
+    from ely import auth
+    from ely.db import db
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-cle-d-ely")
+    monkeypatch.setenv("ELY_GITHUB_TOKEN", "ghp-jeton-d-ely")
+    script = tmp_path / "maison.py"
+    script.write_text(SECRETS_SERVER)
+    monkeypatch.setattr(mcp_client, "CONFIG", tmp_path / "mcp.json")
+    lea = auth.create_user(f"lea{tmp_path.name}@x.fr", "Léa", "motdepasse")
+    db.run("UPDATE users SET role = 'user' WHERE id = ?", (lea["id"],))
+    lea = auth.get_user(lea["id"])
+    spec = {"command": sys.executable, "args": [str(script)], "env": {"MAISON_TOKEN": "jeton-de-la-maison"}}
+    for shared in (False, True):
+        mcp_client.save_config({"maison": {**spec, **({"shared": True} if shared else {})}})
+        await mcp_client.manager.start_all(wait=30)
+        try:
+            franck = ToolContext(user=user, conversation_id=new_conversation(user), run_id=0, emit=_noop)
+            r = await execute(franck, "mcp_maison_cles", {})
+            assert "openai= github= maison=jeton-de-la-maison" in r.content, r.content
+            r = await execute(ToolContext(user=lea, conversation_id=new_conversation(lea), run_id=0, emit=_noop),
+                              "mcp_maison_cles", {})
+            assert r.is_error is not shared, (shared, r.content)
+        finally:
+            await mcp_client.manager.stop_all()

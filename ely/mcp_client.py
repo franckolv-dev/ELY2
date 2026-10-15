@@ -63,8 +63,12 @@ class Connection:
         else:
             from mcp.client.stdio import StdioServerParameters, stdio_client
 
+            from .tools.files import KEEP, SECRET_NAME
+
+            # programme tiers : ni les clés d'Ely ni ses jetons, seulement ce que sa configuration lui donne (« env »)
+            env = {k: v for k, v in os.environ.items() if not SECRET_NAME.search(k) or k in KEEP}
             params = StdioServerParameters(command=self.spec["command"], args=self.spec.get("args", []),
-                                           env={**os.environ, **self.spec.get("env", {})})
+                                           env={**env, **self.spec.get("env", {})})
             streams = await stack.enter_async_context(stdio_client(params))
         read, write = streams[0], streams[1]
         session = await stack.enter_async_context(ClientSession(read, write))
@@ -119,9 +123,10 @@ class Connection:
             async def call(ctx: ToolContext, _remote=t.name, **args) -> ToolResult:
                 return await self.call(_remote, args)
 
+            # serveur branché par l'administrateur : ses outils lui sont réservés, sauf « shared »: true
             TOOLS[tname] = Tool(name=tname, description=f"[{self.name}] {(t.description or t.name)[:900]}", parameters=schema,
                                 func=call, label=f"{self.name} · {t.name}", icon="🧩", timeout=300, source=f"mcp:{self.name}",
-                                untrusted=True)
+                                untrusted=True, admin_only=not self.spec.get("shared", False))
             self.tools.append(tname)
 
     def _unregister(self) -> None:
@@ -187,13 +192,14 @@ manager = Manager()
 
 
 @tool("mcp_servers", """Gère les serveurs MCP branchés sur Ely (leurs outils deviennent les tiens, préfixés mcp_).
-action=list · add(name, command+args OU url, env?) · remove(name). Exemples : serveur de fichiers, Home Assistant, Notion, GitHub…""",
+action=list · add(name, command+args OU url, env?, shared?) · remove(name). Les outils restent réservés à l'administrateur
+sauf shared=true ; un serveur lancé ne reçoit aucune clé d'Ely : lui passer les siennes dans env. Exemples : serveur de fichiers, Home Assistant, Notion, GitHub…""",
       {"action": {"type": "string", "enum": ["list", "add", "remove"]}, "name": {"type": "string"},
        "command": {"type": "string"}, "args": {"type": "array", "items": {"type": "string"}}, "url": {"type": "string"},
-       "env": {"type": "object"}},
+       "env": {"type": "object"}, "shared": {"type": "boolean"}},
       ["action"], label="Extensions MCP", icon="🧩", admin_only=True, timeout=120)
 async def mcp_servers(ctx: ToolContext, action: str, name: str = "", command: str = "", args: list[str] | None = None,
-                      url: str = "", env: dict | None = None) -> ToolResult:
+                      url: str = "", env: dict | None = None, shared: bool = False) -> ToolResult:
     servers = load_config()
     if action == "list":
         st = manager.status()
@@ -207,6 +213,8 @@ async def mcp_servers(ctx: ToolContext, action: str, name: str = "", command: st
         if not (command or url):
             return ToolResult("command ou url requis", is_error=True)
         servers[name] = {"url": url} if url else {"command": command, "args": args or [], "env": env or {}}
+        if shared:
+            servers[name]["shared"] = True
     save_config(servers)
     await manager.start_all()
     return ToolResult(f"Serveurs MCP : {json.dumps(manager.status(), ensure_ascii=False)}")

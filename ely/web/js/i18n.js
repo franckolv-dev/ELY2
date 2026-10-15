@@ -234,7 +234,7 @@ const FR = {
   // extensions MCP
   "mcp.servers": "Serveurs", "mcp.serversHint": "État et outils fournis.", "mcp.none": "Aucun serveur branché.",
   "mcp.config": "Configuration", "mcp.configHint": "JSON des serveurs MCP.",
-  "mcp.format": () => html`Format : <code>{"nom": {"command": "npx", "args": ["-y", "paquet-mcp"], "env": {}}}</code> ou <code>{"nom": {"url": "https://…/mcp"}}</code>`,
+  "mcp.format": () => html`Format : <code>{"nom": {"command": "npx", "args": ["-y", "paquet-mcp"], "env": {}}}</code> ou <code>{"nom": {"url": "https://…/mcp"}}</code>. Les outils d'un serveur vous sont réservés ; ajoutez <code>"shared": true</code> pour les ouvrir aux autres comptes. Un serveur lancé ici ne reçoit aucune clé du fichier .env : donnez-lui les siennes dans <code>"env"</code>.`,
   "mcp.invalid": "JSON invalide : {e}", "mcp.reloaded": "Serveurs MCP rechargés", "mcp.connecting": "Connexion…", "mcp.save": "Enregistrer et recharger",
 };
 
@@ -446,7 +446,7 @@ const EN = {
   "self.revert": "Undo", "self.nothing": "Nothing yet.",
   "mcp.servers": "Servers", "mcp.serversHint": "Status and tools provided.", "mcp.none": "No server connected.",
   "mcp.config": "Configuration", "mcp.configHint": "MCP servers JSON.",
-  "mcp.format": () => html`Format: <code>{"name": {"command": "npx", "args": ["-y", "mcp-package"], "env": {}}}</code> or <code>{"name": {"url": "https://…/mcp"}}</code>`,
+  "mcp.format": () => html`Format: <code>{"name": {"command": "npx", "args": ["-y", "mcp-package"], "env": {}}}</code> or <code>{"name": {"url": "https://…/mcp"}}</code>. A server's tools are yours only; add <code>"shared": true</code> to open them to the other accounts. A server started here gets none of the keys in .env: give it its own in <code>"env"</code>.`,
   "mcp.invalid": "Invalid JSON: {e}", "mcp.reloaded": "MCP servers reloaded", "mcp.connecting": "Connecting…", "mcp.save": "Save and reload",
 };
 
