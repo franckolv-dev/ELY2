@@ -1,0 +1,38 @@
+# Suite de tests à chaque pull request et à chaque push sur main : une PR rouge ne se fusionne pas à l'aveugle.
+# Modèle simulé, aucun appel réseau réel ; Chromium de Playwright pour les tests du navigateur et de l'extension.
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Dépendances
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          python -m playwright install --with-deps chromium
+          git config --global user.name "Ely CI"
+          git config --global user.email "ci@ely.invalid"
+      - name: Tests
+        run: |
+          export ELY_BROWSER_EXECUTABLE="$(python -c 'from playwright.sync_api import sync_playwright as p; s = p().start(); print(s.chromium.executable_path); s.stop()')"
+          python -m pytest -q
