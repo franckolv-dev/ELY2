@@ -99,8 +99,11 @@ async def lifespan(app: FastAPI):
     load_builtin_tools()
     check_rollback()
     seed_skills()
-    if sealed := vault.migrate():
-        log.info("%d secret(s) en clair chiffré(s) dans la base", sealed)
+    try:  # jamais un démarrage empêché (et un retour arrière déclenché) pour cette étape
+        if sealed := vault.migrate():
+            log.info("%d secret(s) en clair chiffré(s) dans la base", sealed)
+    except Exception:
+        log.exception("chiffrement des secrets encore en clair")
     await asyncio.gather(registry.refresh(), mcp.start_all())
     resumed = await runner.resume_all()
     log.info("Ely %s (%s) prête : %d outils, fournisseurs %s, %d tâche(s) reprise(s)", __version__, CODE_VERSION, len(TOOLS),
