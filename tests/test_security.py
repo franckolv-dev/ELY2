@@ -434,8 +434,7 @@ async def test_the_internal_browser_of_a_family_account_never_reaches_the_home_n
                 await __import__("asyncio").sleep(0.05)
             assert await page.title() == ("BLOQUE" if blocked else "LU"), who["name"]
     finally:
-        await manager.close_user(member["id"])
-        await manager.close_user(user["id"])
+        await manager.shutdown()  # Playwright est lié à la boucle de ce test
 
 
 async def test_taking_over_the_browser_never_reaches_the_home_network(client, member):
