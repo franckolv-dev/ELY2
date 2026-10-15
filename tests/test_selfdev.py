@@ -117,7 +117,12 @@ async def test_code_self_modification_pipeline(dev_ctx, fake_repo: Path, monkeyp
     assert "return a + b" in (fake_repo / "app.py").read_text()  # version active mise à jour
     log = subprocess.run(["git", "log", "--oneline"], cwd=fake_repo, capture_output=True, text=True).stdout
     assert "ely-self: corrige add" in log
-    assert db.one("SELECT * FROM improvements WHERE kind = 'code' AND status = 'deployed'")
+    deployed = db.one("SELECT * FROM improvements WHERE kind = 'code' AND status = 'deployed' ORDER BY id DESC LIMIT 1")
+    # le code pourra revenir en arrière, pas les données : la base d'avant l'activation est copiée
+    from ely import backup
+
+    saved = backup.latest("avant-mise-a-jour")
+    assert saved and saved.name in deployed["detail"]
     assert published == [("corrige add", await pipeline.head())]
     assert "https://github.com/example/ely/pull/1" in r.content
 

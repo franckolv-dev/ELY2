@@ -202,12 +202,20 @@ async def deploy(summary: str, restart: bool = True) -> dict:
         return {"ok": True, "sha": new_sha, "pr_url": pr_url, "activated": False, "restart": False,
                 "message": f"PR GitHub publiée : {pr_url}. Le lanceur ely.sh est modifié : aucune activation locale ni redémarrage automatique. "
                            "Demander à l'administrateur de fusionner puis de relancer le superviseur complet (pas seulement Python)."}
+    try:  # le code peut revenir en arrière, pas les données : une copie de la base d'avant l'activation
+        from ..backup import backup
+
+        saved = await asyncio.to_thread(backup, "avant-mise-a-jour")
+    except Exception as exc:
+        return {"ok": False, "sha": new_sha, "pr_url": pr_url, "activated": False, "restart": False,
+                "message": f"PR publiée : {pr_url}. Sauvegarde de la base impossible ({exc}) : aucune activation locale."}
     code, out = await git("merge", "--ff-only", BRANCH)
     if code:
         return {"ok": False, "pr_url": pr_url,
                 "message": f"PR publiée : {pr_url}. Fusion locale impossible (modifications locales ?) : {out}. "
                            "Demander à l'administrateur de relire et fusionner la PR."}
-    db.insert("improvements", kind="code", title=summary[:200], detail=f"{prev[:10]} → {new_sha[:10]} · PR : {pr_url}", diff=patch,
+    db.insert("improvements", kind="code", title=summary[:200],
+              detail=f"{prev[:10]} → {new_sha[:10]} · PR : {pr_url} · base sauvegardée avant : {saved.name}", diff=patch,
               commit_sha=new_sha, status="deployed", created_at=now())
     (settings.data_dir / "selfdev").mkdir(parents=True, exist_ok=True)
     (settings.data_dir / "selfdev" / "last_deploy.json").write_text(json.dumps({"prev": prev, "new": new_sha, "summary": summary, "at": now()}))
@@ -263,8 +271,14 @@ def check_rollback() -> None:
     p = settings.data_dir / "selfdev" / "rollback.json"
     if p.exists():
         try:
+            from ..backup import latest
+
             info = json.loads(p.read_text())
+            # le code est revenu en arrière, pas la base : la copie d'avant la mise à jour permet de la restaurer au besoin
+            if saved := latest("avant-mise-a-jour"):
+                info["sauvegarde"] = str(saved)
             db.insert("improvements", kind="code", title=f"Retour arrière automatique : {info.get('reason', 'démarrage en échec')}",
-                      detail=json.dumps(info)[:2000], commit_sha=info.get("bad", ""), status="rolled_back", created_at=now())
+                      detail=json.dumps(info, ensure_ascii=False)[:2000], commit_sha=info.get("bad", ""), status="rolled_back",
+                      created_at=now())
         finally:
             p.unlink(missing_ok=True)

@@ -449,3 +449,32 @@ async def test_the_internal_browser_comes_back_after_a_crash(user):
         assert await page.title() == "ok"
     finally:
         await manager.shutdown()  # Playwright est lié à la boucle de ce test
+
+
+async def test_the_database_is_backed_up_every_day_and_old_copies_are_dropped(user, monkeypatch):
+    """Une copie cohérente de la base par jour, lisible telle quelle (restauration = remplacer ely.db) ; seules les
+    plus récentes sont gardées, et une copie qui remplirait le disque n'est pas faite."""
+    import sqlite3
+
+    from ely import backup
+    from ely.scheduler import daily_backup
+
+    for old in backup.folder().glob("ely-*-quotidienne.db") if backup.folder().exists() else []:
+        old.unlink()
+    db.set_setting("backup_last_day", "")
+    await daily_backup()
+    await daily_backup()  # même jour : pas de deuxième copie
+    copies = sorted(backup.folder().glob("ely-*-quotidienne.db"))
+    assert len(copies) == 1
+    with sqlite3.connect(copies[0]) as c:
+        assert c.execute("SELECT name FROM users WHERE id = ?", (user["id"],)).fetchone() == ("Franck",)
+
+    for day in range(1, 11):  # dix copies plus anciennes
+        (backup.folder() / f"ely-2026-01-{day:02d}_040000-quotidienne.db").write_bytes(b"")
+    backup.backup("quotidienne")
+    kept = sorted(p.name for p in backup.folder().glob("ely-*-quotidienne.db"))
+    assert len(kept) == backup.KEEP["quotidienne"] and "ely-2026-01-01_040000-quotidienne.db" not in kept
+
+    monkeypatch.setattr(backup, "MARGIN", 1 << 62)
+    with pytest.raises(OSError):
+        backup.backup("quotidienne")

@@ -98,6 +98,12 @@ async def daily_self_improvement() -> None:
                                               "et applique les améliorations les plus utiles.")
 
 
+async def daily_backup() -> None:
+    from .backup import daily
+
+    await daily()
+
+
 def _without_image_data(m: dict) -> bool:
     """Retire le contenu des images d'un message ; une photo jointe garde son lien vers Fichiers (vignette du fil)."""
     changed = bool(m.pop("images", None))
@@ -140,7 +146,7 @@ async def prune_old_images() -> int:
 async def scheduler_loop() -> None:
     tick = 0
     while True:
-        for job in (run_due_schedules, calendar_reminders, daily_self_improvement):
+        for job in (run_due_schedules, calendar_reminders, daily_self_improvement, daily_backup):
             try:
                 await job()
             except Exception:
