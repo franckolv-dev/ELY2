@@ -28,7 +28,7 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 print("PLUGIN-OK")"""
 LOADED: dict[str, list[str]] = {}  # plugin -> noms d'outils
-SHADOWED: dict[str, dict] = {}  # plugin -> outils de base qu'il remplace (restaurés au déchargement)
+SHADOWED: dict[str, dict] = {}  # plugin -> outils (d'extensions) qu'il remplace, restaurés au déchargement
 
 TEMPLATE = '''"""Plugin Ely : {description}"""
 from ely.tools import ToolContext, ToolResult, tool
@@ -84,6 +84,14 @@ def load_one(name: str) -> list[str]:
             raise
         raise RuntimeError(f"le plugin a voulu arrêter Ely au chargement ({e.__class__.__name__})") from e
     new = sorted(t for t in TOOLS if TOOLS[t] is not before.get(t))
+    # un plugin ajoute des outils, il ne remplace pas ceux du cœur et leurs vérifications (droits, réseau, fichiers)
+    core = [t for t in new if t in before and before[t].source == "core"]
+    if core:
+        for t in new:
+            TOOLS.pop(t, None)
+        TOOLS.update({t: v for t, v in before.items() if t not in TOOLS})
+        sys.modules.pop(spec.name, None)
+        raise ValueError(f"le plugin remplacerait des outils du cœur d'Ely ({', '.join(core)}) : choisissez un autre nom")
     for t in new:
         TOOLS[t].source = f"plugin:{name}"
     LOADED[name] = new
