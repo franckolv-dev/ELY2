@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
+import httpx
+
 from ..config import settings
 from ..db import db, now
 
@@ -155,9 +157,20 @@ def _coerce(value: Any, spec: dict) -> Any:
     return value
 
 
+class MaybeDone(Exception):
+    """Coupure pendant l'action elle-même (message transmis, réponse jamais reçue) : elle a peut-être eu lieu."""
+
+
+# coupures après l'envoi de la requête : le service a pu agir sans que la réponse arrive
+MAYBE_DONE = (MaybeDone, httpx.ReadTimeout, httpx.WriteTimeout, httpx.ReadError, httpx.WriteError, httpx.RemoteProtocolError)
+
+
+UNCERTAIN = "Résultat incertain"
+
+
 def uncertain(why: str) -> str:
     """Action peut-être faite malgré l'erreur : on ne la refait pas sans vérifier (voir LOST dans agent/loop.py)."""
-    return (f"Résultat incertain : {why}. L'action a peut-être eu lieu quand même : vérifie-le (page, boîte d'envoi, "
+    return (f"{UNCERTAIN} : {why}. L'action a peut-être eu lieu quand même : vérifie-le (page, boîte d'envoi, "
             "agenda, fichiers…) avant de la refaire.")
 
 
@@ -223,7 +236,10 @@ async def execute(ctx: ToolContext, name: str, args: dict) -> ToolResult:
     except Exception as e:  # l'erreur est rendue au modèle, jamais levée
         log.exception("outil %s", name)
         ok, err = False, f"{e.__class__.__name__}: {e}"
-        res = ToolResult(f"Erreur dans {name} : {e.__class__.__name__}: {e}", is_error=True)
+        if t.effects and isinstance(e, MAYBE_DONE):
+            res = ToolResult(uncertain(f"la connexion a été coupée pendant l'action ({e.__class__.__name__}: {e})"), is_error=True)
+        else:
+            res = ToolResult(f"Erreur dans {name} : {e.__class__.__name__}: {e}", is_error=True)
     res.content = spill(ctx, name, res.content or "(aucune sortie)")
     if t.untrusted:
         res.content = fence(name, res.content)

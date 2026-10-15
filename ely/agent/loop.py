@@ -24,7 +24,7 @@ from ..config import settings
 from ..db import db, now
 from ..llm import LLMError, claude_agent, parse_json_loose, registry
 from ..llm.base import LLMResponse, estimate_tokens, message_text
-from ..tools import SECRET_ARGS, TOOLS, ToolContext, execute, tools_for
+from ..tools import SECRET_ARGS, TOOLS, UNCERTAIN, ToolContext, ToolResult, execute, tools_for
 from .prompts import STABLE, dynamic_block, today_text
 from .runner import ConvState, Runner, public_message, save_message
 
@@ -103,6 +103,36 @@ def normalize(msgs: list[dict], pending_ids: set[str] = frozenset()) -> list[dic
                     out.append(results.pop(tc["id"]))
                 elif tc["id"] not in pending_ids:
                     out.append({"role": "tool", "tool_call_id": tc["id"], "name": tc["name"], "content": LOST, "is_error": True})
+    return out
+
+
+REPLAY = ("Action non relancée : la même action, avec les mêmes paramètres, a déjà eu un résultat incertain dans cette "
+          "tâche. Vérifie d'abord si elle a eu lieu (boîte d'envoi, agenda, page…). Pour la refaire malgré tout, demande "
+          "d'abord l'accord de l'utilisateur avec ask_user.")
+
+
+def signature(name: str, args: dict) -> str:
+    return name + json.dumps(args or {}, sort_keys=True, ensure_ascii=False)
+
+
+def uncertain_calls(history: list[dict]) -> set[str]:
+    """Actions au résultat incertain (coupure, délai, redémarrage) depuis la dernière parole de l'utilisateur : jamais
+    rejouées à l'identique sans son accord (un e-mail ne part pas deux fois)."""
+    calls: dict[str, str] = {}
+    out: set[str] = set()
+    for m in history:
+        if m["role"] == "user" and not m.get("kind"):
+            out.clear()
+        elif m["role"] == "assistant":
+            for tc in m.get("tool_calls") or []:
+                calls[tc["id"]] = signature(tc["name"], tc.get("arguments"))
+        elif m["role"] == "tool":
+            t = TOOLS.get(m.get("name"))
+            content = m.get("content") if isinstance(m.get("content"), str) else ""
+            if m.get("name") == "ask_user" and not m.get("is_error"):
+                out.clear()
+            elif t and t.effects and not t.untrusted and content.startswith((UNCERTAIN, LOST)) and m["tool_call_id"] in calls:
+                out.add(calls[m["tool_call_id"]])
     return out
 
 
@@ -265,7 +295,7 @@ class AgentLoop:
         await self.emit("status", {"status": "running"})
 
     # ---------------------------------------------------------------- outils
-    async def run_tool(self, ctx: ToolContext, tc: dict, fail_counts: dict) -> dict:
+    async def run_tool(self, ctx: ToolContext, tc: dict, fail_counts: dict, blocked: set[str] = frozenset()) -> dict:
         t = TOOLS.get(tc["name"])
         label = t.label if t else tc["name"]
         icon = t.icon if t else "⚙️"
@@ -273,8 +303,11 @@ class AgentLoop:
                                        "args": _preview_args(tc.get("arguments", {}))})
         call_ctx = replace(ctx, extra={**ctx.extra, "tool_call_id": tc["id"]})
         call_ctx.ask = lambda q, o, _id=tc["id"]: self.ask(q, o, _id)
-        res = await execute(call_ctx, tc["name"], tc.get("arguments") or {})
-        sig = tc["name"] + json.dumps(tc.get("arguments", {}), sort_keys=True, ensure_ascii=False)
+        sig = signature(tc["name"], tc.get("arguments"))
+        if sig in blocked:
+            res = ToolResult(REPLAY, is_error=True)
+        else:
+            res = await execute(call_ctx, tc["name"], tc.get("arguments") or {})
         content = res.content
         if res.is_error:
             fail_counts[sig] = fail_counts.get(sig, 0) + 1
@@ -472,7 +505,8 @@ class AgentLoop:
 
                 if msg.get("tool_calls"):
                     steps += 1
-                    results = await asyncio.gather(*(self.run_tool(ctx, tc, fail_counts) for tc in msg["tool_calls"]))
+                    blocked = uncertain_calls(history)
+                    results = await asyncio.gather(*(self.run_tool(ctx, tc, fail_counts, blocked) for tc in msg["tool_calls"]))
                     history.extend(results)
                     successes += sum(1 for r in results if not r.get("is_error"))
                     self.save_state(steps=steps)

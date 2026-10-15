@@ -172,6 +172,95 @@ async def test_ask_user_waits_for_answer(fake, user):
     assert "482913" in last["content"]
 
 
+class FakeSMTP:
+    """Serveur d'envoi simulé : chaque transmission est notée ; la première coupe la connexion en cours de route."""
+    sent: list[str] = []
+    failures: list[Exception] = []
+
+    def __init__(self, host, port, context=None, timeout=None):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        pass
+
+    def login(self, user, password):
+        pass
+
+    def send_message(self, msg):
+        FakeSMTP.sent.append(msg["To"])
+        if FakeSMTP.failures:
+            raise FakeSMTP.failures.pop(0)
+
+
+def _smtp_mailbox(user, monkeypatch, *failures):
+    import smtplib
+
+    from ely.integrations import put
+
+    put(user["id"], "email", {"address": "franck@exemple.fr", "password": "x", "smtp_host": "smtp.gmail.com",
+                              "smtp_port": 465, "imap_host": "imap.gmail.com"})
+    monkeypatch.setattr(smtplib, "SMTP_SSL", FakeSMTP)
+    FakeSMTP.sent, FakeSMTP.failures = [], list(failures)
+
+
+async def test_a_cut_while_sending_is_uncertain_but_a_refusal_is_not(fake, user, monkeypatch):
+    """Connexion coupée pendant la transmission : l'e-mail est peut-être parti, le résultat le dit. Destinataire
+    refusé par le serveur : rien n'est parti, c'est un échec ordinaire."""
+    import smtplib
+
+    from conftest import new_conversation as _nc
+
+    from ely.tools import ToolContext, execute
+
+    async def _noop(*a, **k):
+        pass
+
+    _smtp_mailbox(user, monkeypatch, smtplib.SMTPServerDisconnected("Connection unexpectedly closed"),
+                  smtplib.SMTPRecipientsRefused({"paul@exemple.fr": (550, b"no such user")}))
+    ctx = ToolContext(user=user, conversation_id=_nc(user), run_id=0, emit=_noop)
+    args = {"to": "paul@exemple.fr", "subject": "Facture", "body": "Ci-joint la facture."}
+    r = await execute(ctx, "email_send", args)
+    assert r.is_error and r.content.startswith("Résultat incertain"), r.content
+    r = await execute(ctx, "email_send", args)
+    assert r.is_error and not r.content.startswith("Résultat incertain") and "SMTPRecipientsRefused" in r.content
+
+
+async def test_an_uncertain_email_is_never_sent_again_without_asking(fake, user, monkeypatch):
+    """La connexion lâche pendant l'envoi : l'e-mail est peut-être parti. Ely ne le renvoie pas à l'identique de son
+    propre chef ; elle demande, et ne le renvoie qu'avec l'accord de la personne."""
+    import smtplib
+
+    _smtp_mailbox(user, monkeypatch, smtplib.SMTPServerDisconnected("Connection unexpectedly closed"))
+    mail = {"to": "paul@exemple.fr", "subject": "Facture", "body": "Ci-joint la facture."}
+
+    def agent(messages, tools):
+        results = tool_results(messages)
+        last = results[-1] if results else None
+        if not results or (last["name"] == "ask_user" and "oui" in last["content"]):
+            return call("email_send", **mail)
+        if last["content"].startswith("Résultat incertain"):
+            return call("email_send", **mail)  # le modèle tente de renvoyer aussitôt
+        if last["content"].startswith("Action non relancée"):
+            return call("ask_user", question="L'envoi a été coupé : je le renvoie ?")
+        return "E-mail envoyé à Paul."
+
+    fake.script = script(agent)
+    cid = new_conversation(user)
+    await runner.submit(user, cid, "Envoie la facture à paul@exemple.fr")
+    for _ in range(200):
+        await asyncio.sleep(0.02)
+        if runner.states[cid].status == "waiting_user":
+            break
+    assert runner.states[cid].status == "waiting_user"
+    assert FakeSMTP.sent == ["paul@exemple.fr"]  # la relance immédiate n'a pas atteint le serveur
+    await runner.submit(user, cid, "oui, renvoie-le")
+    await wait_idle(cid)
+    assert FakeSMTP.sent == ["paul@exemple.fr", "paul@exemple.fr"]
+
+
 async def test_message_added_during_task_is_taken_into_account(fake, user):
     seen = []
 
