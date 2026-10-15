@@ -623,9 +623,9 @@ def test_model_requests_are_recognised_only_as_requests():
 async def test_two_tasks_ending_together_both_enrich_the_profile(fake, user):
     """Deux tâches finissent en même temps : chacune apprend quelque chose sur Franck, et le profil garde les deux
     (la seconde mise à jour part de la première au lieu de l'écraser)."""
+    from ely.agent.runner import save_message
     from ely.memory import store
     from ely.memory.learner import learn_from_run
-    from ely.agent.runner import save_message
 
     async def learner(model, system, messages, tools):
         text = last_user_text(messages)
