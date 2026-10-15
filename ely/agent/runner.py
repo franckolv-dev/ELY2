@@ -133,6 +133,8 @@ class Runner:
     async def submit(self, user: dict, conversation_id: int, content, *, channel: str = "web", kind: str = "",
                      state: dict | None = None) -> dict:
         """Ajoute un message de l'utilisateur ; démarre une tâche ou l'intègre à celle en cours."""
+        if db.val("SELECT user_id FROM conversations WHERE id = ?", (conversation_id,)) != user["id"]:
+            raise PermissionError(f"la conversation {conversation_id} n'appartient pas à ce compte")
         msg = {"role": "user", "content": content}
         if kind:
             msg["kind"] = kind

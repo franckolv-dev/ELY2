@@ -260,6 +260,7 @@ async def delete_conversation(cid: int, user=Depends(auth.current_user)):
     _own(cid, user)
     await runner.stop(cid)  # sa note « Tâche arrêtée » est écrite avant la suppression, pas dans le vide
     db.run("DELETE FROM messages_fts WHERE conversation_id = ?", (cid,))
+    db.run("UPDATE schedules SET conversation_id = NULL WHERE conversation_id = ?", (cid,))  # numéro repris plus tard
     db.run("DELETE FROM conversations WHERE id = ?", (cid,))
     return {"ok": True}
 

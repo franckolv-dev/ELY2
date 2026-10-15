@@ -478,3 +478,33 @@ async def test_a_new_role_reopens_the_browser_with_the_right_guard(client, user,
     h = await login(client, user)
     r = await client.patch(f"/api/admin/users/{member['id']}", headers=h, json={"role": "admin"})
     assert r.status_code == 200 and browser.closed and member["id"] not in manager.users
+
+
+async def test_a_scheduled_task_never_lands_in_someone_elses_conversation(fake, client, user, member):
+    """La conversation d'une routine de Léa a été supprimée et son numéro repris par une conversation de Franck : la
+    routine s'exécute dans une nouvelle conversation de Léa. Rien n'est écrit chez Franck, et son historique n'atteint
+    jamais le modèle. Supprimer une conversation détache aussi les routines qui y menaient."""
+    import time
+
+    from ely.agent.runner import save_message
+    from ely.scheduler import run_due_schedules
+
+    fake.script = lambda model, system, messages, tools: (
+        '{"done": true, "missing": ""}' if "contrôleur qualité" in str(messages) else "Routine faite.")
+    franck = new_conversation(user)
+    save_message(franck, None, {"role": "user", "content": "Mon code de carte bleue est 4242."}, user["id"])
+    before = db.val("SELECT COUNT(*) FROM messages WHERE conversation_id = ?", (franck,))
+    sid = db.insert("schedules", user_id=member["id"], conversation_id=franck, instruction="Résume ma journée",
+                    cron="", next_run=time.time() - 1, enabled=1, created_at=now())
+    await run_due_schedules()
+    lea = db.val("SELECT conversation_id FROM schedules WHERE id = ?", (sid,))
+    await wait_idle(lea)
+    assert lea != franck and db.val("SELECT user_id FROM conversations WHERE id = ?", (lea,)) == member["id"]
+    assert db.val("SELECT COUNT(*) FROM messages WHERE conversation_id = ?", (franck,)) == before
+    assert not any("4242" in json.dumps(c["messages"], ensure_ascii=False) for c in fake.calls)
+    with pytest.raises(PermissionError):
+        await runner.submit(member, franck, "Lis cette conversation")
+
+    h = await login(client, member)
+    assert (await client.delete(f"/api/conversations/{lea}", headers=h)).json()["ok"]
+    assert db.val("SELECT conversation_id FROM schedules WHERE id = ?", (sid,)) is None

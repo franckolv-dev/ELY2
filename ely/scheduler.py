@@ -38,7 +38,8 @@ async def _launch(s: dict) -> None:
     else:
         db.update("schedules", "id = ?", (s["id"],), enabled=0, last_run=now())
     cid = s["conversation_id"]
-    if not cid or not db.one("SELECT id FROM conversations WHERE id = ?", (cid,)):
+    # la conversation d'origine peut avoir été supprimée, et son numéro repris par la conversation d'un autre compte
+    if not cid or not db.one("SELECT id FROM conversations WHERE id = ? AND user_id = ?", (cid, user["id"])):
         cid = db.insert("conversations", user_id=user["id"], title="⏰ Tâches planifiées", channel="schedule",
                         created_at=now(), updated_at=now())
         db.update("schedules", "id = ?", (s["id"],), conversation_id=cid)
