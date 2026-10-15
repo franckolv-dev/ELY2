@@ -382,6 +382,13 @@ class BrowserAction(BaseModel):
 @router.post("/api/browser/action")
 async def browser_action(body: BrowserAction, user=Depends(auth.current_user)):
     """Prise de main : l'utilisateur agit lui-même dans le navigateur d'Ely (connexion, captcha…)."""
+    url = ""
+    if body.action == "goto":
+        from ..netguard import refusal
+
+        url = body.text if "://" in body.text else f"https://{body.text}"
+        if why := await refusal(url, user["role"] == "admin"):
+            raise HTTPException(403, f"Adresse refusée : {why}")
     ub = await manager.for_user(user["id"])
     page = await ub.page(ub.active_key)
     vp = page.viewport_size or {"width": 1280, "height": 860}
@@ -394,7 +401,6 @@ async def browser_action(body: BrowserAction, user=Depends(auth.current_user)):
     elif body.action == "scroll":
         await page.mouse.wheel(0, 600 if body.y >= 0 else -600)
     elif body.action == "goto":
-        url = body.text if body.text.startswith("http") else f"https://{body.text}"
         await page.goto(url, wait_until="domcontentloaded", timeout=45000)
     elif body.action == "back":
         await page.go_back()

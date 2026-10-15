@@ -11,7 +11,7 @@ import time
 import httpx
 
 from ..config import settings
-from ..netguard import refusal
+from ..netguard import Refused, refusal
 from . import ToolContext, ToolResult, tool
 
 log = logging.getLogger("ely.web")
@@ -176,9 +176,15 @@ def _extract(html: str, url: str) -> str:
     return text
 
 
-async def fetch_text(url: str, max_chars: int = 20000) -> tuple[str, str]:
-    """Renvoie (titre, texte) d'une URL ; bascule sur le navigateur si la page exige JavaScript."""
-    async with httpx.AsyncClient(timeout=30, follow_redirects=True, headers={"User-Agent": UA, "Accept-Language": "fr-FR,fr;q=0.9"}) as c:
+async def fetch_text(url: str, max_chars: int = 20000, is_admin: bool = False) -> tuple[str, str]:
+    """Renvoie (titre, texte) d'une URL ; bascule sur le navigateur si la page exige JavaScript. Chaque redirection
+    est vérifiée comme l'adresse de départ : une page publique ne mène pas au réseau local."""
+    async def guard(request) -> None:
+        if why := await refusal(str(request.url), is_admin):
+            raise Refused(why)
+
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True, event_hooks={"request": [guard]},
+                                 headers={"User-Agent": UA, "Accept-Language": "fr-FR,fr;q=0.9"}) as c:
         r = await c.get(url)
         ctype = r.headers.get("content-type", "")
         if "pdf" in ctype or url.lower().endswith(".pdf"):
@@ -196,7 +202,7 @@ async def fetch_text(url: str, max_chars: int = 20000) -> tuple[str, str]:
         from ..browser import render_page
 
         try:
-            title, html = await render_page(url)
+            title, html = await render_page(url, is_admin=is_admin)
             text = await asyncio.to_thread(_extract, html, url)
         except Exception as e:
             log.info("rendu navigateur impossible pour %s : %s", url, e)
@@ -211,7 +217,10 @@ async def web_fetch(ctx: ToolContext, url: str, max_chars: int = 15000) -> ToolR
         url = "https://" + url
     if why := await refusal(url, ctx.is_admin):
         return ToolResult(f"Adresse refusée : {why}.", is_error=True)
-    title, text = await fetch_text(url, max_chars)
+    try:
+        title, text = await fetch_text(url, max_chars, ctx.is_admin)
+    except Refused as e:
+        return ToolResult(f"Adresse refusée : {e}.", is_error=True)
     if not text.strip():
         return ToolResult(f"Page vide ou illisible : {url}. Essaie browser action=open.", is_error=True)
     return ToolResult(f"# {title}\nSource : {url}\n\n{text}")

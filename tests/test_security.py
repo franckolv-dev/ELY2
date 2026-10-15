@@ -334,3 +334,147 @@ def test_the_extension_sends_its_session_in_its_first_message(user):
         with pytest.raises(WebSocketDisconnect) as closed:
             ws.receive_json()
         assert closed.value.code == 4001
+
+
+@pytest.fixture
+def home_network(monkeypatch):
+    """Une page « publique » (localhost, pour le test) qui mène à une page de la box (127.0.0.1) : par redirection,
+    ou par un script qui la lit."""
+    import http.server
+    import socket
+    import threading
+
+    from ely import netguard
+
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    secret = "<html><body><h1>Interface de la box</h1>" + "<p>SECRET-DE-LA-BOX : mot de passe Wi-Fi.</p>" * 20 + "</body></html>"
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/public":
+                self.send_response(302)
+                self.send_header("Location", f"http://127.0.0.1:{port}/secret")
+                self.end_headers()
+                return
+            body = secret if self.path == "/secret" else (
+                f"<html><body><script>fetch('http://127.0.0.1:{port}/secret').then(r => r.text())"
+                ".then(t => document.title = t.includes('SECRET') ? 'LU' : 'VIDE').catch(() => document.title = 'BLOQUE')"
+                "</script></body></html>")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(body.encode())
+
+        def log_message(self, *a):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+
+    async def internal(host):  # pour le test : 127.0.0.1 est la box, localhost un site public
+        return host == "127.0.0.1"
+
+    monkeypatch.setattr(netguard, "is_internal", internal)
+    yield port
+    server.shutdown()
+
+
+async def test_a_public_page_never_leads_web_fetch_into_the_home_network(home_network, user, member):
+    """Une page publique redirige vers la box : la redirection est vérifiée comme l'adresse de départ."""
+    lea = ToolContext(user=member, conversation_id=new_conversation(member), run_id=0, emit=_noop)
+    r = await execute(lea, "web_fetch", {"url": f"http://localhost:{home_network}/public"})
+    assert r.is_error and "Adresse refusée" in r.content and "SECRET" not in r.content
+    franck = ToolContext(user=user, conversation_id=new_conversation(user), run_id=0, emit=_noop)
+    r = await execute(franck, "web_fetch", {"url": f"http://localhost:{home_network}/public"})
+    assert "SECRET-DE-LA-BOX" in r.content  # l'administrateur garde l'accès à son réseau
+
+
+@pytest.mark.skipif(not __import__("os").environ.get("ELY_BROWSER_EXECUTABLE"), reason="Chromium absent")
+async def test_the_internal_browser_of_a_family_account_never_reaches_the_home_network(home_network, user, member):
+    """Le navigateur interne d'un membre de la famille ne joint la box ni par une redirection ni par le script d'une
+    page publique ; celui de l'administrateur, si."""
+    from ely.browser import manager
+
+    port = home_network
+    try:
+        for who, blocked in ((member, True), (user, False)):
+            page = await (await manager.for_user(who["id"])).page("main")
+            try:
+                await page.goto(f"http://localhost:{port}/public", wait_until="domcontentloaded", timeout=15000)
+            except Exception:
+                pass
+            assert ("SECRET-DE-LA-BOX" in await page.content()) is not blocked, who["name"]
+            await page.goto(f"http://localhost:{port}/page", wait_until="domcontentloaded", timeout=15000)
+            for _ in range(100):
+                if await page.title():
+                    break
+                await __import__("asyncio").sleep(0.05)
+            assert await page.title() == ("BLOQUE" if blocked else "LU"), who["name"]
+    finally:
+        await manager.close_user(member["id"])
+        await manager.close_user(user["id"])
+
+
+async def test_taking_over_the_browser_never_reaches_the_home_network(client, member):
+    """Prise de main dans le navigateur d'Ely : un compte ordinaire ne peut pas y ouvrir la box, le Mac ou ses fichiers
+    (et aucun navigateur n'est lancé pour rien)."""
+    from ely.browser import manager
+
+    h = await login(client, member)
+    for target in ("http://192.168.1.1/", "127.0.0.1:8000/api/me", "file:///etc/passwd"):
+        r = await client.post("/api/browser/action", headers=h, json={"action": "goto", "text": target})
+        assert r.status_code == 403 and "Adresse refusée" in r.json()["detail"], target
+    assert manager.users.get(member["id"]) is None
+
+
+async def test_the_guard_proxy_tunnels_to_public_hosts_only(home_network):
+    """HTTPS et WebSocket passent par un tunnel (CONNECT) : ouvert vers un hôte public, refusé vers le réseau local."""
+    import asyncio
+
+    from ely import netguard
+
+    async def echo(reader, writer):
+        writer.write(await reader.read(100))
+        await writer.drain()
+        writer.close()
+
+    server = await asyncio.start_server(echo, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    guard = netguard.GuardProxy()
+    proxy_port = int((await guard.settings())["server"].rsplit(":", 1)[1])
+    try:
+        for host, opened in (("localhost", True), ("127.0.0.1", False)):
+            reader, writer = await asyncio.open_connection("127.0.0.1", proxy_port)
+            writer.write(f"CONNECT {host}:{port} HTTP/1.1\r\nHost: {host}:{port}\r\n\r\n".encode())
+            await writer.drain()
+            status = (await reader.readuntil(b"\r\n")).decode()
+            assert (" 200 " in status) is opened and (" 403 " in status) is not opened, (host, status)
+            if opened:
+                assert await reader.readuntil(b"\r\n") == b"\r\n"  # fin de la réponse du proxy
+                writer.write(b"bonjour")
+                await writer.drain()
+                assert await reader.read(100) == b"bonjour"
+            writer.close()
+    finally:
+        await guard.close()
+        server.close()
+
+
+async def test_a_new_role_reopens_the_browser_with_the_right_guard(client, user, member):
+    """Un compte promu ou rétrogradé : son navigateur interne est fermé, puis rouvert avec ou sans la garde réseau."""
+    from ely.browser import manager
+
+    class Opened:
+        closed = False
+
+        async def close(self):
+            self.closed = True
+
+    browser = manager.users[member["id"]] = Opened()
+    h = await login(client, user)
+    r = await client.patch(f"/api/admin/users/{member['id']}", headers=h, json={"role": "admin"})
+    assert r.status_code == 200 and browser.closed and member["id"] not in manager.users
