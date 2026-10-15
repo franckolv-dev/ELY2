@@ -232,6 +232,7 @@ label.field { display: grid; gap: 7px; font-size: 13px; font-weight: 500; color:
 .content { flex: 1; display: flex; min-height: 0; }
 .chat { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; position: relative; }
 .scroll { flex: 1; overflow-y: auto; overscroll-behavior: contain; min-height: 0; }
+.earlier { display: flex; justify-content: center; padding-top: 24px; }
 .thread { max-width: 766px; margin: 0 auto; padding: 36px 24px 28px; display: flex; flex-direction: column; gap: 26px; }
 
 /* ------------------------------------------------------------ accueil */

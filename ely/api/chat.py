@@ -265,12 +265,24 @@ async def delete_conversation(cid: int, user=Depends(auth.current_user)):
     return {"ok": True}
 
 
+PAGE = 200  # messages par chargement : une longue conversation (Telegram) ne se charge pas d'un bloc
+
+
 @router.get("/api/conversations/{cid}/messages")
-def get_messages(cid: int, user=Depends(auth.current_user)):
+def get_messages(cid: int, before: int = 0, limit: int = PAGE, user=Depends(auth.current_user)):
+    """Les derniers messages (ou ceux d'avant `before`), du plus ancien au plus récent ; `more` : il y en a d'autres."""
     conv = _own(cid, user)
-    rows = db.all("SELECT * FROM messages WHERE conversation_id = ? ORDER BY id", (cid,))
+    limit = max(1, min(limit, 500))
+    rows = db.all("SELECT * FROM messages WHERE conversation_id = ? AND id < ? ORDER BY id DESC LIMIT ?",
+                  (cid, before or 2**62, limit + 1))
+    more = len(rows) > limit
+    rows = rows[:limit][::-1]
+    if more:  # résultats d'outils en tête de page : ils viennent avec leur appel, au chargement suivant
+        while len(rows) > 1 and rows[0]["role"] == "tool":
+            rows.pop(0)
     st = runner.states.get(cid)
-    return {"conversation": conv, "messages": [public_message(r) for r in rows], "state": st.snapshot() if st else None}
+    return {"conversation": conv, "messages": [public_message(r) for r in rows], "more": more,
+            "state": st.snapshot() if st else None}
 
 
 class ChatIn(BaseModel):

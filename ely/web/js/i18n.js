@@ -66,7 +66,7 @@ const FR = {
   "thread.relaunch": "Mission relancée",
   "thread.model": "Modèle", "thread.question": "Question", "thread.askFoot": "Répondez ci-dessous, Ely reprendra aussitôt.",
   "thread.thinking": "Ely réfléchit", "thread.working": "Ely travaille · {a}", "thread.subagent": "sous-agent {n} · {a}",
-  "thread.stop": "Arrêter", "thread.sec": "{s} s", "thread.min": "{m} min", "thread.minSec": "{m} min {s} s",
+  "thread.earlier": "Afficher les messages précédents", "thread.stop": "Arrêter", "thread.sec": "{s} s", "thread.min": "{m} min", "thread.minSec": "{m} min {s} s",
   // navigateur en direct
   "live.label": "Navigateur", "live.refresh": "Actualiser", "live.empty1": "Le navigateur d'Ely s'affichera ici dès qu'elle l'utilisera.",
   "live.empty2": "Vous pouvez aussi l'ouvrir vous-même pour vous connecter une fois à vos sites (Doctolib, LinkedIn…).",
@@ -293,7 +293,7 @@ const EN = {
   "thread.relaunch": "Mission restarted",
   "thread.model": "Model", "thread.question": "Question", "thread.askFoot": "Reply below and Ely will resume right away.",
   "thread.thinking": "Ely is thinking", "thread.working": "Ely is working · {a}", "thread.subagent": "sub-agent {n} · {a}",
-  "thread.stop": "Stop", "thread.sec": "{s} s", "thread.min": "{m} min", "thread.minSec": "{m} min {s} s",
+  "thread.earlier": "Show earlier messages", "thread.stop": "Stop", "thread.sec": "{s} s", "thread.min": "{m} min", "thread.minSec": "{m} min {s} s",
   "live.label": "Browser", "live.refresh": "Refresh", "live.empty1": "Ely's browser will show up here as soon as she uses it.",
   "live.empty2": "You can also open it yourself to sign in once to your sites (Doctolib, LinkedIn…).",
   "live.takeover": "Take control", "live.takeoverOn": "tap the image to click", "live.takeoverOff": "sign-in, captcha…",

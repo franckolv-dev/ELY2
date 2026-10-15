@@ -312,3 +312,29 @@ async def test_reasoning_effort_follows_each_role(client, user, fake):
         assert r.status_code == 403 and registry.effort("main") == "high"
     finally:
         db.set_setting("effort_main", "medium")
+
+
+async def test_a_long_conversation_is_loaded_page_by_page(client, user):
+    """Une conversation de plusieurs centaines de messages (Telegram) arrive par pages, de la fin vers le début ; un
+    résultat d'outil n'est jamais séparé de l'appel qui l'a produit."""
+    from ely.agent.runner import save_message
+    from ely.db import now
+
+    cid = db.insert("conversations", user_id=user["id"], title="Telegram", created_at=now(), updated_at=now())
+    for i in range(1, 251):
+        save_message(cid, None, {"role": "user", "content": f"message {i}"})
+    save_message(cid, None, {"role": "assistant", "content": "", "tool_calls": [{"id": "c1", "name": "weather", "arguments": {}}]})
+    save_message(cid, None, {"role": "tool", "tool_call_id": "c1", "name": "weather", "content": "Soleil"})
+    for i in range(251, 450):
+        save_message(cid, None, {"role": "user", "content": f"message {i}"})
+    h = await login(client, user["email"], "motdepasse")
+    page = (await client.get(f"/api/conversations/{cid}/messages", headers=h)).json()
+    assert page["more"] and page["messages"][-1]["content"] == "message 449"
+    assert page["messages"][0]["role"] != "tool"  # « Soleil » attend son appel, à la page d'avant
+    seen = page["messages"]
+    while page["more"]:
+        page = (await client.get(f"/api/conversations/{cid}/messages?before={seen[0]['id']}", headers=h)).json()
+        seen = page["messages"] + seen
+    assert [m.get("content") for m in seen if m["role"] == "user"] == [f"message {i}" for i in range(1, 450)]
+    call = next(i for i, m in enumerate(seen) if m.get("tool_calls"))
+    assert seen[call + 1]["content"] == "Soleil"
