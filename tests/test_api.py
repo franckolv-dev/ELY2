@@ -179,7 +179,8 @@ async def test_self_improvement_session_starts_from_settings(client, user, fake)
     """Réglages → Auto-amélioration → « Lancer » : la session démarre vraiment et la conversation est renvoyée."""
     from conftest import wait_idle
 
-    fake.script = lambda model, system, messages, tools: "Rien à améliorer aujourd'hui."
+    fake.script = lambda model, system, messages, tools: (
+        '{"done": true, "missing": ""}' if "contrôleur qualité" in str(messages[-1]["content"]) else "Rien à améliorer aujourd'hui.")
     h = await login(client, user["email"], "motdepasse")
     r = await client.post("/api/admin/selfdev/run", headers=h, json={"goal": "Sois plus rapide sur Doctolib"})
     assert r.status_code == 200, r.text
