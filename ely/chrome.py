@@ -407,10 +407,25 @@ class ChromePage:
                 self.url = info["u"]
                 if info["s"] in ok:
                     if state == "networkidle":
-                        await asyncio.sleep(0.5)
+                        await self._dom_quiet(end)
                     return
             except ChromeError:
                 pass  # page en cours de remplacement
+            await asyncio.sleep(0.15)
+
+    async def _dom_quiet(self, end: float) -> None:
+        # Une application monopage (Gmail, Drive) reste « complete » pendant qu'elle charge
+        # ses résultats : attendre que le contenu cesse de changer, dans la limite du délai.
+        await asyncio.sleep(0.5)
+        last, stable = None, 0
+        while stable < 4 and time.monotonic() < end:
+            try:
+                size = await self.evaluate(
+                    "[document.getElementsByTagName('*').length, document.body ? document.body.innerText.length : 0]")
+            except ChromeError:
+                size = None
+            stable = stable + 1 if size == last else 0
+            last = size
             await asyncio.sleep(0.15)
 
     async def goto(self, url: str, wait_until: str = "load", timeout: float = 30000) -> None:
