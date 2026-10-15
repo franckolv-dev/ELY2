@@ -141,8 +141,8 @@ def _search_sync(c: dict, query: str, limit: int, unread: bool, folder: str) -> 
 def _read_sync(c: dict, uid: str, folder: str) -> dict:
     m = _imap(c)
     try:
-        m.select(folder)
-        typ, d = m.uid("FETCH", uid, "(RFC822)")
+        m.select(folder, readonly=True)  # lire un message ne le marque pas comme lu
+        typ, d = m.uid("FETCH", uid, "(BODY.PEEK[])")
         raw = next((p[1] for p in d if isinstance(p, tuple)), None)
         if not raw:
             raise RuntimeError(f"message {uid} introuvable")

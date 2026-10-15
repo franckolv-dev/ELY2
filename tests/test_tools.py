@@ -239,3 +239,68 @@ async def test_seed_skills_read_email_codes_instead_of_asking():
     assert "ask_user (c'est le seul cas" in content and "SMS ou e-mail → ask_user" not in content
     assert "le lire dans la messagerie" in content and content.endswith("5. suite")
     assert db.one("SELECT rowid FROM skills_fts WHERE skills_fts MATCH 'messagerie' AND rowid = ?", (row["id"],))
+
+
+async def test_an_event_ending_before_it_starts_is_refused(ctx):
+    """Une fin avant le début (inversion, faute de frappe) est refusée, à l'ajout comme à la modification."""
+    r = await execute(ctx, "calendar_add", {"title": "Ostéo", "start": "2031-06-01T10:00", "end": "2031-06-01T09:00"})
+    assert r.is_error and "après le début" in r.content
+    assert not db.one("SELECT id FROM events WHERE user_id = ? AND title = 'Ostéo'", (ctx.user_id,))
+    r = await execute(ctx, "calendar_add", {"title": "Ostéo", "start": "2031-06-01T10:00"})
+    lid = int(r.content.split("(id local-")[1].split(")")[0])
+    r = await execute(ctx, "calendar_update", {"id": f"local-{lid}", "end": "2031-06-01T08:00"})
+    assert r.is_error and db.val("SELECT end FROM events WHERE id = ?", (lid,)) == "2031-06-01T11:00"
+
+
+async def test_a_busy_google_calendar_is_listed_entirely(ctx, monkeypatch):
+    """Un mois chargé tient sur plusieurs pages de Google Agenda : toutes sont lues, pas seulement la première."""
+    from ely.integrations import google, put
+
+    put(ctx.user_id, "google", {"email": "franck@gmail.com", "access_token": "x"})
+    pages = {None: ("p2", 250), "p2": ("p3", 250), "p3": (None, 30)}
+
+    async def api(user_id, method, url, params=None, **kw):
+        token = params.get("pageToken")
+        nxt, n = pages[token]
+        items = [{"id": f"{token}-{i}", "summary": f"RDV {token or 'p1'}-{i}", "start": {"dateTime": "2031-07-01T10:00:00+02:00"},
+                  "end": {"dateTime": "2031-07-01T11:00:00+02:00"}} for i in range(n)]
+        return {"items": items, **({"nextPageToken": nxt} if nxt else {})}
+
+    monkeypatch.setattr(google, "api", api)
+    r = await execute(ctx, "calendar_list", {"start": "2031-07-01", "end": "2031-07-31"})
+    assert r.content.startswith("530 événement(s)") and "RDV p3-29" in r.content, r.content[:200]
+
+
+async def test_reading_an_email_leaves_it_unread(ctx, monkeypatch):
+    """Ely lit un e-mail pour la personne : il reste « non lu » dans sa boîte (IMAP)."""
+    import imaplib
+
+    from ely.integrations import put
+
+    raw = b"From: Paul <paul@exemple.fr>\r\nTo: franck@exemple.fr\r\nSubject: Devis\r\n\r\nVoici le devis.\r\n"
+    seen: set[str] = set()
+
+    class FakeIMAP:
+        def __init__(self, host, port, timeout=None):
+            self.writable = False
+
+        def login(self, user, password):
+            pass
+
+        def select(self, folder, readonly=False):
+            self.writable = not readonly
+            return "OK", [b"1"]
+
+        def uid(self, command, uid, spec):
+            if self.writable and "PEEK" not in spec.upper():  # comme un vrai serveur : lire marque comme lu
+                seen.add(uid)
+            return "OK", [(f"1 (UID {uid} BODY[] {{{len(raw)}}}".encode(), raw), b")"]
+
+        def logout(self):
+            pass
+
+    put(ctx.user_id, "email", {"address": "franck@exemple.fr", "password": "x", "imap_host": "imap.exemple.fr",
+                               "smtp_host": "smtp.exemple.fr"})
+    monkeypatch.setattr(imaplib, "IMAP4_SSL", FakeIMAP)
+    r = await execute(ctx, "email_read", {"id": "7"})
+    assert "Voici le devis." in r.content and not seen

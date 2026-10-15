@@ -203,6 +203,18 @@ async def test_tests_run_on_edited_code_not_stale_bytecode(dev_ctx, fake_repo):
     assert ok, out
 
 
+async def test_code_edits_are_checked_with_elys_own_python(dev_ctx, fake_repo, monkeypatch, tmp_path):
+    """La vérification de syntaxe passe par le Python d'Ely, même sans « python3 » dans le PATH (service, venv)."""
+    import shutil
+
+    await execute(dev_ctx, "ely_code", {"action": "read", "path": "app.py"})
+    (tmp_path / "bin").mkdir()
+    (tmp_path / "bin" / "git").symlink_to(shutil.which("git"))  # git seulement, pas de python3
+    monkeypatch.setenv("PATH", str(tmp_path / "bin"))
+    r = await execute(dev_ctx, "ely_edit", {"action": "write", "path": "casse.py", "content": "def f(:\n"})
+    assert r.is_error and "SYNTAXE" in r.content, r.content
+
+
 async def test_syntax_error_is_reported(dev_ctx, fake_repo):
     r = await execute(dev_ctx, "ely_edit", {"action": "write", "path": "casse.py", "content": "def f(:\n"})
     assert r.is_error and "SYNTAXE" in r.content
