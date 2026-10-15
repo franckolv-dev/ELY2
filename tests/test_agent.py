@@ -113,13 +113,40 @@ async def test_user_only_blocker_is_accepted_without_relaunch(fake, user):
 
 
 async def test_no_endless_loop_without_progress(fake, user):
-    fake.script = script(lambda m, t: "Impossible.", verdicts=[{"done": False, "missing": "rien n'est fait"}] * 20)
+    """Relances sans progrès : la réponse est rendue, mais la tâche n'est pas présentée comme réussie (statut, réserve
+    dite à la personne) et n'apprend aucune procédure."""
+    fake.script = script(lambda m, t: "Impossible.", verdicts=[{"done": False, "missing": "aucune table n'est réservée"}] * 20)
     cid = new_conversation(user)
     res = await runner.submit(user, cid, "Réserve-moi une table au restaurant ce soir")
     await wait_idle(cid)
     run = db.one("SELECT * FROM runs WHERE id = ?", (res["run_id"],))
-    assert run["status"] == "done"
+    assert run["status"] == "unverified"
     assert json.loads(run["state"])["no_progress"] == 3
+    last = json.loads(db.val("SELECT data FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT 1", (cid,)))
+    assert last["kind"] == "note" and "pas pu confirmer" in last["content"] and "aucune table n'est réservée" in last["content"]
+
+
+async def test_a_verdict_written_as_text_is_still_a_refusal(fake, user):
+    """« "done": "false" » écrit en texte par le contrôleur est un refus, pas une validation ; un contrôleur muet laisse
+    la réponse arriver, sans confirmer la tâche."""
+    def agent(messages, tools):
+        if not tool_results(messages) and not any("Contrôle automatique" in str(m["content"]) for m in messages if m["role"] == "user"):
+            return "Je vais l'ajouter."
+        if not tool_results(messages):
+            return call("contacts_save", name="Lucie Martin", phone="0611223344")
+        return "Lucie Martin est dans vos contacts."
+
+    fake.script = script(agent, verdicts=[{"done": "false", "missing": "le contact n'est pas enregistré"}, {"done": "true"}])
+    cid = new_conversation(user)
+    res = await runner.submit(user, cid, "Ajoute Lucie Martin 0611223344 à mes contacts")
+    await wait_idle(cid)
+    assert db.one("SELECT * FROM contacts WHERE user_id = ? AND name = 'Lucie Martin'", (user["id"],))
+    assert db.val("SELECT status FROM runs WHERE id = ?", (res["run_id"],)) == "done"
+
+    fake.script = script(lambda m, t: "Voici le résumé demandé.", verdicts=[{"verdict": "ok"}] * 4)
+    res = await runner.submit(user, cid, "Résume-moi les nouvelles de la semaine")
+    await wait_idle(cid)
+    assert db.val("SELECT status FROM runs WHERE id = ?", (res["run_id"],)) == "unverified"
 
 
 async def test_ask_user_waits_for_answer(fake, user):

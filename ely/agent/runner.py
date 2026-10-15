@@ -19,7 +19,8 @@ from ..memory.store import index_message
 
 log = logging.getLogger("ely.runner")
 # statut final d'une tâche planifiée (outil schedule, action list)
-FINAL_STATUS = {"done": "terminée", "error": "en échec", "cancelled": "arrêtée", "stopped": "interrompue (limite d'étapes)"}
+FINAL_STATUS = {"done": "terminée", "unverified": "terminée sans confirmation", "error": "en échec", "cancelled": "arrêtée",
+                "stopped": "interrompue (limite d'étapes)"}
 
 
 @dataclass

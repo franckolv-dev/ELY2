@@ -84,6 +84,36 @@ async def test_draft_rejected_by_controller_never_reaches_telegram(fake, user, m
     assert texts == ["Voici les nouveautés IA du jour : trois modèles publiés."], texts
 
 
+async def test_an_unconfirmed_answer_reaches_telegram_with_its_caveat(fake, user, monkeypatch):
+    """Le contrôleur n'a jamais confirmé la tâche : la réponse part quand même sur Telegram, suivie de la réserve,
+    dans cet ordre et en un seul message."""
+    import json
+
+    sent: list[tuple] = []
+
+    async def fake_send(chat_id, text):
+        sent.append((chat_id, text))
+
+    def script(model, system, messages, tools):
+        if "contrôleur qualité" in str(messages[-1]["content"]):
+            return json.dumps({"done": False, "missing": "aucun billet n'est réservé"})
+        return "Je n'ai trouvé aucun train direct ce soir."
+
+    monkeypatch.setattr(telegram, "telegram_send", fake_send)
+    put(user["id"], "telegram", {"chat_id": 557})
+    runner.listeners.append(telegram.on_event)
+    try:
+        fake.script = script
+        await telegram.handle({"update_id": 5, "message": {"chat": {"id": 557}, "from": {}, "text": "Réserve un train pour Paris ce soir"}})
+        await wait_idle(telegram.conversation_for(user))
+        await asyncio.sleep(0.2)
+    finally:
+        runner.listeners.remove(telegram.on_event)
+    texts = [text for chat, text in sent if chat == 557]
+    assert len(texts) == 1 and texts[0].startswith("Je n'ai trouvé aucun train direct ce soir."), texts
+    assert "pas pu confirmer" in texts[0] and "aucun billet n'est réservé" in texts[0]
+
+
 WEBHOOK_CONFLICT = {"ok": False, "error_code": 409,
                     "description": "Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first"}
 

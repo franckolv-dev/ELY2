@@ -125,10 +125,14 @@ async def handle(update: dict) -> None:
 
 
 def final_answer(run_id: int | None) -> str:
-    """Dernière réponse de la tâche, si elle se termine par une réponse (pas par un appel d'outil ni une note)."""
-    row = db.one("SELECT data FROM messages WHERE run_id = ? AND role = 'assistant' ORDER BY id DESC LIMIT 1", (run_id,))
-    m = json.loads(row["data"]) if row else {}
-    return "" if m.get("tool_calls") or m.get("kind") else (m.get("content") or "")
+    """Dernière réponse de la tâche, si elle se termine par une réponse (pas par un appel d'outil ni une note), suivie
+    de la réserve du contrôleur quand il n'a pas pu la confirmer."""
+    rows = db.all("SELECT data FROM messages WHERE run_id = ? AND role = 'assistant' ORDER BY id DESC LIMIT 2", (run_id,))
+    found = [json.loads(r["data"]) for r in rows]
+    caveat = found.pop(0)["content"] if found and found[0].get("unverified") else ""
+    m = found[0] if found else {}
+    answer = "" if m.get("tool_calls") or m.get("kind") else (m.get("content") or "")
+    return f"{answer}\n\n{caveat}" if answer and caveat else answer or caveat
 
 
 async def on_event(user_id: int, ev: dict) -> None:
@@ -141,12 +145,12 @@ async def on_event(user_id: int, ev: dict) -> None:
     if not chat_id:
         return
     t = ev["type"]
-    if t == "run_end" and ev.get("status") in ("done", "stopped"):
+    if t == "run_end" and ev.get("status") in ("done", "unverified", "stopped"):
         if answer := final_answer(ev.get("run_id")):
             await telegram_send(chat_id, answer)
     elif t == "message":
         m = ev["message"]
-        if m.get("role") == "assistant" and m.get("kind") == "note" and m.get("content"):  # arrêt, erreur
+        if m.get("role") == "assistant" and m.get("kind") == "note" and m.get("content") and not m.get("unverified"):  # arrêt, erreur
             await telegram_send(chat_id, m["content"])
         if m.get("role") == "tool":
             for f in (m.get("files") or [])[:5]:

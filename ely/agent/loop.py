@@ -122,7 +122,7 @@ def action_log(history: list[dict], limit_chars: int = 12000) -> str:
     return text[-limit_chars:] if len(text) > limit_chars else (text or "(aucune action)")
 
 
-async def verify(objective: str, history: list[dict], answer: str, user_id: int, today: str = "") -> tuple[bool, str]:
+async def verify(objective: str, history: list[dict], answer: str, user_id: int, today: str = "") -> tuple[bool | None, str]:
     when = f"\nNous sommes {today} : juge les dates par rapport à ce jour, pas d'après tes connaissances.\n" if today else ""
     prompt = f"""Tu es le contrôleur qualité d'un agent autonome. Détermine si la DEMANDE de l'utilisateur est entièrement satisfaite.
 {when}
@@ -152,10 +152,15 @@ Réponds uniquement en JSON : {{"done": true ou false, "missing": "ce qui manque
         try:
             raw = await registry.complete(prompt, role="fast", max_tokens=3000, user_id=user_id, purpose="verify")
             v = parse_json_loose(raw)
-            return bool(v.get("done", True)), str(v.get("missing", ""))[:600]
+            done = v.get("done")
+            if isinstance(done, str):  # « "false" » écrit en texte reste un refus
+                done = {"true": True, "false": False}.get(done.strip().lower())
+            if not isinstance(done, bool):
+                raise ValueError(f"verdict illisible : {raw[:200]}")
+            return done, str(v.get("missing", ""))[:600]
         except Exception as e:  # réponse tronquée ou illisible : un nouvel essai, puis on ne bloque jamais l'utilisateur
             log.info("vérification impossible (essai %d) : %s", attempt + 1, e)
-    return True, ""
+    return None, ""  # pas de verdict : la réponse est rendue, la tâche reste « non confirmée »
 
 
 def run_messages(run_id: int) -> list[dict]:
@@ -477,11 +482,14 @@ class AgentLoop:
                 continue
 
             answer = msg["content"]
+            final = "done"
             if not TRIVIAL.match(objective.strip()):
                 await self.emit("status", {"status": "running", "detail": "Vérification de l'objectif…"})
                 done, missing = await verify(objective, run_messages(self.run_id), answer, user["id"], today_text(user))
                 await self.emit("verify", {"done": done, "missing": missing})
-                if not done:
+                if done is None:
+                    final = "unverified"
+                elif not done:
                     rejections += 1
                     no_progress = no_progress + 1 if successes == 0 else 1
                     successes = 0
@@ -495,7 +503,13 @@ class AgentLoop:
                         history.append(note)
                         await self.publish_message(self.persist(note))
                         continue
-            db.run("UPDATE runs SET status = 'done', updated_at = ? WHERE id = ?", (now(), self.run_id))
+                    # relances épuisées : la réponse est rendue, sans la présenter comme une réussite
+                    final = "unverified"
+                    note = {"role": "assistant", "kind": "note", "unverified": True, "content": tv(
+                        user, f"⚠️ Je n'ai pas pu confirmer que votre demande est entièrement satisfaite. Reste à faire : {missing}",
+                        f"⚠️ Je n'ai pas pu confirmer que ta demande est entièrement satisfaite. Reste à faire : {missing}")}
+                    await self.publish_message(self.persist(note))
+            db.run("UPDATE runs SET status = ?, updated_at = ? WHERE id = ?", (final, now(), self.run_id))
             break
 
         asyncio.create_task(self.after_run())
@@ -636,7 +650,8 @@ class AgentLoop:
         if self.state.get("channel") == "schedule":  # tâche planifiée : on prévient l'utilisateur du résultat
             from ..notify import notify
 
-            last = db.one("SELECT data FROM messages WHERE run_id = ? AND role = 'assistant' ORDER BY id DESC LIMIT 1", (self.run_id,))
+            last = db.one("SELECT data FROM messages WHERE run_id = ? AND role = 'assistant' AND json_extract(data, '$.unverified') "
+                          "IS NULL ORDER BY id DESC LIMIT 1", (self.run_id,))
             text = message_text(json.loads(last["data"])) if last else "Tâche terminée."
             await notify(self.user["id"], "Ely · tâche planifiée", text, url=f"/?c={self.conv_id}")  # coupé pour le push seulement
         try:
