@@ -122,6 +122,50 @@ async def test_code_self_modification_pipeline(dev_ctx, fake_repo: Path, monkeyp
     assert "https://github.com/example/ely/pull/1" in r.content
 
 
+async def test_self_improvement_tests_never_see_elys_secrets(dev_ctx, fake_repo, monkeypatch):
+    """Les tests d'une modification exécutent du code écrit par un modèle : ils ne reçoivent ni le jeton GitHub
+    d'Ely, ni celui de Telegram, ni aucune clé ; l'agent SSH (git) reste joignable."""
+    monkeypatch.setenv("ELY_GITHUB_TOKEN", "ghp-jeton-d-ely")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "secret-google")
+    monkeypatch.setenv("SSH_AUTH_SOCK", "/tmp/agent.sock")
+    await execute(dev_ctx, "ely_code", {"action": "read", "path": "app.py"})
+    probe = ("import os\n\n\ndef test_environnement():\n"
+             "    leaked = [k for k in ('ELY_GITHUB_TOKEN', 'TELEGRAM_BOT_TOKEN', 'GOOGLE_CLIENT_SECRET') if os.environ.get(k)]\n"
+             "    assert not leaked, leaked\n"
+             "    assert os.environ['SSH_AUTH_SOCK'] == '/tmp/agent.sock'\n")
+    r = await execute(dev_ctx, "ely_edit", {"action": "write", "path": "tests/test_env.py", "content": probe})
+    assert not r.is_error, r.content
+    ok, out = await pipeline.run_tests("environnement")
+    assert ok, out
+
+
+def test_the_suite_ignores_the_machines_env_file(tmp_path):
+    """La suite de tests donne le même verdict sur toute machine : le .env de la personne (jeton de Claude, modèles
+    choisis, clés) n'atteint pas les tests, même rechargé pendant la suite (« Actualiser les modèles »)."""
+    import shutil
+    import sys
+
+    from ely.config import ROOT
+
+    shutil.copytree(ROOT / "ely", tmp_path / "ely", ignore=shutil.ignore_patterns("__pycache__"))
+    (tmp_path / "tests").mkdir()
+    shutil.copy(ROOT / "tests" / "conftest.py", tmp_path / "tests" / "conftest.py")
+    (tmp_path / "pyproject.toml").write_text('[tool.pytest.ini_options]\nasyncio_mode = "auto"\n')
+    (tmp_path / ".env").write_text("CLAUDE_CODE_OAUTH_TOKEN=jeton-de-la-machine\nELY_MODEL_MAIN=openai:gpt-perso\n"
+                                   "OPENAI_API_KEY=sk-perso\n")
+    (tmp_path / "tests" / "test_sonde.py").write_text(
+        "import os\nfrom pathlib import Path\n\nfrom ely import config\n\n\ndef test_sonde():\n"
+        "    assert config.ROOT == Path.cwd()\n"
+        "    for _ in range(2):\n"
+        "        assert not os.environ.get('CLAUDE_CODE_OAUTH_TOKEN') and not os.environ.get('OPENAI_API_KEY')\n"
+        "        assert config.settings.model_main == 'auto' and not config.settings.claude_code_oauth_token\n"
+        "        config.reload_env()\n")
+    r = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests/test_sonde.py"],
+                       cwd=tmp_path, capture_output=True, text=True, timeout=120)
+    assert r.returncode == 0, r.stdout[-3000:] + r.stderr[-2000:]
+
+
 async def test_tests_run_on_edited_code_not_stale_bytecode(dev_ctx, fake_repo):
     await execute(dev_ctx, "ely_code", {"action": "read", "path": "app.py"})
     ok, _ = await pipeline.run_tests()

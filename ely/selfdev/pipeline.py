@@ -93,12 +93,13 @@ async def diff() -> str:
 
 
 def _test_env(data: str, code: Path) -> dict:
+    """Environnement des tests d'une modification : le code testé est écrit par un modèle, il ne reçoit ni les clés
+    d'Ely ni ses jetons (modèles, GitHub, Telegram, Google…) ; les tests n'appellent jamais de vrais services."""
+    from ..tools.files import KEEP, SECRET_NAME
+
+    env = {k: v for k, v in os.environ.items() if not SECRET_NAME.search(k) or k in KEEP}
     # Pas de .pyc : une retouche de même taille dans la même seconde serait testée sur l'ancien bytecode
-    env = {**os.environ, "ELY_DATA_DIR": data, "PYTHONPATH": str(code), "PYTHONDONTWRITEBYTECODE": "1"}
-    for k in list(env):  # les tests n'appellent jamais de vrais modèles
-        if k.endswith("_API_KEY") or k == "CLAUDE_CODE_OAUTH_TOKEN":
-            env.pop(k)
-    return env
+    return {**env, "ELY_DATA_DIR": data, "PYTHONPATH": str(code), "PYTHONDONTWRITEBYTECODE": "1"}
 
 
 async def collect(code: Path) -> set[str]:
