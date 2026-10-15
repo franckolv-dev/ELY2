@@ -228,12 +228,34 @@ async def execute(ctx: ToolContext, name: str, args: dict) -> ToolResult:
     if t.untrusted:
         res.content = fence(name, res.content)
     try:
+        from ..vault import passwords
+
+        hidden = passwords(ctx.user_id)
         db.insert("tool_log", run_id=ctx.run_id, user_id=ctx.user_id, name=name, ok=int(ok),
-                  ms=int((time.monotonic() - started) * 1000), error=err[:500],
-                  args=json.dumps(clean, ensure_ascii=False, default=str)[:1000], created_at=now())
+                  ms=int((time.monotonic() - started) * 1000), error=hide(err, hidden)[:500],
+                  args=json.dumps(redact(clean, hidden), ensure_ascii=False, default=str)[:1000], created_at=now())
     except Exception:
         pass
     return res
+
+
+SECRET_ARGS = {"password", "passwd", "secret", "token", "api_key", "apikey", "card_number", "cvv", "cvc"}
+
+
+def redact(args: Any, hidden: set[str] | frozenset = frozenset()) -> Any:
+    """Arguments d'un appel tels qu'on peut les garder dans un journal : champs secrets masqués, et partout les
+    mots de passe du coffre de la personne (`hidden`), tapés dans une page par exemple."""
+    if isinstance(args, list):
+        return [redact(v, hidden) for v in args]
+    if isinstance(args, dict):
+        return {k: "••••" if k.lower() in SECRET_ARGS and v else redact(v, hidden) for k, v in args.items()}
+    return hide(args, hidden) if isinstance(args, str) else args
+
+
+def hide(text: str, hidden: set[str] | frozenset) -> str:
+    for secret in hidden:
+        text = text.replace(secret, "••••")
+    return text
 
 
 def load_builtin_tools() -> None:

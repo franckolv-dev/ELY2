@@ -103,7 +103,7 @@ const FR = {
   "profil.voiceRecorded": "Voix enregistrées (sur le Mac)", "profil.voiceBrowser": "Voix du navigateur",
   "profil.voiceLabel": "Voix", "profil.notif": "Notifications", "profil.notifHint": "Soyez prévenu sur votre téléphone quand Ely a terminé une tâche ou a besoin de vous.",
   "profil.enableDevice": "Activer sur cet appareil", "profil.test": "Tester", "profil.testSent": "Notification envoyée",
-  "profil.testNone": "Aucun appareil abonné", "profil.password": "Mot de passe", "profil.passwordHint": "Au moins 6 caractères.",
+  "profil.testNone": "Aucun appareil abonné", "profil.password": "Mot de passe", "profil.passwordHint": "Au moins 8 caractères.",
   "profil.currentPw": "Mot de passe actuel", "profil.newPw": "Nouveau mot de passe", "profil.change": "Changer",
   "profil.pwChanged": "Mot de passe modifié", "profil.session": "Session",
   // mémoire
@@ -325,7 +325,7 @@ const EN = {
   "profil.voiceRecorded": "Recorded voices (on the Mac)", "profil.voiceBrowser": "Browser voices",
   "profil.voiceLabel": "Voice", "profil.notif": "Notifications", "profil.notifHint": "Get notified on your phone when Ely finishes a task or needs you.",
   "profil.enableDevice": "Turn on for this device", "profil.test": "Test", "profil.testSent": "Notification sent",
-  "profil.testNone": "No subscribed device", "profil.password": "Password", "profil.passwordHint": "At least 6 characters.",
+  "profil.testNone": "No subscribed device", "profil.password": "Password", "profil.passwordHint": "At least 8 characters.",
   "profil.currentPw": "Current password", "profil.newPw": "New password", "profil.change": "Change",
   "profil.pwChanged": "Password changed", "profil.session": "Session",
   "mem.knows": "What Ely knows about you", "mem.knowsHint": "Always on her mind.",
@@ -458,6 +458,10 @@ const SERVER_EN = {
   "Inscription sur invitation : demandez un code à l'administrateur": "Registration by invitation: ask the administrator for a code",
   "Vous ne pouvez pas vous retirer vous-même le rôle administrateur": "You can't remove your own administrator role",
   "Impossible de supprimer votre propre compte": "You can't delete your own account",
+  "Mot de passe trop court (8 caractères minimum)": "Password too short (at least 8 characters)",
+  "Fichier trop volumineux : 200 Mo au plus": "File too large: 200 MB at most",
+  "Fichier trop volumineux : 25 Mo au plus": "File too large: 25 MB at most",
+  "Plus assez de place sur le disque du serveur d'Ely": "Not enough disk space left on Ely's server",
 };
 
 export const LANGS = [["fr", "Français"], ["en", "English"]];

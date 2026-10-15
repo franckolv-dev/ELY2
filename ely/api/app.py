@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.datastructures import MutableHeaders
 
-from .. import CODE_VERSION, __version__, auth
+from .. import CODE_VERSION, __version__, auth, vault
 from ..agent.runner import runner
 from .. import chrome
 from ..browser import manager
@@ -99,6 +99,8 @@ async def lifespan(app: FastAPI):
     load_builtin_tools()
     check_rollback()
     seed_skills()
+    if sealed := vault.migrate():
+        log.info("%d secret(s) en clair chiffré(s) dans la base", sealed)
     await asyncio.gather(registry.refresh(), mcp.start_all())
     resumed = await runner.resume_all()
     log.info("Ely %s (%s) prête : %d outils, fournisseurs %s, %d tâche(s) reprise(s)", __version__, CODE_VERSION, len(TOOLS),

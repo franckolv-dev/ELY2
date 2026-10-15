@@ -30,10 +30,10 @@ async def test_accounts_and_invites(client, user):
     admin = await login(client, user["email"], "motdepasse")
     r = await client.post("/api/auth/login", json={"email": user["email"], "password": "faux"})
     assert r.status_code == 401
-    r = await client.post("/api/auth/register", json={"email": "intrus@x.fr", "password": "123456"})
+    r = await client.post("/api/auth/register", json={"email": "intrus@x.fr", "password": "12345678"})
     assert r.status_code == 403  # inscription fermée sans invitation
     code = (await client.post("/api/admin/invites", headers=admin)).json()["code"]
-    r = await client.post("/api/auth/register", json={"email": "marie@x.fr", "name": "Marie", "password": "123456", "invite": code})
+    r = await client.post("/api/auth/register", json={"email": "marie@x.fr", "name": "Marie", "password": "12345678", "invite": code})
     assert r.status_code == 200 and r.json()["user"]["role"] == "user"
     marie = {"Authorization": f"Bearer {r.json()['token']}"}
     assert (await client.get("/api/admin/users", headers=marie)).status_code == 403
@@ -220,11 +220,11 @@ async def test_password_guessing_is_slowed_down_without_locking_franck_out(user,
         await asyncio.sleep(0.05)
         assert len(alerts) == 1 and alerts[0][0] == user["id"] and "198.51.100.7" in alerts[0][1]
 
-        others = [auth.create_user(f"cible{i}{time.time_ns()}@x.fr", "Cible", "123456") for i in range(4)]
+        others = [auth.create_user(f"cible{i}{time.time_ns()}@x.fr", "Cible", "12345678") for i in range(4)]
         for target in others:
             for _ in range(4):
                 await robot.post("/api/auth/login", json={"email": target["email"], "password": "devine"})
-        r = await robot.post("/api/auth/login", json={"email": others[0]["email"], "password": "123456"})
+        r = await robot.post("/api/auth/login", json={"email": others[0]["email"], "password": "12345678"})
         assert r.status_code == 429  # 20 échecs depuis cette adresse, tous comptes confondus
 
         for k in chat._failures:  # le délai passé, le bon mot de passe fonctionne de nouveau

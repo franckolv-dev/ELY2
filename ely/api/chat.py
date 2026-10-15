@@ -8,13 +8,15 @@ import json
 import logging
 import mimetypes
 import re
+import shutil
 import threading
 import time
 from pathlib import Path
 
 import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
+from starlette.datastructures import UploadFile as StarletteUpload
 from pydantic import BaseModel
 
 from .. import CODE_VERSION, auth, chrome
@@ -437,15 +439,44 @@ def list_files(user=Depends(auth.current_user)):
     return out[:1000]
 
 
+UPLOAD_MAX = 200 << 20  # octets par envoi
+DISK_RESERVE = 2 << 30  # place gardée libre sur le disque : base de données, sauvegardes, système
+
+
+async def _bounded_form(request: Request, limit: int, where: Path):
+    """Formulaire d'envoi, taille vérifiée avant de lire le corps : un envoi démesuré ne remplit ni le disque ni le
+    dossier temporaire (uvicorn ne lit jamais au-delà de la longueur annoncée)."""
+    size = int(request.headers.get("content-length") or 0)
+    if not size:
+        raise HTTPException(411, "Taille de l'envoi inconnue")
+    if size > limit:
+        raise HTTPException(413, f"Fichier trop volumineux : {limit >> 20} Mo au plus")
+    if shutil.disk_usage(where).free - size < DISK_RESERVE:
+        raise HTTPException(507, "Plus assez de place sur le disque du serveur d'Ely")
+    return await request.form(max_files=1)
+
+
 @router.post("/api/files/upload")
-async def upload(file: UploadFile = File(...), user=Depends(auth.current_user)):
+async def upload(request: Request, user=Depends(auth.current_user)):
     from ..tools.files import received_path
 
-    dest = received_path(_ws(user), file.filename or "fichier")
-    with open(dest, "wb") as f:
-        while chunk := await file.read(1 << 20):
-            f.write(chunk)
-    return {"path": str(dest.relative_to(_ws(user))), "size": dest.stat().st_size}
+    ws = _ws(user)
+    form = await _bounded_form(request, UPLOAD_MAX, ws)
+    try:
+        file = form.get("file")
+        if not isinstance(file, StarletteUpload):
+            raise HTTPException(400, "Aucun fichier envoyé")
+        dest = received_path(ws, file.filename or "fichier")
+        try:
+            with open(dest, "wb") as f:
+                while chunk := await file.read(1 << 20):
+                    f.write(chunk)
+        except BaseException:
+            dest.unlink(missing_ok=True)
+            raise
+    finally:
+        await form.close()
+    return {"path": str(dest.relative_to(ws)), "size": dest.stat().st_size}
 
 
 @router.delete("/api/files")
@@ -515,10 +546,15 @@ async def tts(body: SpeakRequest, user=Depends(auth.current_user)):
 
 
 @router.post("/api/transcribe")
-async def transcribe(file: UploadFile = File(...), user=Depends(auth.current_user)):
+async def transcribe(request: Request, user=Depends(auth.current_user)):
     import os
 
+    form = await _bounded_form(request, 25 << 20, _ws(user))  # limite des services de transcription
+    file = form.get("file")
+    if not isinstance(file, StarletteUpload):
+        raise HTTPException(400, "Aucun fichier envoyé")
     audio = await file.read()
+    await form.close()
     for url, key, model in (("https://api.groq.com/openai/v1/audio/transcriptions", os.environ.get("GROQ_API_KEY"), "whisper-large-v3-turbo"),
                             ("https://api.openai.com/v1/audio/transcriptions", os.environ.get("OPENAI_API_KEY"), "gpt-4o-mini-transcribe")):
         if not key:

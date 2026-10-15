@@ -24,7 +24,7 @@ from ..config import settings
 from ..db import db, now
 from ..llm import LLMError, claude_agent, parse_json_loose, registry
 from ..llm.base import LLMResponse, estimate_tokens, message_text
-from ..tools import TOOLS, ToolContext, execute, tools_for
+from ..tools import SECRET_ARGS, TOOLS, ToolContext, execute, tools_for
 from .prompts import STABLE, dynamic_block, today_text
 from .runner import ConvState, Runner, public_message, save_message
 
@@ -658,7 +658,7 @@ def _preview_args(args: dict) -> str:
     parts = []
     for k, v in args.items():
         s = v if isinstance(v, str) else json.dumps(v, ensure_ascii=False)
-        if k in ("password",):
+        if k.lower() in SECRET_ARGS:
             s = "••••"
         parts.append(f"{k}={s[:80]}")
     return ", ".join(parts)[:240]

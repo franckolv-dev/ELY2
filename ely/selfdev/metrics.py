@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 
 from ..db import db
 from ..llm.registry import price_of
+from ..tools import hide, redact
+from ..vault import passwords
 
 NEGATIVE = ("ce n'est pas", "c'est pas", "tu t'es trompé", "erreur", "ça ne marche pas", "ca marche pas", "non,", "faux",
             "pas ce que", "recommence", "n'importe quoi", "toujours pas", "tu n'as pas", "t'as pas")
@@ -87,7 +90,6 @@ def report(days: float = 7) -> str:
 
 
 # ---------------------------------------------------------------------- journal des tâches (diagnostic d'un échec précis)
-SECRET_ARGS = {"password", "passwd", "secret", "token", "card_number", "cvv", "cvc"}
 
 
 def _fold(text: str) -> str:
@@ -126,9 +128,8 @@ def journal_list(query: str = "", days: float = 30, limit: int = 30) -> str:
     return head + "\n" + ("\n".join(out) if out else "(aucune)") + "\nDéroulé complet : action=read run_id=…"
 
 
-def _args(args: dict) -> str:
-    shown = {k: ("••••" if k.lower() in SECRET_ARGS else v) for k, v in (args or {}).items()}
-    return json.dumps(shown, ensure_ascii=False)[:600]
+def _args(args: dict, hidden: set[str]) -> str:
+    return json.dumps(redact(args or {}, hidden), ensure_ascii=False)[:600]
 
 
 def journal_read(run_id: int, offset: int = 0, budget: int = 15000) -> str:
@@ -138,12 +139,13 @@ def journal_read(run_id: int, offset: int = 0, budget: int = 15000) -> str:
     if not r:
         return f"Tâche {run_id} introuvable (action=list pour les numéros)."
     state = json.loads(r["state"] or "{}")
+    hidden = passwords(r["user_id"])  # mots de passe du coffre : jamais recopiés, où qu'ils apparaissent
     entries = []
     for row in db.all("SELECT data, created_at FROM messages WHERE run_id = ? ORDER BY id", (run_id,)):
         m = json.loads(row["data"])
         at = time.strftime("%H:%M:%S", time.localtime(row["created_at"]))
-        text = m.get("content") if isinstance(m.get("content"), str) else " ".join(
-            p.get("text", "") for p in m.get("content") or [] if isinstance(p, dict))
+        text = hide(m.get("content") if isinstance(m.get("content"), str) else " ".join(
+            p.get("text", "") for p in m.get("content") or [] if isinstance(p, dict)), hidden)
         if m["role"] == "user":
             who = {"control": "Contrôle", "relaunch": "Mission relancée", "scheduled": "Tâche planifiée"}.get(m.get("kind"), "Utilisateur")
             entries.append(f"{at} {who} : {text.strip()[:3000]}")
@@ -152,9 +154,11 @@ def journal_read(run_id: int, offset: int = 0, budget: int = 15000) -> str:
             if text.strip():
                 entries.append(f"{at} {label} : {text.strip()[:3000]}")
             for tc in m.get("tool_calls") or []:
-                entries.append(f"{at} → {tc['name']}({_args(tc.get('arguments'))})")
+                entries.append(f"{at} → {tc['name']}({_args(tc.get('arguments'), hidden)})")
         elif m["role"] == "tool":
-            body = (m.get("content") or "").strip()
+            body = hide(m.get("content") or "", hidden).strip()
+            if m.get("name") == "credentials":
+                body = re.sub(r"(mot de passe : ).*?(?= — |\n|$)", r"\1••••", body)
             mark = "✗ ÉCHEC" if m.get("is_error") else "✓"
             extra = " [capture d'écran jointe]" if m.get("images") else ""
             entries.append(f"{at}   {mark} {m.get('name')} : {body[:3000 if m.get('is_error') else 1500]}{extra}")

@@ -11,8 +11,8 @@ from fastapi import Depends, HTTPException, Request
 
 from .db import db, now
 
-SESSION_DAYS = 365
-MIN_PASSWORD = 6
+SESSION_DAYS = 90  # sans visite pendant 90 jours, la session expire
+MIN_PASSWORD = 8  # nouveaux mots de passe ; un mot de passe plus court déjà choisi reste valable
 # comparé quand l'e-mail est inconnu : la réponse prend le même temps, elle ne dit pas qui a un compte
 DUMMY_HASH = "scrypt$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 

@@ -77,7 +77,7 @@ function Login({ setup, onLogged, dark, onTheme, lang, onLang }) {
           onInput=${(e) => setF({ ...f, name: e.target.value })} autocomplete="given-name" /></label>` : null}
         <label class="field">${t("login.email")}<input class="input" type="email" required value=${f.email}
           onInput=${(e) => setF({ ...f, email: e.target.value })} autocomplete="email" /></label>
-        <label class="field">${t("login.password")}<input class="input" type="password" required minlength="6" value=${f.password}
+        <label class="field">${t("login.password")}<input class="input" type="password" required minlength=${mode === "register" ? 8 : null} value=${f.password}
           onInput=${(e) => setF({ ...f, password: e.target.value })} autocomplete=${mode === "login" ? "current-password" : "new-password"} /></label>
         ${mode === "register" && !first && !setup?.open_registration ? html`<label class="field">${t("login.invite")}<input class="input" required
           value=${f.invite} onInput=${(e) => setF({ ...f, invite: e.target.value })} /></label>` : null}

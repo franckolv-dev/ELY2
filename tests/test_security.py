@@ -160,13 +160,13 @@ async def test_first_account_is_created_on_elys_machine_only(tmp_path, monkeypat
 async def test_an_invitation_creates_one_account_and_expires(client, user):
     h = await login(client, user)
     code = (await client.post("/api/admin/invites", headers=h)).json()["code"]
-    first = {"email": f"a{now()}@x.fr", "password": "123456", "invite": code}
+    first = {"email": f"a{now()}@x.fr", "password": "12345678", "invite": code}
     assert (await client.post("/api/auth/register", json=first)).status_code == 200
-    second = {"email": f"b{now()}@x.fr", "password": "123456", "invite": code}
+    second = {"email": f"b{now()}@x.fr", "password": "12345678", "invite": code}
     assert (await client.post("/api/auth/register", json=second)).status_code == 403
     old = (await client.post("/api/admin/invites", headers=h)).json()["code"]
     db.run("UPDATE invites SET created_at = ? WHERE code = ?", (now() - 8 * 86400, old))
-    third = {"email": f"c{now()}@x.fr", "password": "123456", "invite": old}
+    third = {"email": f"c{now()}@x.fr", "password": "12345678", "invite": old}
     assert (await client.post("/api/auth/register", json=third)).status_code == 403
 
 
@@ -215,6 +215,25 @@ async def test_a_session_is_never_taken_from_the_address(client, user):
     token = auth.create_session(user["id"])
     assert (await client.get(f"/api/me?token={token}")).status_code == 401
     assert (await client.get("/api/me", headers={"Authorization": f"Bearer {token}"})).status_code == 200
+
+
+async def test_new_passwords_are_long_enough_and_idle_sessions_expire(client, user, member):
+    """Un nouveau mot de passe compte au moins 8 caractères ; celui, plus court, choisi avant reste valable. Une
+    session inutilisée depuis 90 jours est fermée ; utilisée régulièrement, elle reste ouverte."""
+    h = await login(client, user)
+    code = (await client.post("/api/admin/invites", headers=h)).json()["code"]
+    r = await client.post("/api/auth/register", json={"email": f"court{now()}@x.fr", "password": "7carac.", "invite": code})
+    assert r.status_code == 400 and "8 caractères" in r.json()["detail"]
+    r = await client.patch("/api/me", headers=h, json={"password": "7carac.", "current_password": "motdepasse"})
+    assert r.status_code == 400
+    db.run("UPDATE users SET password_hash = ? WHERE id = ?", (auth.hash_password("abc123"), member["id"]))
+    r = await client.post("/api/auth/login", json={"email": member["email"], "password": "abc123"})
+    assert r.status_code == 200
+    idle, active = auth.create_session(member["id"]), auth.create_session(member["id"])
+    db.run("UPDATE sessions SET last_seen = ? WHERE token = ?", (now() - 91 * 86400, idle))
+    db.run("UPDATE sessions SET last_seen = ? WHERE token = ?", (now() - 60 * 86400, active))
+    assert (await client.get("/api/me", headers={"Authorization": f"Bearer {idle}"})).status_code == 401
+    assert (await client.get("/api/me", headers={"Authorization": f"Bearer {active}"})).status_code == 200
 
 
 async def test_a_new_password_closes_the_other_sessions(client, user, member):
@@ -508,3 +527,70 @@ async def test_a_scheduled_task_never_lands_in_someone_elses_conversation(fake, 
     h = await login(client, member)
     assert (await client.delete(f"/api/conversations/{lea}", headers=h)).json()["ok"]
     assert db.val("SELECT conversation_id FROM schedules WHERE id = ?", (sid,)) is None
+
+
+async def test_passwords_and_tokens_are_encrypted_at_rest(user, monkeypatch):
+    """Mots de passe du coffre et jetons des connexions sont chiffrés en base : une copie de la base ne livre aucun
+    secret, le journal des outils non plus. Une base antérieure est chiffrée au démarrage ; avec une autre clé
+    secrète, la connexion est simplement à refaire."""
+    from ely import integrations, vault
+
+    ctx = ToolContext(user=user, conversation_id=new_conversation(user), run_id=0, emit=_noop)
+    r = await execute(ctx, "credentials", {"action": "save", "service": "Doctolib", "username": "franck",
+                                           "password": "Tr0ub4dor&3"})
+    assert not r.is_error, r.content
+    assert "Tr0ub4dor" not in db.val("SELECT password FROM credentials WHERE user_id = ? AND service = 'Doctolib'", (user["id"],))
+    r = await execute(ctx, "credentials", {"action": "get", "service": "doctolib"})
+    assert "mot de passe : Tr0ub4dor&3" in r.content
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app()), base_url="http://t") as c:
+        token = auth.create_session(user["id"])
+        r = await c.post("/api/credentials", json={"service": "Impots", "username": "f", "password": "Imp0ts-2026"},
+                         headers={"Authorization": f"Bearer {token}"})
+        assert r.status_code == 200
+    assert "Imp0ts" not in db.val("SELECT password FROM credentials WHERE user_id = ? AND service = 'Impots'", (user["id"],))
+    integrations.put(user["id"], "email", {"address": "f@x.fr", "password": "imap-S3cret"})
+    assert "imap-S3cret" not in db.val("SELECT data FROM integrations WHERE user_id = ? AND provider = 'email'", (user["id"],))
+    assert integrations.get(user["id"], "email")["password"] == "imap-S3cret"
+    # le journal des outils ne recopie ni le champ secret ni un mot de passe du coffre glissé ailleurs
+    await execute(ctx, "credentials", {"action": "get", "service": "Tr0ub4dor&3"})
+    logged = " ".join(r["args"] for r in db.all("SELECT args FROM tool_log WHERE user_id = ?", (user["id"],)))
+    assert "Doctolib" in logged and "Tr0ub4dor" not in logged
+
+    # base d'une version antérieure : secrets en clair, chiffrés au démarrage, toujours utilisables
+    db.run("UPDATE credentials SET password = 'ancien-clair' WHERE user_id = ? AND service = 'Doctolib'", (user["id"],))
+    db.run("UPDATE integrations SET data = ? WHERE user_id = ? AND provider = 'email'",
+           (json.dumps({"address": "f@x.fr", "password": "ancien-imap"}), user["id"]))
+    integrations.put(user["id"], "telegram", {"chat_id": 4242})
+    assert vault.migrate() >= 2
+    assert "ancien" not in json.dumps(db.all("SELECT password FROM credentials WHERE user_id = ?", (user["id"],)))
+    assert "ancien" not in db.val("SELECT data FROM integrations WHERE user_id = ? AND provider = 'email'", (user["id"],))
+    assert integrations.get(user["id"], "email")["password"] == "ancien-imap"
+    r = await execute(ctx, "credentials", {"action": "get", "service": "doctolib"})
+    assert "mot de passe : ancien-clair" in r.content
+    # Telegram est retrouvé par son numéro de discussion : il reste lisible par la base
+    assert db.val("SELECT user_id FROM integrations WHERE provider = 'telegram' AND json_extract(data, '$.chat_id') = 4242") == user["id"]
+
+    monkeypatch.setenv("ELY_SECRET_KEY", "une-autre-cle")
+    assert not integrations.connected(user["id"], "email")
+    r = await execute(ctx, "credentials", {"action": "get", "service": "doctolib"})
+    assert not r.is_error and "ancien-clair" not in r.content
+
+
+async def test_an_oversized_upload_or_a_full_disk_is_refused_before_writing(client, user, monkeypatch):
+    """Un envoi trop gros, ou qui entamerait la réserve du disque (base, sauvegardes, système), est refusé avant
+    d'être lu : rien n'est écrit dans Reçus/. Un envoi raisonnable passe."""
+    from ely.api import chat
+
+    h = await login(client, user)
+    received = settings.user_dir(user["id"]) / "files" / "Reçus"
+    before = set(received.glob("*")) if received.exists() else set()
+    monkeypatch.setattr(chat, "UPLOAD_MAX", 1 << 20)
+    r = await client.post("/api/files/upload", headers=h, files={"file": ("film.mp4", b"x" * (2 << 20))})
+    assert r.status_code == 413 and "1 Mo au plus" in r.json()["detail"]
+    monkeypatch.setattr(chat, "DISK_RESERVE", 1 << 62)
+    r = await client.post("/api/files/upload", headers=h, files={"file": ("photo.jpg", b"x" * 1000)})
+    assert r.status_code == 507
+    assert (set(received.glob("*")) if received.exists() else set()) == before
+    monkeypatch.setattr(chat, "DISK_RESERVE", 0)
+    r = await client.post("/api/files/upload", headers=h, files={"file": ("photo.jpg", b"x" * 1000)})
+    assert r.status_code == 200 and r.json()["size"] == 1000

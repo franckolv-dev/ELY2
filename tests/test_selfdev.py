@@ -191,6 +191,24 @@ async def test_journal_gives_the_full_story_of_a_failed_task(dev_ctx, user):
     assert "[5]" in r.content and "[0]" not in r.content
 
 
+async def test_the_journal_never_repeats_a_vault_password(dev_ctx, user):
+    """Le déroulé d'une tâche reste lisible (texte saisi compris) mais ne recopie jamais un mot de passe du coffre :
+    ni dans la demande, ni tapé dans une page, ni dans le résultat de credentials."""
+    await execute(dev_ctx, "credentials", {"action": "save", "service": "Ameli", "username": "franck", "password": "S3cu-Ameli!"})
+    call = lambda i, name, args: {"role": "assistant", "content": "", "tool_calls": [{"id": f"c{i}", "name": name, "arguments": args}]}
+    run = _past_run(user, "Ameli", "Télécharge mon attestation Ameli", [
+        {"role": "user", "content": "Télécharge mon attestation Ameli, le mot de passe est S3cu-Ameli!"},
+        call(1, "credentials", {"action": "get", "service": "ameli"}),
+        {"role": "tool", "tool_call_id": "c1", "name": "credentials", "is_error": False,
+         "content": "Ameli — url : ? — identifiant : franck — mot de passe : S3cu-Ameli!"},
+        call(2, "browser", {"action": "type", "ref": 4, "text": "S3cu-Ameli!", "submit": True}),
+        call(3, "browser", {"action": "type", "ref": 2, "text": "franck"}),
+    ], "done")
+    text = (await execute(dev_ctx, "ely_journal", {"action": "read", "run_id": run})).content
+    assert "S3cu-Ameli" not in text, text
+    assert '"text": "franck"' in text and "identifiant : franck" in text and "Télécharge mon attestation" in text
+
+
 async def test_a_plugin_that_quits_or_hangs_never_takes_ely_down(dev_ctx, monkeypatch):
     """Un plugin qui appelle sys.exit() ou boucle au chargement est refusé avant d'être installé ; déjà présent au
     démarrage, il est désactivé au lieu d'empêcher Ely de démarrer ; un outil qui quitte rend une erreur."""
