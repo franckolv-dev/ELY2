@@ -618,3 +618,32 @@ def test_model_requests_are_recognised_only_as_requests():
     assert asked_model("Je n'utilise pas le modèle fort pour ça") is None
     assert asked_model("Quel est le modèle fort configuré ?") is None
     assert asked_model("Relis l'opus 3 de Chopin") is None
+
+
+async def test_two_tasks_ending_together_both_enrich_the_profile(fake, user):
+    """Deux tâches finissent en même temps : chacune apprend quelque chose sur Franck, et le profil garde les deux
+    (la seconde mise à jour part de la première au lieu de l'écraser)."""
+    from ely.memory import store
+    from ely.memory.learner import learn_from_run
+    from ely.agent.runner import save_message
+
+    async def learner(model, system, messages, tools):
+        text = last_user_text(messages)
+        current = text.split("PROFIL ACTUEL :\n", 1)[1].split("\n\n", 1)[0]
+        lines = [l for l in current.splitlines() if l.startswith("- ")]
+        await asyncio.sleep(0.2)  # le modèle local prend son temps
+        new = "- Ville : Poitiers" if "J'habite à Poitiers" in text else "- Prénom : Franck"
+        return json.dumps({"profile": "## Identité\n" + "\n".join(lines + [new]), "facts": [], "skill": None})
+
+    fake.script = learner
+    runs = []
+    for said in ("Je m'appelle Franck, retiens mon prénom.", "J'habite à Poitiers, retiens ma ville."):
+        cid = new_conversation(user)
+        run = db.insert("runs", conversation_id=cid, user_id=user["id"], status="done", objective=said, created_at=now(),
+                        updated_at=now())
+        for m in ({"role": "user", "content": said}, {"role": "assistant", "content": "C'est noté, je m'en souviendrai " * 6}):
+            save_message(cid, run, m)
+        runs.append((cid, run))
+    await asyncio.gather(*(learn_from_run(user, cid, run) for cid, run in runs))
+    profile = store.get_profile(user["id"])
+    assert "Prénom : Franck" in profile and "Ville : Poitiers" in profile, profile

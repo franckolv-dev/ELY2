@@ -5,9 +5,11 @@ les faits durables et, après une tâche complexe réussie, écrit une compéten
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
+from weakref import WeakKeyDictionary, WeakValueDictionary
 
 from ..auth import update_user_settings
 from ..db import db
@@ -62,6 +64,23 @@ async def learn_from_run(user: dict, conversation_id: int, run_id: int) -> dict 
     digest, n_tools, status = _run_digest(conversation_id, run_id)
     if not digest or (n_tools == 0 and len(digest) < 120):
         return None
+    # deux tâches qui finissent ensemble : la seconde part du profil déjà mis à jour par la première, sans l'écraser
+    async with _profile_lock(user["id"]):
+        return await _learn(user, digest, n_tools, status)
+
+
+_locks: WeakKeyDictionary = WeakKeyDictionary()  # boucle asyncio -> {utilisateur: verrou}
+
+
+def _profile_lock(user_id: int) -> asyncio.Lock:
+    per_loop = _locks.setdefault(asyncio.get_running_loop(), WeakValueDictionary())
+    lock = per_loop.get(user_id)
+    if lock is None:
+        lock = per_loop[user_id] = asyncio.Lock()
+    return lock
+
+
+async def _learn(user: dict, digest: str, n_tools: int, status: str) -> dict | None:
     profile = store.get_profile(user["id"])
     want_skill = n_tools >= 4 and status == "done"
     prompt = f"""Tu mets à jour la mémoire d'Ely, l'assistante personnelle de {user['name']}.
