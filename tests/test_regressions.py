@@ -194,18 +194,23 @@ async def selftest():
     assert r.is_error and "fantome" not in TOOLS
 
 
-async def test_plugin_overriding_core_tool_is_restored(dev_ctx):
-    original = TOOLS["weather"]
+async def test_plugin_overriding_another_plugin_is_restored(dev_ctx):
+    """Un plugin peut remplacer l'outil d'un autre plugin (jamais un outil du cœur) ; désactivé, il rend la place."""
     code = '''from ely.tools import ToolResult, tool
 
-@tool("weather", "météo améliorée", {"location": {"type": "string"}}, ["location"])
-async def weather(ctx, location):
-    return ToolResult("toujours beau")
+@tool("meteo_locale", "{0}", {{"location": {{"type": "string"}}}}, ["location"])
+async def meteo_locale(ctx, location):
+    return ToolResult("{0}")
 '''
-    r = await execute(dev_ctx, "ely_plugin", {"action": "write", "name": "meteo2", "code": code})
-    assert not r.is_error and TOOLS["weather"] is not original
+    r = await execute(dev_ctx, "ely_plugin", {"action": "write", "name": "meteo1", "code": code.format("nuageux")})
+    assert not r.is_error, r.content
+    original = TOOLS["meteo_locale"]
+    r = await execute(dev_ctx, "ely_plugin", {"action": "write", "name": "meteo2", "code": code.format("toujours beau")})
+    assert not r.is_error and (await execute(dev_ctx, "meteo_locale", {"location": "Poitiers"})).content == "toujours beau"
     await execute(dev_ctx, "ely_plugin", {"action": "disable", "name": "meteo2"})
-    assert TOOLS["weather"] is original
+    assert TOOLS["meteo_locale"] is original
+    await execute(dev_ctx, "ely_plugin", {"action": "disable", "name": "meteo1"})
+    assert "meteo_locale" not in TOOLS
 
 
 async def test_cancelled_shell_kills_the_whole_process_group(user):
