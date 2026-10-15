@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
-import io
 import json
 import logging
 import mimetypes
@@ -282,8 +280,10 @@ class ChatIn(BaseModel):
     model: str | None = None
 
 
-def build_content(user: dict, text: str, attachments: list[str]):
+async def build_content(user: dict, text: str, attachments: list[str]):
     """Texte + pièces jointes : les images vont directement au modèle, les documents sont signalés à l'agent."""
+    from ..tools.files import jpeg_for_model
+
     if not attachments:
         return text
     root = settings.user_dir(user["id"]) / "files"
@@ -295,14 +295,8 @@ def build_content(user: dict, text: str, attachments: list[str]):
             continue
         ctype = mimetypes.guess_type(p.name)[0] or ""
         if ctype.startswith("image/"):
-            from PIL import Image
-
-            img = Image.open(p)
-            img.thumbnail((1600, 1600))
-            buf = io.BytesIO()
-            img.convert("RGB").save(buf, "JPEG", quality=82)
-            parts.append({"type": "image", "media_type": "image/jpeg", "data": base64.b64encode(buf.getvalue()).decode(),
-                          "src": f"/files/{a}"})
+            data, _, _ = await asyncio.to_thread(jpeg_for_model, p)
+            parts.append({"type": "image", "media_type": "image/jpeg", "data": data, "src": f"/files/{a}"})
         notes.append(f"[Fichier joint : {a}]")
     parts.insert(0, {"type": "text", "text": (text + "\n\n" if text else "") + "\n".join(notes)})
     return parts
@@ -320,7 +314,7 @@ async def chat(body: ChatIn, user=Depends(auth.current_user)):
                         created_at=now(), updated_at=now())
     if body.model is not None and body.conversation_id:
         db.update("conversations", "id = ?", (cid,), model=body.model)
-    res = await runner.submit(user, cid, build_content(user, body.text.strip(), body.attachments))
+    res = await runner.submit(user, cid, await build_content(user, body.text.strip(), body.attachments))
     return {"conversation_id": cid, **res}
 
 

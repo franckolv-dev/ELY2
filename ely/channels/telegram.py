@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
-import io
 import json
 import logging
 import os
@@ -103,15 +101,10 @@ async def handle(update: dict) -> None:
             return
     content: str | list = text
     if msg.get("photo"):
-        from PIL import Image
+        from ..tools.files import jpeg_for_model
 
-        data = await download(msg["photo"][-1]["file_id"])
-        img = Image.open(io.BytesIO(data))
-        img.thumbnail((1600, 1600))
-        buf = io.BytesIO()
-        img.convert("RGB").save(buf, "JPEG", quality=82)
-        content = [{"type": "text", "text": text or "(photo)"},
-                   {"type": "image", "media_type": "image/jpeg", "data": base64.b64encode(buf.getvalue()).decode()}]
+        data, _, _ = await asyncio.to_thread(jpeg_for_model, await download(msg["photo"][-1]["file_id"]))
+        content = [{"type": "text", "text": text or "(photo)"}, {"type": "image", "media_type": "image/jpeg", "data": data}]
     elif msg.get("document"):
         data = await download(msg["document"]["file_id"])
         from ..tools.files import received_path
