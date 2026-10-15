@@ -144,10 +144,17 @@ async def run_tests(pattern: str = "", timeout: int = 900) -> tuple[bool, str]:
     return proc.returncode == 0, text[-6000:]
 
 
+async def snapshot() -> str:
+    """Empreinte du contenu exact de la copie de travail (fichiers suivis et nouveaux), indexé pour le commit."""
+    await git("add", "-A", cwd=WORKTREE)
+    return (await git("write-tree", cwd=WORKTREE))[1]
+
+
 async def deploy(summary: str, restart: bool = True) -> dict:
     """Tests, commit et PR, puis activation locale sauf si le lanceur lui-même change.
     Un lanceur modifié nécessite une fusion et une relance complète par l'administrateur.
     Sinon, restart=False reporte le redémarrage à l'appelant (par exemple une session Claude)."""
+    tested = await snapshot()
     ok, out = await run_tests()
     if not ok:
         return {"ok": False, "message": "Les tests échouent, déploiement refusé :\n" + out[-3000:]}
@@ -156,7 +163,9 @@ async def deploy(summary: str, restart: bool = True) -> dict:
         return {"ok": False, "message": "Déploiement refusé : des tests de la version active ont disparu (supprimés ou "
                 "renommés). Rétablissez-les ; pour changer un comportement, adaptez le test sans le retirer :\n"
                 + "\n".join(f"- {t}" for t in gone[:20])}
-    await git("add", "-A", cwd=WORKTREE)
+    if await snapshot() != tested:  # seul le code testé est commité
+        return {"ok": False, "message": "Déploiement refusé : la copie de travail a changé pendant les tests. "
+                "Relancez le déploiement pour tester la version actuelle."}
     code, st = await git("diff", "--cached", "--quiet", cwd=WORKTREE)
     if code == 0:
         return {"ok": False, "message": "Aucune modification à déployer."}

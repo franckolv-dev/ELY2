@@ -166,6 +166,25 @@ def test_the_suite_ignores_the_machines_env_file(tmp_path):
     assert r.returncode == 0, r.stdout[-3000:] + r.stderr[-2000:]
 
 
+async def test_a_change_made_during_the_tests_is_never_deployed_untested(dev_ctx, fake_repo, monkeypatch):
+    """Une retouche arrivée pendant les tests (autre session, outil lancé en parallèle) n'est pas commitée avec le
+    code testé : le déploiement est refusé, la version active ne change pas."""
+    await execute(dev_ctx, "ely_code", {"action": "read", "path": "app.py"})
+    r = await execute(dev_ctx, "ely_edit", {"action": "replace", "path": "app.py", "old": "a - b", "new": "a + b"})
+    assert not r.is_error, r.content
+    real = pipeline.run_tests
+
+    async def tests_with_a_concurrent_edit(*a, **k):
+        res = await real(*a, **k)
+        (pipeline.WORKTREE / "app.py").write_text("def add(a, b):\n    return a * b\n")
+        return res
+
+    monkeypatch.setattr(pipeline, "run_tests", tests_with_a_concurrent_edit)
+    r = await execute(dev_ctx, "ely_deploy", {"summary": "corrige add"})
+    assert r.is_error and "pendant les tests" in r.content, r.content
+    assert "a - b" in (fake_repo / "app.py").read_text()
+
+
 async def test_tests_run_on_edited_code_not_stale_bytecode(dev_ctx, fake_repo):
     await execute(dev_ctx, "ely_code", {"action": "read", "path": "app.py"})
     ok, _ = await pipeline.run_tests()
