@@ -46,12 +46,16 @@ SNAPSHOT_JS = r"""
   const seen = new Set();
   all.forEach((el, idx) => {
     if (seen.has(el)) return; seen.add(el);
-    if (el.closest('[aria-hidden=true]')) return;
     const r = el.getBoundingClientRect();
-    if (r.width < 2 || r.height < 2) return;
-    const st = getComputedStyle(el);
-    if (st.visibility === 'hidden' || st.display === 'none' || parseFloat(st.opacity) < 0.05) return;
-    const inView = r.bottom > 0 && r.top < vh && r.right > 0 && r.left < vw;
+    // un champ de fichier est presque toujours caché derrière un bouton stylé (Google Drive…) : il reste numéroté pour upload
+    const file = el.tagName === 'INPUT' && el.type === 'file';
+    if (!file) {
+      if (el.closest('[aria-hidden=true]')) return;
+      if (r.width < 2 || r.height < 2) return;
+      const st = getComputedStyle(el);
+      if (st.visibility === 'hidden' || st.display === 'none' || parseFloat(st.opacity) < 0.05) return;
+    }
+    const inView = file || (r.bottom > 0 && r.top < vh && r.right > 0 && r.left < vw);
     const dist = inView ? 0 : (r.top >= vh ? r.top - vh : -r.bottom);
     cands.push({el, idx, r, inView, dist});
   });
