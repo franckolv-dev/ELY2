@@ -111,6 +111,30 @@ async def test_context_overflow_is_compacted_not_fatal(fake, user):
     assert db.val("SELECT status FROM runs WHERE id = ?", (res["run_id"],)) == "done"
 
 
+async def test_slow_verification_does_not_hold_the_task(fake, user, monkeypatch):
+    """Contrôleur sur un petit modèle local qui réfléchit jusqu'à sa limite : la réponse déjà donnée est acceptée
+    après le délai, sans second essai, au lieu de garder la tâche « en cours » plus de 3 minutes."""
+    from ely.agent import loop
+
+    calls = []
+    answer = script(lambda m, t: "Demain à Béziers : ciel couvert, 15 à 24 °C.")
+
+    async def fn(model, system, messages, tools):
+        if "contrôleur qualité" in last_user_text(messages):
+            calls.append(model)
+            await asyncio.sleep(30)
+            return '{"done": false, "missing": "x"}'
+        return answer(model, system, messages, tools)
+
+    monkeypatch.setattr(loop, "VERIFY_DEADLINE", 0.3)
+    fake.script = fn
+    cid = new_conversation(user)
+    res = await runner.submit(user, cid, "Quelle est la météo demain à Béziers ?")
+    await wait_idle(cid, timeout=5)
+    assert db.val("SELECT status FROM runs WHERE id = ?", (res["run_id"],)) == "done"
+    assert len(calls) == 1
+
+
 async def test_compaction_never_orphans_a_tool_result(fake, user):
     from ely.agent.loop import AgentLoop
 

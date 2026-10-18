@@ -33,6 +33,8 @@ log = logging.getLogger("ely.agent")
 TRIVIAL = re.compile(r"^\W*(salut|bonjour|bonsoir|coucou|hello|hi|hey|merci|thanks|ok|okay|d'accord|dac|super|parfait|top|génial|cool|bravo|bonne nuit|à plus)\b[^?]{0,30}$", re.I)
 LOST = "[Résultat perdu (Ely a redémarré pendant l'action) : vérifie si elle a eu lieu avant de la refaire.]"
 RETRY_DELAYS = [20, 60, 120, 300, 600]
+# Un petit modèle local qui réfléchit jusqu'à sa limite de jetons tenait la tâche « en cours » plus de 3 minutes
+VERIFY_DEADLINE = 60
 
 # Modèle demandé dans le message : « prends / utilise le modèle fort » (rôle d'escalade), « utilise Opus / Fable »
 # (Claude). Un verbe d'ordre est exigé : « le modèle fort ne répond pas ? » ne demande rien.
@@ -148,11 +150,17 @@ Règles :
   exigée sans identifiants enregistrés) : satisfaite si les résultats d'outils le prouvent, que l'agent a tenté l'autre
   accès disponible, n'annonce rien de faux et dit précisément à l'utilisateur quoi faire. Ne pas relancer.
 Réponds uniquement en JSON : {{"done": true ou false, "missing": "ce qui manque et comment y arriver (1-2 phrases)"}}"""
+    deadline = asyncio.get_running_loop().time() + VERIFY_DEADLINE
     for attempt in range(2):
         try:
-            raw = await registry.complete(prompt, role="fast", max_tokens=3000, user_id=user_id, purpose="verify")
+            left = deadline - asyncio.get_running_loop().time()
+            raw = await asyncio.wait_for(registry.complete(prompt, role="fast", max_tokens=3000, user_id=user_id,
+                                                           purpose="verify"), max(left, 0.01))
             v = parse_json_loose(raw)
             return bool(v.get("done", True)), str(v.get("missing", ""))[:600]
+        except TimeoutError:
+            log.info("vérification abandonnée : pas de réponse en %d s", VERIFY_DEADLINE)
+            break
         except Exception as e:  # réponse tronquée ou illisible : un nouvel essai, puis on ne bloque jamais l'utilisateur
             log.info("vérification impossible (essai %d) : %s", attempt + 1, e)
     return True, ""
