@@ -317,8 +317,14 @@ class Registry:
 
     async def complete(self, prompt: str, *, role: str = "fast", system: str = "", max_tokens: int = 4000,
                        user_id: int | None = None, purpose: str = "background") -> str:
-        resp = await self.chat(role=role, system=[system] if system else [], max_tokens=max_tokens,
-                               messages=[{"role": "user", "content": prompt}], effort="low", user_id=user_id, purpose=purpose)
+        args = dict(role=role, system=[system] if system else [], max_tokens=max_tokens,
+                    messages=[{"role": "user", "content": prompt}], effort="low", user_id=user_id, purpose=purpose)
+        resp = await self.chat(**args)
+        if not resp.text and len(self.chain(role)) > 1:
+            # petit modèle local qui épuise son budget à réfléchir sans rien écrire : un autre de la chaîne répond,
+            # et il passe en fin de chaîne pour ne pas refaire attendre chaque compaction ou vérification suivante
+            self.stalled[resp.model] = time.time() + STALL_PENALTY
+            resp = await self.chat(**args)
         return resp.text
 
     async def embed(self, texts: list[str]) -> tuple[str, list[list[float]]] | None:
