@@ -21,7 +21,7 @@ from ely import integrations
 from ely.agent.runner import runner, save_message
 from ely.db import db
 from ely.llm import LLMError, registry
-from ely.llm.base import estimate_tokens
+from ely.llm.base import LLMResponse, estimate_tokens
 from ely.tools import TOOLS, ToolContext, execute
 
 registry_module = sys.modules["ely.llm.registry"]  # le paquet expose l'instance sous le même nom que le module
@@ -193,6 +193,22 @@ async def test_a_model_that_just_froze_waits_at_the_back_of_the_line(fake, monke
     second = await registry.chat(system=["s"], messages=[{"role": "user", "content": "étape 2"}])
     assert first.model == second.model == "fake:fast" and time.monotonic() - started < 0.25
     assert calls == ["agent", "fast", "fast"]
+
+
+async def test_a_small_model_that_only_thinks_hands_background_calls_to_the_next(fake, monkeypatch):
+    """Petit modèle local qui épuise son budget à réfléchir : la compaction reçoit quand même un résumé, et
+    les appels suivants ne l'attendent plus (sinon chaque étape perd ce temps et l'historique n'est jamais condensé)."""
+    calls = []
+
+    def script(model, system, messages, tools):
+        calls.append(model)
+        return LLMResponse(text="", stop_reason="length") if model == "fast" else "Résumé : factures classées."
+
+    monkeypatch.setattr(registry, "stalled", {})
+    fake.script = script
+    assert await registry.complete("Résume", role="fast", purpose="compaction") == "Résumé : factures classées."
+    assert await registry.complete("Résume encore", role="fast", purpose="compaction") == "Résumé : factures classées."
+    assert calls == ["fast", "agent", "agent"]
 
 
 class _LateLMStudio:
