@@ -75,6 +75,24 @@ def _folder(m: imaplib.IMAP4_SSL, flag: str, fallbacks: list[str]) -> str:
     return f'"{fallbacks[0]}"'
 
 
+def html_text(html: str) -> str:
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "html.parser")
+    for t in soup(["style", "script", "head"]):
+        t.decompose()
+    return soup.get_text("\n")
+
+
+# Remplissage invisible des newsletters (aperçu masqué) et lignes vides en série : des milliers de jetons pour rien
+INVISIBLE = re.compile("[­͏؜ᅟᅠ឴឵᠎​-‏‪-‮⁠-⁤﻿]")
+
+
+def tidy(body: str) -> str:
+    lines = [re.sub(r"[ \t  ]+", " ", line).strip() for line in INVISIBLE.sub("", body).splitlines()]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+
+
 def text_of(msg: email.message.Message) -> str:
     if msg.is_multipart():
         html = ""
@@ -91,16 +109,12 @@ def text_of(msg: email.message.Message) -> str:
             if ctype == "text/html" and not html:
                 html = txt
         if html:
-            from bs4 import BeautifulSoup
-
-            return BeautifulSoup(html, "html.parser").get_text("\n")
+            return html_text(html)
         return ""
     payload = msg.get_payload(decode=True) or b""
     txt = payload.decode(msg.get_content_charset() or "utf-8", errors="replace")
     if msg.get_content_type() == "text/html":
-        from bs4 import BeautifulSoup
-
-        return BeautifulSoup(txt, "html.parser").get_text("\n")
+        return html_text(txt)
     return txt
 
 

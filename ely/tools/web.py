@@ -228,12 +228,16 @@ WMO = {0: "ciel dégagé", 1: "plutôt dégagé", 2: "partiellement nuageux", 3:
       {"location": {"type": "string", "description": "Ville ou lieu"}, "days": {"type": "integer", "description": "Jours de prévision (défaut 3)"}},
       ["location"], label="Météo", icon="🌤️", timeout=30, effects=False)
 async def weather(ctx: ToolContext, location: str, days: int = 3) -> ToolResult:
+    # Le géocodeur ne connaît que le nom seul : « Bédarieux, Hérault, France » → « Bédarieux », le reste départage les homonymes
+    name, *hints = [s.strip() for s in location.split(",") if s.strip()] or [location]
     async with httpx.AsyncClient(timeout=15) as c:
-        g = await c.get("https://geocoding-api.open-meteo.com/v1/search", params={"name": location, "count": 1, "language": "fr"})
+        g = await c.get("https://geocoding-api.open-meteo.com/v1/search", params={"name": name, "count": 10, "language": "fr"})
         res = (g.json().get("results") or [])
         if not res:
             return ToolResult(f"Lieu introuvable : {location}", is_error=True)
-        p = res[0]
+        hints = [h.casefold() for h in hints]
+        p = next((r for r in res if any(h in str(r.get(k, "")).casefold() for h in hints
+                                        for k in ("admin1", "admin2", "admin3", "country", "country_code"))), res[0])
         f = await c.get("https://api.open-meteo.com/v1/forecast", params={
             "latitude": p["latitude"], "longitude": p["longitude"], "timezone": "auto", "forecast_days": max(1, min(days, 14)),
             "current": "temperature_2m,apparent_temperature,weather_code,wind_speed_10m,relative_humidity_2m,precipitation",

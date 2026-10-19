@@ -217,9 +217,9 @@ async def gmail_read(user_id: int, mid: str) -> dict:
     m = await api(user_id, "GET", f"{GMAIL}/messages/{mid}", params={"format": "full"})
     text, html = _body(m.get("payload", {}))
     if not text and html:
-        from bs4 import BeautifulSoup
+        from .mail import html_text
 
-        text = BeautifulSoup(html, "html.parser").get_text("\n")
+        text = html_text(html)
     atts = []
 
     def walk(p):

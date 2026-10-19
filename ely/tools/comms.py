@@ -155,4 +155,4 @@ async def email_read(ctx: ToolContext, id: str, folder: str = "INBOX") -> ToolRe
         return ToolResult(NO_MAIL, is_error=True)
     m = await (g.gmail_read(ctx.user_id, id) if backend == "gmail" else mail.read(ctx.user_id, id, folder))
     atts = f"\nPièces jointes : {', '.join(m['attachments'])}" if m["attachments"] else ""
-    return ToolResult(f"De : {m['from']}\nÀ : {m['to']}\nCc : {m.get('cc', '')}\nDate : {m['date']}\nObjet : {m['subject']}{atts}\n\n{m['body'][:15000]}")
+    return ToolResult(f"De : {m['from']}\nÀ : {m['to']}\nCc : {m.get('cc', '')}\nDate : {m['date']}\nObjet : {m['subject']}{atts}\n\n{mail.tidy(m['body'])[:15000]}")
