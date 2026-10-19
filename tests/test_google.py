@@ -36,6 +36,36 @@ async def test_wide_gmail_search_is_not_refused(user, monkeypatch):
     assert len(found) == 100 and all(m["subject"] == m["id"] for m in found)
 
 
+async def test_email_read_drops_newsletter_css_and_invisible_padding(user, monkeypatch):
+    """Une newsletter HTML arrive lisible : ni feuille de style, ni remplissage invisible, ni centaines de lignes vides."""
+    import base64
+
+    from conftest import new_conversation
+
+    from ely.tools import ToolContext, execute
+
+    async def _noop(*a, **k):
+        pass
+
+    put(user["id"], "google", {"access_token": "jeton", "refresh_token": "", "expires_at": time.time() + 3600})
+    html = ("<html><head><style>.book-item { width: 48% !important; }</style></head><body>"
+            "<div>Les sorties de la semaine͏ ‌ ͏ ‌ ­</div>" + "<div>\n  \n</div>" * 200 +
+            "<p>Divided Fates, Tome 1</p><script>track()</script></body></html>")
+    data = base64.urlsafe_b64encode(html.encode()).decode()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"id": "n1", "payload": {"mimeType": "text/html", "body": {"data": data},
+                                                                  "headers": [{"name": "Subject", "value": "Booknode"}]}})
+
+    fake_gmail(monkeypatch, handler)
+    ctx = ToolContext(user=user, conversation_id=new_conversation(user), run_id=0, emit=_noop)
+    r = await execute(ctx, "email_read", {"id": "n1"})
+    assert not r.is_error, r.content
+    body = r.content.split("Objet : Booknode\n\n", 1)[1]
+    assert body.startswith("Les sorties de la semaine\n") and "Divided Fates, Tome 1" in body and "\n\n\n" not in body
+    assert "important" not in r.content and "track()" not in r.content and "͏" not in r.content
+
+
 async def test_email_manage_trashes_and_files_invoices_in_gmail(user, monkeypatch):
     """La routine de midi trie la boîte par l'API : corbeille, et factures classées sous un libellé (créé s'il manque)."""
     import json
