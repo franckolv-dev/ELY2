@@ -236,6 +236,20 @@ class BrowserManager:
             kw["channel"] = settings.browser_channel
         return kw
 
+    async def _launch(self, launcher, *args, **kw):
+        try:
+            return await launcher(*args, **kw)
+        except Exception as e:
+            # Chromium de Playwright absent (Playwright mis à jour sans « playwright install ») :
+            # repli sur Google Chrome installé, si aucun navigateur n'est imposé par la configuration
+            if "Executable doesn't exist" not in str(e) or "executable_path" in kw or "channel" in kw:
+                raise
+            log.warning("Chromium de Playwright absent : repli sur Google Chrome (lancez « playwright install chromium »)")
+            try:
+                return await launcher(*args, **kw, channel="chrome")
+            except Exception:
+                raise e from None
+
     async def _playwright(self):
         if self._pw is None:
             from playwright.async_api import async_playwright
@@ -266,8 +280,8 @@ class BrowserManager:
             pw = await self._playwright()
             profile = settings.user_dir(user_id) / "navigateur"
             profile.mkdir(parents=True, exist_ok=True)
-            ctx = await pw.chromium.launch_persistent_context(
-                str(profile), **self._launch_kwargs(), viewport=VIEWPORT, user_agent=UA, locale="fr-FR",
+            ctx = await self._launch(
+                pw.chromium.launch_persistent_context, str(profile), **self._launch_kwargs(), viewport=VIEWPORT, user_agent=UA, locale="fr-FR",
                 timezone_id=settings.timezone, accept_downloads=True)
             await ctx.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             downloads = settings.user_dir(user_id) / "files" / "Téléchargements"
@@ -291,7 +305,7 @@ class BrowserManager:
                 pw = await self._playwright()
                 kw = self._launch_kwargs()
                 kw["headless"] = True
-                self._shared = await pw.chromium.launch(**kw)
+                self._shared = await self._launch(pw.chromium.launch, **kw)
             return self._shared
 
     async def _reap(self) -> None:

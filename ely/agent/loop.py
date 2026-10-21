@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import re
+import time
 import unicodedata
 from dataclasses import replace
 
@@ -24,7 +25,7 @@ from ..config import settings
 from ..db import db, now
 from ..llm import LLMError, claude_agent, parse_json_loose, registry
 from ..llm.base import LLMResponse, estimate_tokens, message_text
-from ..tools import TOOLS, ToolContext, execute, tools_for
+from ..tools import TOOLS, ToolContext, ToolResult, execute, tools_for
 from .prompts import STABLE, dynamic_block, today_text
 from .runner import ConvState, Runner, public_message, save_message
 
@@ -35,6 +36,9 @@ LOST = "[Résultat perdu (Ely a redémarré pendant l'action) : vérifie si elle
 RETRY_DELAYS = [20, 60, 120, 300, 600]
 # Un petit modèle local qui réfléchit jusqu'à sa limite de jetons tenait la tâche « en cours » plus de 3 minutes
 VERIFY_DEADLINE = 60
+# Lecture seule (effects=False) refaite à l'identique : au-delà de REPEAT_LIMIT fois en moins de REPEAT_WINDOW s, refusée
+REPEAT_LIMIT = 2
+REPEAT_WINDOW = 600
 
 # Modèle demandé dans le message : « prends / utilise le modèle fort » (rôle d'escalade), « utilise Opus / Fable »
 # (Claude). Un verbe d'ordre est exigé : « le modèle fort ne répond pas ? » ne demande rien.
@@ -163,6 +167,9 @@ Réponds uniquement en JSON : {{"done": true ou false, "missing": "ce qui manque
             break
         except Exception as e:  # réponse tronquée ou illisible : un nouvel essai, puis on ne bloque jamais l'utilisateur
             log.info("vérification impossible (essai %d) : %s", attempt + 1, e)
+    if objective.startswith("[Tâche planifiée") and action_log(history) == "(aucune action)":
+        # un petit modèle avait rédigé le compte rendu d'actions jamais faites, accepté faute de contrôleur
+        return False, "Aucun outil n'a été utilisé : exécute réellement la tâche planifiée avec tes outils, sans rien annoncer que tu n'as pas fait."
     return True, ""
 
 
@@ -217,6 +224,7 @@ class AgentLoop:
         # session d'auto-amélioration : son propre modèle (Réglages → Modèles → Auto-amélioration)
         self.selfdev = self.conv.get("channel") == "selfdev" and user.get("role") == "admin"
         self.ask_lock = asyncio.Lock()
+        self.repeats: dict[str, tuple[int, float]] = {}  # signature d'appel → (nombre, dernier appel)
 
     async def emit(self, type_: str, data: dict | None = None) -> None:
         await self.runner.emit(self.st, type_, data)
@@ -276,8 +284,17 @@ class AgentLoop:
                                        "args": _preview_args(tc.get("arguments", {}))})
         call_ctx = replace(ctx, extra={**ctx.extra, "tool_call_id": tc["id"]})
         call_ctx.ask = lambda q, o, _id=tc["id"]: self.ask(q, o, _id)
-        res = await execute(call_ctx, tc["name"], tc.get("arguments") or {})
         sig = tc["name"] + json.dumps(tc.get("arguments", {}), sort_keys=True, ensure_ascii=False)
+        count, last = self.repeats.get(sig, (0, 0.0))
+        self.repeats[sig] = (count + 1, time.monotonic())
+        if t and not t.effects and count >= REPEAT_LIMIT and time.monotonic() - last < REPEAT_WINDOW:
+            # un petit modèle refaisait la même recherche web toutes les 9 s pendant 40 min
+            res = ToolResult(f"Appel identique déjà fait {count} fois à l'instant : le résultat, inchangé, est plus haut. "
+                             "Ne le refais pas : passe à l'étape suivante (autre requête, autre outil) ou rédige ta réponse.",
+                             is_error=True)
+            await self.escalate("l'agent répète la même action, escalade vers le modèle le plus fort")
+        else:
+            res = await execute(call_ctx, tc["name"], tc.get("arguments") or {})
         content = res.content
         if res.is_error:
             fail_counts[sig] = fail_counts.get(sig, 0) + 1
