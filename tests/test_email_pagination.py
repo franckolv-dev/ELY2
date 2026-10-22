@@ -136,5 +136,12 @@ async def test_imap_is_explicit_about_pagination_and_coverage(monkeypatch, token
         assert calls == [(42, 'test', 15, False, 'Archive')]
 
 
+async def test_epoch_in_newer_than_becomes_after(gmail_pages):
+    ctx, calls, state = gmail_pages
+    state['pages'][''] = {}
+    await comms.email_search(ctx, query='in:anywhere newer_than:1792490400 older_than:1792576800 newer_than:2d')
+    assert calls[0][1]['q'] == 'in:anywhere after:1792490400 before:1792576800 newer_than:2d'
+
+
 def test_page_token_is_exposed_in_tool_schema():
     assert TOOLS['email_search'].parameters['properties']['page_token']['type'] == 'string'

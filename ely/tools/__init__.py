@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -144,9 +145,16 @@ def _coerce(value: Any, spec: dict) -> Any:
             return str(value).lower() in ("true", "1", "oui", "yes")
         if t == "array" and isinstance(value, str):
             try:
-                v = json.loads(value)
+                v = json.loads(value, strict=False)  # strict=False : retours à la ligne bruts dans les chaînes
                 return v if isinstance(v, list) else [value]
             except json.JSONDecodeError:
+                # Liste JSON abîmée (petit modèle) : on garde ses chaînes entières ; découper ses phrases
+                # aux virgules donnait des sous-tâches absurdes (« expéditeur », « date d'en-tête »).
+                if value.lstrip().startswith("["):
+                    items = [s.replace('\\"', '"').replace("\\n", "\n")
+                             for s in re.findall(r'"((?:[^"\\]|\\.)*)"', value)]
+                    if items:
+                        return [x for x in items if x.strip()]
                 return [x.strip() for x in value.split(",") if x.strip()]
         if t == "string" and not isinstance(value, str):
             return value if value is None else (json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) else str(value))
