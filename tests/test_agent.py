@@ -449,6 +449,64 @@ async def test_escalation_as_soon_as_the_goal_is_not_met(fake, user):
     assert any("objectif pas encore atteint" in r and "fake:fort" in r for r in model_notices(q))
 
 
+async def test_identical_read_only_call_is_refused_and_escalates(fake, user):
+    """Un petit modèle refaisait la même recherche toutes les 9 s : au 3e appel identique en lecture seule, Ely
+    ne l'exécute plus, le dit au modèle et passe au modèle d'escalade ; une autre requête reste exécutée."""
+    with_strong_model(fake)
+
+    def agent(messages, tools):
+        done = tool_results(messages)
+        if len(done) < 4:
+            return call("calendar_list", start="2030-05-06", end="2030-05-07")
+        if len(done) == 4:
+            return call("calendar_list", start="2030-05-08", end="2030-05-09")
+        return "Aucun rendez-vous."
+
+    fake.script, used = routed(agent)
+    q = runner.subscribe(user["id"])
+    try:
+        cid = new_conversation(user)
+        await runner.submit(user, cid, "Qu'ai-je à l'agenda le 6 mai 2030 ?")
+        await wait_idle(cid)
+    finally:
+        runner.unsubscribe(user["id"], q)
+    results = [d for d in (json.loads(m["data"]) for m in db.all("SELECT data FROM messages WHERE conversation_id = ? ORDER BY id", (cid,)))
+               if d["role"] == "tool"]
+    assert [r["is_error"] for r in results] == [False, False, True, True, False]
+    assert "Appel identique déjà fait 2 fois" in results[2]["content"]
+    assert used[:3] == ["agent"] * 3 and set(used[3:]) == {"fort"}, used
+    assert any("répète la même action" in r for r in model_notices(q))
+
+
+async def test_scheduled_task_without_any_action_is_not_accepted_when_controller_fails(fake, user):
+    """Un petit modèle rédigeait le compte rendu d'une routine sans avoir appelé un seul outil, et le contrôleur muet
+    l'acceptait : sans verdict, une tâche planifiée sans aucune action est relancée (et passe au modèle d'escalade)."""
+    with_strong_model(fake)
+
+    def agent(messages, tools):
+        if not tool_results(messages) and not any("Aucun outil n'a été utilisé" in str(m["content"]) for m in messages if m["role"] == "user"):
+            return "J'ai vérifié Gmail : aucun nouveau mail Digiposte."
+        if not tool_results(messages):
+            return call("calendar_list", start="2030-05-06", end="2030-05-07")
+        return "Agenda consulté : aucun événement."
+
+    routed_fn, used = routed(agent)
+
+    def fn(model, system, messages, tools):
+        if "contrôleur qualité" in last_user_text(messages):
+            return "illisible"
+        return routed_fn(model, system, messages, tools)
+
+    fake.script = fn
+    cid = new_conversation(user)
+    await runner.submit(user, cid, "[Tâche planifiée #4] Surveille mes mails Digiposte", kind="scheduled")
+    await wait_idle(cid)
+    datas = [json.loads(m["data"]) for m in db.all("SELECT data FROM messages WHERE conversation_id = ? ORDER BY id", (cid,))]
+    assert any(d.get("kind") == "control" and "Aucun outil" in d["content"] for d in datas)
+    assert datas[-1]["content"] == "Agenda consulté : aucun événement."
+    assert used[0] == "agent" and set(used[1:]) == {"fort"}, used
+
+
 async def test_strong_model_on_request(fake, user):
     """« Prenez le modèle fort » : Ely y passe dès le premier appel. Une simple question sur le modèle fort ne
     change rien, et « utilise Opus » passe sur le modèle fort tant que Claude n'est pas relié."""
