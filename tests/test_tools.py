@@ -46,6 +46,30 @@ async def test_calendar_internal_and_ics(ctx):
     assert "supprimé" in r.content
 
 
+async def test_array_given_as_broken_json_text_keeps_whole_items(ctx):
+    from ely.tools import TOOLS, tool
+
+    got = []
+
+    @tool("_liste_test", "test", {"tasks": {"type": "array", "items": {"type": "string"}}}, ["tasks"])
+    async def _liste_test(ctx, tasks):
+        got.append(tasks)
+        return "ok"
+
+    try:
+        # liste JSON envoyée en texte, abîmée (guillemet non échappé, ligne brute) : vue de la routine matinale
+        broken = '["Emails Gmail : depuis hier midi, 50 max. Lister ID, expéditeur, sujet", "Agenda du\n21/10, fuseau "Paris"]'
+        await execute(ctx, "_liste_test", {"tasks": broken})
+        assert got[-1][0] == "Emails Gmail : depuis hier midi, 50 max. Lister ID, expéditeur, sujet"
+        assert got[-1][1].startswith("Agenda du\n21/10, fuseau") and len(got[-1]) == 2
+        await execute(ctx, "_liste_test", {"tasks": '["une tâche,\navec virgule", "deux"]'})
+        assert got[-1] == ["une tâche,\navec virgule", "deux"]
+        await execute(ctx, "_liste_test", {"tasks": "a, b"})
+        assert got[-1] == ["a", "b"]
+    finally:
+        TOOLS.pop("_liste_test", None)
+
+
 async def test_contacts_internal(ctx):
     await execute(ctx, "contacts_save", {"name": "Marie Curie", "email": "marie@exemple.fr", "phone": "0611223344"})
     r = await execute(ctx, "contacts_search", {"query": "curie"})
