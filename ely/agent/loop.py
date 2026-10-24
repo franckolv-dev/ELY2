@@ -24,7 +24,7 @@ from ..config import settings
 from ..db import db, now
 from ..llm import LLMError, claude_agent, parse_json_loose, registry
 from ..llm.base import LLMResponse, estimate_tokens, message_text
-from ..tools import TOOLS, ToolContext, execute, tools_for
+from ..tools import SECRET_ARGS, TOOLS, UNCERTAIN, ToolContext, ToolResult, execute, tools_for
 from .prompts import STABLE, dynamic_block, today_text
 from .runner import ConvState, Runner, public_message, save_message
 
@@ -108,6 +108,36 @@ def normalize(msgs: list[dict], pending_ids: set[str] = frozenset()) -> list[dic
     return out
 
 
+REPLAY = ("Action non relancée : la même action, avec les mêmes paramètres, a déjà eu un résultat incertain dans cette "
+          "tâche. Vérifie d'abord si elle a eu lieu (boîte d'envoi, agenda, page…). Pour la refaire malgré tout, demande "
+          "d'abord l'accord de l'utilisateur avec ask_user.")
+
+
+def signature(name: str, args: dict) -> str:
+    return name + json.dumps(args or {}, sort_keys=True, ensure_ascii=False)
+
+
+def uncertain_calls(history: list[dict]) -> set[str]:
+    """Actions au résultat incertain (coupure, délai, redémarrage) depuis la dernière parole de l'utilisateur : jamais
+    rejouées à l'identique sans son accord (un e-mail ne part pas deux fois)."""
+    calls: dict[str, str] = {}
+    out: set[str] = set()
+    for m in history:
+        if m["role"] == "user" and not m.get("kind"):
+            out.clear()
+        elif m["role"] == "assistant":
+            for tc in m.get("tool_calls") or []:
+                calls[tc["id"]] = signature(tc["name"], tc.get("arguments"))
+        elif m["role"] == "tool":
+            t = TOOLS.get(m.get("name"))
+            content = m.get("content") if isinstance(m.get("content"), str) else ""
+            if m.get("name") == "ask_user" and not m.get("is_error"):
+                out.clear()
+            elif t and t.effects and not t.untrusted and content.startswith((UNCERTAIN, LOST)) and m["tool_call_id"] in calls:
+                out.add(calls[m["tool_call_id"]])
+    return out
+
+
 def action_log(history: list[dict], limit_chars: int = 12000) -> str:
     lines = []
     results = {m["tool_call_id"]: m for m in history if m["role"] == "tool"}
@@ -124,7 +154,7 @@ def action_log(history: list[dict], limit_chars: int = 12000) -> str:
     return text[-limit_chars:] if len(text) > limit_chars else (text or "(aucune action)")
 
 
-async def verify(objective: str, history: list[dict], answer: str, user_id: int, today: str = "") -> tuple[bool, str]:
+async def verify(objective: str, history: list[dict], answer: str, user_id: int, today: str = "") -> tuple[bool | None, str]:
     when = f"\nNous sommes {today} : juge les dates par rapport à ce jour, pas d'après tes connaissances.\n" if today else ""
     prompt = f"""Tu es le contrôleur qualité d'un agent autonome. Détermine si la DEMANDE de l'utilisateur est entièrement satisfaite.
 {when}
@@ -157,13 +187,18 @@ Réponds uniquement en JSON : {{"done": true ou false, "missing": "ce qui manque
             raw = await asyncio.wait_for(registry.complete(prompt, role="fast", max_tokens=3000, user_id=user_id,
                                                            purpose="verify"), max(left, 0.01))
             v = parse_json_loose(raw)
-            return bool(v.get("done", True)), str(v.get("missing", ""))[:600]
+            done = v.get("done")
+            if isinstance(done, str):  # « "false" » écrit en texte reste un refus
+                done = {"true": True, "false": False}.get(done.strip().lower())
+            if not isinstance(done, bool):
+                raise ValueError(f"verdict illisible : {raw[:200]}")
+            return done, str(v.get("missing", ""))[:600]
         except TimeoutError:
             log.info("vérification abandonnée : pas de réponse en %d s", VERIFY_DEADLINE)
             break
         except Exception as e:  # réponse tronquée ou illisible : un nouvel essai, puis on ne bloque jamais l'utilisateur
             log.info("vérification impossible (essai %d) : %s", attempt + 1, e)
-    return True, ""
+    return None, ""  # pas de verdict : la réponse est rendue, la tâche reste « non confirmée »
 
 
 def run_messages(run_id: int) -> list[dict]:
@@ -268,7 +303,7 @@ class AgentLoop:
         await self.emit("status", {"status": "running"})
 
     # ---------------------------------------------------------------- outils
-    async def run_tool(self, ctx: ToolContext, tc: dict, fail_counts: dict) -> dict:
+    async def run_tool(self, ctx: ToolContext, tc: dict, fail_counts: dict, blocked: set[str] = frozenset()) -> dict:
         t = TOOLS.get(tc["name"])
         label = t.label if t else tc["name"]
         icon = t.icon if t else "⚙️"
@@ -276,8 +311,11 @@ class AgentLoop:
                                        "args": _preview_args(tc.get("arguments", {}))})
         call_ctx = replace(ctx, extra={**ctx.extra, "tool_call_id": tc["id"]})
         call_ctx.ask = lambda q, o, _id=tc["id"]: self.ask(q, o, _id)
-        res = await execute(call_ctx, tc["name"], tc.get("arguments") or {})
-        sig = tc["name"] + json.dumps(tc.get("arguments", {}), sort_keys=True, ensure_ascii=False)
+        sig = signature(tc["name"], tc.get("arguments"))
+        if sig in blocked:
+            res = ToolResult(REPLAY, is_error=True)
+        else:
+            res = await execute(call_ctx, tc["name"], tc.get("arguments") or {})
         content = res.content
         if res.is_error:
             fail_counts[sig] = fail_counts.get(sig, 0) + 1
@@ -475,7 +513,8 @@ class AgentLoop:
 
                 if msg.get("tool_calls"):
                     steps += 1
-                    results = await asyncio.gather(*(self.run_tool(ctx, tc, fail_counts) for tc in msg["tool_calls"]))
+                    blocked = uncertain_calls(history)
+                    results = await asyncio.gather(*(self.run_tool(ctx, tc, fail_counts, blocked) for tc in msg["tool_calls"]))
                     history.extend(results)
                     successes += sum(1 for r in results if not r.get("is_error"))
                     self.save_state(steps=steps)
@@ -485,11 +524,14 @@ class AgentLoop:
                 continue
 
             answer = msg["content"]
+            final = "done"
             if not TRIVIAL.match(objective.strip()):
                 await self.emit("status", {"status": "running", "detail": "Vérification de l'objectif…"})
                 done, missing = await verify(objective, run_messages(self.run_id), answer, user["id"], today_text(user))
                 await self.emit("verify", {"done": done, "missing": missing})
-                if not done:
+                if done is None:
+                    final = "unverified"
+                elif not done:
                     rejections += 1
                     no_progress = no_progress + 1 if successes == 0 else 1
                     successes = 0
@@ -503,7 +545,13 @@ class AgentLoop:
                         history.append(note)
                         await self.publish_message(self.persist(note))
                         continue
-            db.run("UPDATE runs SET status = 'done', updated_at = ? WHERE id = ?", (now(), self.run_id))
+                    # relances épuisées : la réponse est rendue, sans la présenter comme une réussite
+                    final = "unverified"
+                    note = {"role": "assistant", "kind": "note", "unverified": True, "content": tv(
+                        user, f"⚠️ Je n'ai pas pu confirmer que votre demande est entièrement satisfaite. Reste à faire : {missing}",
+                        f"⚠️ Je n'ai pas pu confirmer que ta demande est entièrement satisfaite. Reste à faire : {missing}")}
+                    await self.publish_message(self.persist(note))
+            db.run("UPDATE runs SET status = ?, updated_at = ? WHERE id = ?", (final, now(), self.run_id))
             break
 
         asyncio.create_task(self.after_run())
@@ -644,7 +692,8 @@ class AgentLoop:
         if self.state.get("channel") == "schedule":  # tâche planifiée : on prévient l'utilisateur du résultat
             from ..notify import notify
 
-            last = db.one("SELECT data FROM messages WHERE run_id = ? AND role = 'assistant' ORDER BY id DESC LIMIT 1", (self.run_id,))
+            last = db.one("SELECT data FROM messages WHERE run_id = ? AND role = 'assistant' AND json_extract(data, '$.unverified') "
+                          "IS NULL ORDER BY id DESC LIMIT 1", (self.run_id,))
             text = message_text(json.loads(last["data"])) if last else "Tâche terminée."
             await notify(self.user["id"], "Ely · tâche planifiée", text, url=f"/?c={self.conv_id}")  # coupé pour le push seulement
         try:
@@ -666,7 +715,7 @@ def _preview_args(args: dict) -> str:
     parts = []
     for k, v in args.items():
         s = v if isinstance(v, str) else json.dumps(v, ensure_ascii=False)
-        if k in ("password",):
+        if k.lower() in SECRET_ARGS:
             s = "••••"
         parts.append(f"{k}={s[:80]}")
     return ", ".join(parts)[:240]

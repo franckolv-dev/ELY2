@@ -69,7 +69,9 @@ async def calendar_list(ctx: ToolContext, start: str = "", end: str = "", query:
                  if not query or query.lower() in (r["title"] + r["description"] + r["location"]).lower()]
     if not items:
         return ToolResult(f"Aucun événement entre le {s:%d/%m %H:%M} et le {e:%d/%m %H:%M}.")
-    return ToolResult(f"{len(items)} événement(s) :\n" + "\n".join(_fmt_event(i) for i in items))
+    more = "\nListe arrêtée à {} événements : réduis la période pour voir la suite.".format(len(items)) \
+        if len(items) >= g.CAL_MAX else ""
+    return ToolResult(f"{len(items)} événement(s) :\n" + "\n".join(_fmt_event(i) for i in items) + more)
 
 
 @tool("calendar_add", "Ajoute un rendez-vous / événement à l'agenda de l'utilisateur. Heures locales ISO (AAAA-MM-JJTHH:MM).",
@@ -83,6 +85,9 @@ async def calendar_add(ctx: ToolContext, title: str, start: str, end: str = "", 
     tz = user_tz(ctx.user)
     s = parse_local(start, tz)
     e = parse_local(end, tz) if end else s + (dt.timedelta(days=1) if all_day else dt.timedelta(hours=1))
+    if e <= s:
+        return ToolResult(f"La fin ({e:%d/%m/%Y %H:%M}) doit être après le début ({s:%d/%m/%Y %H:%M}) : rien n'est ajouté.",
+                          is_error=True)
     ev = {"title": title, "start": s.strftime("%Y-%m-%dT%H:%M"), "end": e.strftime("%Y-%m-%dT%H:%M"), "all_day": all_day,
           "location": location, "description": description, "attendees": attendees or [], "reminder_minutes": reminder_minutes}
     if _google(ctx):
@@ -112,6 +117,9 @@ async def calendar_update(ctx: ToolContext, id: str, delete: bool = False, **fie
         for k in ("start", "end"):
             if k in fields:
                 fields[k] = parse_local(fields[k], tz).strftime("%Y-%m-%dT%H:%M")
+        row = db.one("SELECT start, end FROM events WHERE id = ?", (lid,))
+        if fields.get("end", row["end"]) <= fields.get("start", row["start"]):
+            return ToolResult("La fin doit être après le début : rien n'est modifié.", is_error=True)
         if fields:
             db.update("events", "id = ?", (lid,), **fields, updated_at=now(), reminded=0)
         return ToolResult(f"Événement {id} mis à jour : {', '.join(fields)}")
@@ -123,6 +131,8 @@ async def calendar_update(ctx: ToolContext, id: str, delete: bool = False, **fie
     for k in ("start", "end"):
         if k in fields:
             fields[k] = parse_local(fields[k], tz).strftime("%Y-%m-%dT%H:%M")
+    if "start" in fields and "end" in fields and fields["end"] <= fields["start"]:
+        return ToolResult("La fin doit être après le début : rien n'est modifié.", is_error=True)
     await g.cal_update(ctx.user_id, id, fields, tz)
     return ToolResult(f"Événement mis à jour : {', '.join(fields)}")
 

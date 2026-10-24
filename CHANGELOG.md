@@ -12,15 +12,55 @@ leur historique est dans [son journal](https://github.com/franckolv-dev/ElyAgent
 
 ## [Non publié]
 
-Hormis la correction de `./ely.sh update`, les améliorations de cette section ont été écrites par Ely elle-même
-(auto-amélioration), puis relues et fusionnées.
+Hormis la correction de `./ely.sh update` et les corrections issues de l'audit indépendant du 15 octobre 2026, les
+améliorations de cette section ont été écrites par Ely elle-même (auto-amélioration), puis relues et fusionnées.
 
 ### Sécurité
+- **Le réseau de la maison reste fermé aux comptes de la famille, même par un détour.** Une page publique qui redirige
+  vers la box, le script d'une page ouverte dans le navigateur interne, ou une adresse tapée lors d'une prise de main
+  ne joignent plus le Mac ni le réseau local depuis un compte ordinaire. L'administrateur garde son accès.
+- **Une routine ne s'exécute plus jamais dans la conversation d'un autre compte**, même quand le numéro de sa
+  conversation supprimée a été repris.
+- **Extensions MCP : aucun secret transmis, outils réservés à l'administrateur.** Un serveur lancé par Ely ne reçoit
+  plus les clés du `.env` ; ses outils ne servent qu'à l'administrateur, sauf `"shared": true`. **À vérifier** : un
+  serveur qui comptait sur une clé du `.env` (un `GITHUB_TOKEN`, par exemple) doit désormais la recevoir dans son
+  `"env"`.
+- **Un plugin ne remplace plus un outil du cœur d'Ely** (qui porte les vérifications de droits, de réseau, de
+  fichiers) : il en ajoute. Un plugin qui le tenterait est refusé, ou désactivé au démarrage.
+- **Mots de passe et jetons chiffrés dans la base**, et jamais recopiés dans le journal des outils ni dans le déroulé
+  des tâches, même tapés dans une page. La clé est `data/secret.key` (ou `ELY_SECRET_KEY`) : à garder avec toute copie
+  de la base. Les secrets déjà enregistrés sont chiffrés au premier démarrage ; revenir ensuite à une version plus
+  ancienne demanderait de reconnecter les services.
+- **Les tests d'une auto-modification ne reçoivent plus aucun secret** (jeton GitHub d'Ely, Telegram, Google, clés).
+- **Envois de fichiers bornés** : 200 Mo au plus (25 Mo pour la dictée), refusés avant d'être lus, et 2 Go toujours
+  gardés libres sur le disque.
+- **Nouveaux mots de passe de 8 caractères au moins** (ceux déjà choisis restent valables) ; une session inutilisée
+  pendant 90 jours se ferme.
 - **Les mots de passe ne sont plus recopiés dans ce qu'Ely lit d'une page.** Dans l'instantané du navigateur interne,
   que le modèle lit et que le journal des tâches conserve, un champ mot de passe ou code à usage unique affiche
   « [masquée] » au lieu de sa valeur. Le champ reste utilisable.
 
 ### Corrigé
+- **Une tâche que le contrôleur ne confirme jamais n'est plus déclarée « terminée ».** Relances épuisées ou contrôleur
+  muet : la réponse est rendue avec la réserve du contrôleur (sur Telegram aussi), la tâche est « terminée sans
+  confirmation » et Ely n'en tire aucune procédure. Un verdict `"done": "false"` écrit en texte reste un refus.
+- **Un e-mail dont l'envoi a été coupé n'est plus renvoyé en double.** Une coupure pendant la transmission (SMTP, ou
+  réponse de Gmail ou de l'Agenda jamais reçue) rend un résultat incertain, et Ely ne refait pas la même action sans
+  l'accord de la personne.
+- **Déploiement d'une auto-modification : seul le code testé est commité.** Une retouche arrivée pendant les tests fait
+  refuser le déploiement.
+- **Deux tâches qui finissent ensemble n'écrasent plus le profil** : la seconde mise à jour part de la première.
+- **Google Agenda : plus de limite à 100 événements** sur une période (toutes les pages sont lues, 1 000 au plus).
+- **Lire un e-mail (IMAP) ne le marque plus comme lu.**
+- **Un rendez-vous ne peut plus finir avant de commencer**, à l'ajout comme à la modification.
+- **Une grande photo jointe ne fige plus le serveur** pendant sa réduction (chat et Telegram).
+- **La vérification de syntaxe d'une auto-modification** utilise le Python d'Ely, même sans `python3` dans le PATH.
+- **La suite de tests ignore le `.env` de la machine** (jeton de Claude, modèles choisis) : même verdict partout.
+- **Un modèle local en panne n'est plus attendu à chaque appel.** LM Studio relancé sans ses modèles (« Model is
+  unloaded », erreur 500 après une coupure de courant) : après un échec, il passe dix minutes en fin de chaîne, au lieu
+  de faire perdre plusieurs secondes à chaque titre, vérification ou compaction.
+- **Une extension MCP dont la commande a disparu le dit en la nommant** (Réglages → Extensions MCP et journal) : sous
+  uvloop, l'erreur se limitait à « No such file or directory », sans dire quel fichier manquait.
 - **Deux tâches d'un même compte se disputaient la page du navigateur interne.** Une routine pouvait changer la page
   d'une conversation en cours et lui faire cliquer au mauvais endroit. Chaque conversation a désormais sa page,
   conservée d'une réponse à l'autre, et chaque sous-agent a la sienne. Les actions d'un même compte s'exécutent l'une
@@ -34,6 +74,14 @@ Hormis la correction de `./ely.sh update`, les améliorations de cette section o
   redémarré », et Ely restait sur l'ancienne version. Le lanceur vérifie désormais que le service lance bien son propre
   dossier. Sinon, il n'y touche pas et le dit : `./ely.sh service` le remplace (en gardant une copie de l'ancien dans
   `data/`), et `./ely.sh unservice` ne le supprime jamais.
+
+### Ajouté
+- **Sauvegardes automatiques de la base** dans `data/sauvegardes/` : une par jour (7 gardées) et une avant chaque
+  activation d'une modification du code par Ely (5 gardées). Un retour arrière automatique indique la copie d'avant la
+  mise à jour ; la restauration est décrite dans le README.
+- **Les longues conversations se chargent par pages** : les 200 derniers messages, puis « Afficher les messages
+  précédents ».
+- **Intégration continue** : la suite de tests tourne sur chaque pull request et à chaque push sur `main`.
 
 ### Modifié
 - **Une auto-amélioration qui modifie le lanceur `ely.sh` est publiée sans être activée.** Le superviseur déjà lancé

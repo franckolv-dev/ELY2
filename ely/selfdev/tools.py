@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 from ..db import db, now
@@ -260,7 +261,7 @@ async def ely_edit(ctx: ToolContext, action: str, path: str, old: str = "", new:
             return ToolResult(f"Le passage à remplacer apparaît {n} fois (il doit être unique). Ajoute du contexte.", is_error=True)
         p.write_text(text.replace(old, new), encoding="utf-8")
     if p.suffix == ".py":
-        r = subprocess.run(["python3", "-m", "py_compile", str(p)], capture_output=True, text=True)
+        r = subprocess.run([sys.executable, "-m", "py_compile", str(p)], capture_output=True, text=True)
         if r.returncode:
             return ToolResult(f"Modifié, mais ERREUR DE SYNTAXE :\n{r.stderr[-1500:]}", is_error=True)
     return ToolResult(f"{path} modifié dans la copie de travail. Lance ely_test puis ely_deploy.")

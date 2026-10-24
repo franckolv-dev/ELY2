@@ -294,13 +294,18 @@ Ely est faite pour être joignable depuis Internet et partagée en famille :
   même si le modèle le demande (contenu piégé, nom inventé).
 - **Code réservé à l'administrateur** : Python et le terminal tournent sur la machine, sans les secrets d'Ely
   (`ELY_ALLOW_CODE_FOR_ALL=true` pour les ouvrir à tous). Le réseau de la maison (box, NAS, LM Studio, fichiers du Mac)
-  est fermé aux autres comptes.
+  est fermé aux autres comptes, redirections et navigateur interne compris.
+- **Secrets chiffrés** : mots de passe du coffre et jetons des connexions sont chiffrés dans la base (clé :
+  `data/secret.key`) et jamais recopiés dans les journaux.
+- **Extensions MCP** : un serveur lancé par Ely ne reçoit aucune clé du `.env` (donnez-lui les siennes dans `"env"`) ;
+  ses outils sont réservés à l'administrateur, sauf `"shared": true`.
 - **Contenus de tiers encadrés** : pages web, e-mails et fichiers reçus arrivent au modèle comme des informations,
   jamais comme des ordres.
 - **Interface protégée** : les fichiers servis ne peuvent pas s'exécuter, la page n'exécute que ses propres scripts,
   et une image venant d'un autre site s'affiche comme un lien.
-- **Sessions** : jamais dans une adresse ; changer de mot de passe ferme les autres sessions ; les mots de passe
-  essayés en boucle sont freinés sans bloquer le vrai titulaire, qui est prévenu.
+- **Sessions** : jamais dans une adresse ; une session inutilisée pendant 90 jours se ferme ; changer de mot de passe
+  ferme les autres sessions ; un nouveau mot de passe compte 8 caractères au moins ; les mots de passe essayés en
+  boucle sont freinés sans bloquer le vrai titulaire, qui est prévenu.
 - **Proxy** : derrière un proxy installé sur une autre machine que le Mac, déclarez son adresse dans
   `ELY_TRUSTED_PROXIES` (avec `tailscale serve` sur le Mac, rien à faire).
 
@@ -342,7 +347,14 @@ tests/        boucle, outils, navigateur réel, extension Chrome réelle, adapta
 scripts/      mock_llm.py (faux modèle pour essayer sans tokens), e2e_ui.py (parcours complet de l'interface)
 ```
 
-Données : `data/` (base `ely.db`, fichiers, profils de navigateur, plugins). Sauvegarder ce dossier suffit.
+Données : `data/` (base `ely.db`, fichiers, profils de navigateur, plugins, `secret.key`). Sauvegarder ce dossier suffit.
+
+**Sauvegardes de la base** : Ely copie sa base chaque jour, et avant chaque activation d'une modification de son code,
+dans `data/sauvegardes/` (7 copies quotidiennes, 5 d'avant mise à jour). Un retour arrière automatique du code ne touche
+pas aux données : son entrée dans le journal d'auto-amélioration indique la copie d'avant la mise à jour. Pour
+**restaurer** : arrêtez Ely, remplacez `data/ely.db` par la copie choisie, supprimez `data/ely.db-wal` et
+`data/ely.db-shm`, relancez. Une copie hors de la machine doit emporter `data/secret.key` (ou `ELY_SECRET_KEY`) : sans
+elle, les mots de passe et connexions enregistrés seraient à ressaisir.
 
 **Essayer l'interface sans dépenser de tokens** : `python scripts/mock_llm.py`, puis lancez Ely avec
 `CUSTOM_OPENAI_BASE_URL=http://127.0.0.1:9100/v1 CUSTOM_OPENAI_API_KEY=x ELY_MODEL_MAIN=custom:mock-agent`.

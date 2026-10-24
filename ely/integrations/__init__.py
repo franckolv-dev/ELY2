@@ -7,20 +7,22 @@ import hmac
 import json
 import time
 
+from .. import vault
 from ..config import settings
 from ..db import db, now
 
 
 def get(user_id: int, provider: str) -> dict:
     row = db.one("SELECT data FROM integrations WHERE user_id = ? AND provider = ?", (user_id, provider))
-    return json.loads(row["data"]) if row else {}
+    data = vault.unseal(row["data"]) if row else ""
+    return json.loads(data) if data else {}
 
 
 def put(user_id: int, provider: str, data: dict) -> None:
     db.run(
         "INSERT INTO integrations(user_id, provider, data, updated_at) VALUES(?,?,?,?) "
         "ON CONFLICT(user_id, provider) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at",
-        (user_id, provider, json.dumps(data), now()),
+        (user_id, provider, json.dumps(data) if vault.clear_provider(provider) else vault.seal(json.dumps(data)), now()),
     )
 
 

@@ -93,12 +93,13 @@ async def diff() -> str:
 
 
 def _test_env(data: str, code: Path) -> dict:
+    """Environnement des tests d'une modification : le code testé est écrit par un modèle, il ne reçoit ni les clés
+    d'Ely ni ses jetons (modèles, GitHub, Telegram, Google…) ; les tests n'appellent jamais de vrais services."""
+    from ..tools.files import KEEP, SECRET_NAME
+
+    env = {k: v for k, v in os.environ.items() if not SECRET_NAME.search(k) or k in KEEP}
     # Pas de .pyc : une retouche de même taille dans la même seconde serait testée sur l'ancien bytecode
-    env = {**os.environ, "ELY_DATA_DIR": data, "PYTHONPATH": str(code), "PYTHONDONTWRITEBYTECODE": "1"}
-    for k in list(env):  # les tests n'appellent jamais de vrais modèles
-        if k.endswith("_API_KEY") or k == "CLAUDE_CODE_OAUTH_TOKEN":
-            env.pop(k)
-    return env
+    return {**env, "ELY_DATA_DIR": data, "PYTHONPATH": str(code), "PYTHONDONTWRITEBYTECODE": "1"}
 
 
 async def collect(code: Path) -> set[str]:
@@ -143,10 +144,17 @@ async def run_tests(pattern: str = "", timeout: int = 900) -> tuple[bool, str]:
     return proc.returncode == 0, text[-6000:]
 
 
+async def snapshot() -> str:
+    """Empreinte du contenu exact de la copie de travail (fichiers suivis et nouveaux), indexé pour le commit."""
+    await git("add", "-A", cwd=WORKTREE)
+    return (await git("write-tree", cwd=WORKTREE))[1]
+
+
 async def deploy(summary: str, restart: bool = True) -> dict:
     """Tests, commit et PR, puis activation locale sauf si le lanceur lui-même change.
     Un lanceur modifié nécessite une fusion et une relance complète par l'administrateur.
     Sinon, restart=False reporte le redémarrage à l'appelant (par exemple une session Claude)."""
+    tested = await snapshot()
     ok, out = await run_tests()
     if not ok:
         return {"ok": False, "message": "Les tests échouent, déploiement refusé :\n" + out[-3000:]}
@@ -155,7 +163,9 @@ async def deploy(summary: str, restart: bool = True) -> dict:
         return {"ok": False, "message": "Déploiement refusé : des tests de la version active ont disparu (supprimés ou "
                 "renommés). Rétablissez-les ; pour changer un comportement, adaptez le test sans le retirer :\n"
                 + "\n".join(f"- {t}" for t in gone[:20])}
-    await git("add", "-A", cwd=WORKTREE)
+    if await snapshot() != tested:  # seul le code testé est commité
+        return {"ok": False, "message": "Déploiement refusé : la copie de travail a changé pendant les tests. "
+                "Relancez le déploiement pour tester la version actuelle."}
     code, st = await git("diff", "--cached", "--quiet", cwd=WORKTREE)
     if code == 0:
         return {"ok": False, "message": "Aucune modification à déployer."}
@@ -192,12 +202,20 @@ async def deploy(summary: str, restart: bool = True) -> dict:
         return {"ok": True, "sha": new_sha, "pr_url": pr_url, "activated": False, "restart": False,
                 "message": f"PR GitHub publiée : {pr_url}. Le lanceur ely.sh est modifié : aucune activation locale ni redémarrage automatique. "
                            "Demander à l'administrateur de fusionner puis de relancer le superviseur complet (pas seulement Python)."}
+    try:  # le code peut revenir en arrière, pas les données : une copie de la base d'avant l'activation
+        from ..backup import backup
+
+        saved = await asyncio.to_thread(backup, "avant-mise-a-jour")
+    except Exception as exc:
+        return {"ok": False, "sha": new_sha, "pr_url": pr_url, "activated": False, "restart": False,
+                "message": f"PR publiée : {pr_url}. Sauvegarde de la base impossible ({exc}) : aucune activation locale."}
     code, out = await git("merge", "--ff-only", BRANCH)
     if code:
         return {"ok": False, "pr_url": pr_url,
                 "message": f"PR publiée : {pr_url}. Fusion locale impossible (modifications locales ?) : {out}. "
                            "Demander à l'administrateur de relire et fusionner la PR."}
-    db.insert("improvements", kind="code", title=summary[:200], detail=f"{prev[:10]} → {new_sha[:10]} · PR : {pr_url}", diff=patch,
+    db.insert("improvements", kind="code", title=summary[:200],
+              detail=f"{prev[:10]} → {new_sha[:10]} · PR : {pr_url} · base sauvegardée avant : {saved.name}", diff=patch,
               commit_sha=new_sha, status="deployed", created_at=now())
     (settings.data_dir / "selfdev").mkdir(parents=True, exist_ok=True)
     (settings.data_dir / "selfdev" / "last_deploy.json").write_text(json.dumps({"prev": prev, "new": new_sha, "summary": summary, "at": now()}))
@@ -253,8 +271,14 @@ def check_rollback() -> None:
     p = settings.data_dir / "selfdev" / "rollback.json"
     if p.exists():
         try:
+            from ..backup import latest
+
             info = json.loads(p.read_text())
+            # le code est revenu en arrière, pas la base : la copie d'avant la mise à jour permet de la restaurer au besoin
+            if saved := latest("avant-mise-a-jour"):
+                info["sauvegarde"] = str(saved)
             db.insert("improvements", kind="code", title=f"Retour arrière automatique : {info.get('reason', 'démarrage en échec')}",
-                      detail=json.dumps(info)[:2000], commit_sha=info.get("bad", ""), status="rolled_back", created_at=now())
+                      detail=json.dumps(info, ensure_ascii=False)[:2000], commit_sha=info.get("bad", ""), status="rolled_back",
+                      created_at=now())
         finally:
             p.unlink(missing_ok=True)

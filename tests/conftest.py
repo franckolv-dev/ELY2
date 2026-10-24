@@ -17,6 +17,16 @@ _chrome = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
 if Path(_chrome).exists() and not os.environ.get("ELY_BROWSER_EXECUTABLE"):
     os.environ["ELY_BROWSER_EXECUTABLE"] = _chrome
 
+# Le .env de la machine (clés, jeton de Claude, modèles choisis…) ne change rien aux tests : ses valeurs sont oubliées,
+# et un rechargement du .env pendant les tests ne les ramène pas.
+from ely import config as _config  # noqa: E402
+
+for _k in _config._FROM_FILE - {"ELY_BROWSER_EXECUTABLE"}:
+    os.environ.pop(_k, None)
+_config._BOOT_ENV |= _config._FROM_FILE
+_config._FROM_FILE = set()
+_config.settings.__init__()
+
 import asyncio  # noqa: E402
 from typing import Callable  # noqa: E402
 

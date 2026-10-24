@@ -66,7 +66,7 @@ const FR = {
   "thread.relaunch": "Mission relancée",
   "thread.model": "Modèle", "thread.question": "Question", "thread.askFoot": "Répondez ci-dessous, Ely reprendra aussitôt.",
   "thread.thinking": "Ely réfléchit", "thread.working": "Ely travaille · {a}", "thread.subagent": "sous-agent {n} · {a}",
-  "thread.stop": "Arrêter", "thread.sec": "{s} s", "thread.min": "{m} min", "thread.minSec": "{m} min {s} s",
+  "thread.earlier": "Afficher les messages précédents", "thread.stop": "Arrêter", "thread.sec": "{s} s", "thread.min": "{m} min", "thread.minSec": "{m} min {s} s",
   // navigateur en direct
   "live.label": "Navigateur", "live.refresh": "Actualiser", "live.empty1": "Le navigateur d'Ely s'affichera ici dès qu'elle l'utilisera.",
   "live.empty2": "Vous pouvez aussi l'ouvrir vous-même pour vous connecter une fois à vos sites (Doctolib, LinkedIn…).",
@@ -103,7 +103,7 @@ const FR = {
   "profil.voiceRecorded": "Voix enregistrées (sur le Mac)", "profil.voiceBrowser": "Voix du navigateur",
   "profil.voiceLabel": "Voix", "profil.notif": "Notifications", "profil.notifHint": "Soyez prévenu sur votre téléphone quand Ely a terminé une tâche ou a besoin de vous.",
   "profil.enableDevice": "Activer sur cet appareil", "profil.test": "Tester", "profil.testSent": "Notification envoyée",
-  "profil.testNone": "Aucun appareil abonné", "profil.password": "Mot de passe", "profil.passwordHint": "Au moins 6 caractères.",
+  "profil.testNone": "Aucun appareil abonné", "profil.password": "Mot de passe", "profil.passwordHint": "Au moins 8 caractères.",
   "profil.currentPw": "Mot de passe actuel", "profil.newPw": "Nouveau mot de passe", "profil.change": "Changer",
   "profil.pwChanged": "Mot de passe modifié", "profil.session": "Session",
   // mémoire
@@ -234,7 +234,7 @@ const FR = {
   // extensions MCP
   "mcp.servers": "Serveurs", "mcp.serversHint": "État et outils fournis.", "mcp.none": "Aucun serveur branché.",
   "mcp.config": "Configuration", "mcp.configHint": "JSON des serveurs MCP.",
-  "mcp.format": () => html`Format : <code>{"nom": {"command": "npx", "args": ["-y", "paquet-mcp"], "env": {}}}</code> ou <code>{"nom": {"url": "https://…/mcp"}}</code>`,
+  "mcp.format": () => html`Format : <code>{"nom": {"command": "npx", "args": ["-y", "paquet-mcp"], "env": {}}}</code> ou <code>{"nom": {"url": "https://…/mcp"}}</code>. Les outils d'un serveur vous sont réservés ; ajoutez <code>"shared": true</code> pour les ouvrir aux autres comptes. Un serveur lancé ici ne reçoit aucune clé du fichier .env : donnez-lui les siennes dans <code>"env"</code>.`,
   "mcp.invalid": "JSON invalide : {e}", "mcp.reloaded": "Serveurs MCP rechargés", "mcp.connecting": "Connexion…", "mcp.save": "Enregistrer et recharger",
 };
 
@@ -293,7 +293,7 @@ const EN = {
   "thread.relaunch": "Mission restarted",
   "thread.model": "Model", "thread.question": "Question", "thread.askFoot": "Reply below and Ely will resume right away.",
   "thread.thinking": "Ely is thinking", "thread.working": "Ely is working · {a}", "thread.subagent": "sub-agent {n} · {a}",
-  "thread.stop": "Stop", "thread.sec": "{s} s", "thread.min": "{m} min", "thread.minSec": "{m} min {s} s",
+  "thread.earlier": "Show earlier messages", "thread.stop": "Stop", "thread.sec": "{s} s", "thread.min": "{m} min", "thread.minSec": "{m} min {s} s",
   "live.label": "Browser", "live.refresh": "Refresh", "live.empty1": "Ely's browser will show up here as soon as she uses it.",
   "live.empty2": "You can also open it yourself to sign in once to your sites (Doctolib, LinkedIn…).",
   "live.takeover": "Take control", "live.takeoverOn": "tap the image to click", "live.takeoverOff": "sign-in, captcha…",
@@ -325,7 +325,7 @@ const EN = {
   "profil.voiceRecorded": "Recorded voices (on the Mac)", "profil.voiceBrowser": "Browser voices",
   "profil.voiceLabel": "Voice", "profil.notif": "Notifications", "profil.notifHint": "Get notified on your phone when Ely finishes a task or needs you.",
   "profil.enableDevice": "Turn on for this device", "profil.test": "Test", "profil.testSent": "Notification sent",
-  "profil.testNone": "No subscribed device", "profil.password": "Password", "profil.passwordHint": "At least 6 characters.",
+  "profil.testNone": "No subscribed device", "profil.password": "Password", "profil.passwordHint": "At least 8 characters.",
   "profil.currentPw": "Current password", "profil.newPw": "New password", "profil.change": "Change",
   "profil.pwChanged": "Password changed", "profil.session": "Session",
   "mem.knows": "What Ely knows about you", "mem.knowsHint": "Always on her mind.",
@@ -446,7 +446,7 @@ const EN = {
   "self.revert": "Undo", "self.nothing": "Nothing yet.",
   "mcp.servers": "Servers", "mcp.serversHint": "Status and tools provided.", "mcp.none": "No server connected.",
   "mcp.config": "Configuration", "mcp.configHint": "MCP servers JSON.",
-  "mcp.format": () => html`Format: <code>{"name": {"command": "npx", "args": ["-y", "mcp-package"], "env": {}}}</code> or <code>{"name": {"url": "https://…/mcp"}}</code>`,
+  "mcp.format": () => html`Format: <code>{"name": {"command": "npx", "args": ["-y", "mcp-package"], "env": {}}}</code> or <code>{"name": {"url": "https://…/mcp"}}</code>. A server's tools are yours only; add <code>"shared": true</code> to open them to the other accounts. A server started here gets none of the keys in .env: give it its own in <code>"env"</code>.`,
   "mcp.invalid": "Invalid JSON: {e}", "mcp.reloaded": "MCP servers reloaded", "mcp.connecting": "Connecting…", "mcp.save": "Save and reload",
 };
 
@@ -458,6 +458,10 @@ const SERVER_EN = {
   "Inscription sur invitation : demandez un code à l'administrateur": "Registration by invitation: ask the administrator for a code",
   "Vous ne pouvez pas vous retirer vous-même le rôle administrateur": "You can't remove your own administrator role",
   "Impossible de supprimer votre propre compte": "You can't delete your own account",
+  "Mot de passe trop court (8 caractères minimum)": "Password too short (at least 8 characters)",
+  "Fichier trop volumineux : 200 Mo au plus": "File too large: 200 MB at most",
+  "Fichier trop volumineux : 25 Mo au plus": "File too large: 25 MB at most",
+  "Plus assez de place sur le disque du serveur d'Ely": "Not enough disk space left on Ely's server",
 };
 
 export const LANGS = [["fr", "Français"], ["en", "English"]];

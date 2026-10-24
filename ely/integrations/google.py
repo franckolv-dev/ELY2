@@ -272,13 +272,23 @@ def _when(v: str, all_day: bool, tz: str) -> dict:
     return {"date": v[:10]} if all_day else {"dateTime": v if len(v) > 16 else v + ":00", "timeZone": tz}
 
 
+CAL_MAX = 1000  # au-delà, la période demandée est trop large pour être utile en une fois
+
+
 async def cal_list(user_id: int, start: str, end: str, query: str | None) -> list[dict]:
-    params = {"timeMin": start, "timeMax": end, "singleEvents": "true", "orderBy": "startTime", "maxResults": 100}
+    """Événements de la période, toutes pages comprises (CAL_MAX au plus)."""
+    params = {"timeMin": start, "timeMax": end, "singleEvents": "true", "orderBy": "startTime", "maxResults": 250}
     if query:
         params["q"] = query
-    res = await api(user_id, "GET", CAL, params=params)
+    items: list[dict] = []
+    while len(items) < CAL_MAX:
+        res = await api(user_id, "GET", CAL, params=params)
+        items += res.get("items", [])
+        if not res.get("nextPageToken"):
+            break
+        params["pageToken"] = res["nextPageToken"]
     out = []
-    for e in res.get("items", []):
+    for e in items[:CAL_MAX]:
         out.append({"id": e["id"], "title": e.get("summary", "(sans titre)"),
                     "start": e["start"].get("dateTime") or e["start"].get("date"),
                     "end": e["end"].get("dateTime") or e["end"].get("date"), "location": e.get("location", ""),

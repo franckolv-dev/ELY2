@@ -2,19 +2,19 @@
 from __future__ import annotations
 
 import asyncio
-import base64
-import io
 import json
 import logging
 import mimetypes
 import re
+import shutil
 import threading
 import time
 from pathlib import Path
 
 import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
+from starlette.datastructures import UploadFile as StarletteUpload
 from pydantic import BaseModel
 
 from .. import CODE_VERSION, auth, chrome
@@ -260,16 +260,29 @@ async def delete_conversation(cid: int, user=Depends(auth.current_user)):
     _own(cid, user)
     await runner.stop(cid)  # sa note « Tâche arrêtée » est écrite avant la suppression, pas dans le vide
     db.run("DELETE FROM messages_fts WHERE conversation_id = ?", (cid,))
+    db.run("UPDATE schedules SET conversation_id = NULL WHERE conversation_id = ?", (cid,))  # numéro repris plus tard
     db.run("DELETE FROM conversations WHERE id = ?", (cid,))
     return {"ok": True}
 
 
+PAGE = 200  # messages par chargement : une longue conversation (Telegram) ne se charge pas d'un bloc
+
+
 @router.get("/api/conversations/{cid}/messages")
-def get_messages(cid: int, user=Depends(auth.current_user)):
+def get_messages(cid: int, before: int = 0, limit: int = PAGE, user=Depends(auth.current_user)):
+    """Les derniers messages (ou ceux d'avant `before`), du plus ancien au plus récent ; `more` : il y en a d'autres."""
     conv = _own(cid, user)
-    rows = db.all("SELECT * FROM messages WHERE conversation_id = ? ORDER BY id", (cid,))
+    limit = max(1, min(limit, 500))
+    rows = db.all("SELECT * FROM messages WHERE conversation_id = ? AND id < ? ORDER BY id DESC LIMIT ?",
+                  (cid, before or 2**62, limit + 1))
+    more = len(rows) > limit
+    rows = rows[:limit][::-1]
+    if more:  # résultats d'outils en tête de page : ils viennent avec leur appel, au chargement suivant
+        while len(rows) > 1 and rows[0]["role"] == "tool":
+            rows.pop(0)
     st = runner.states.get(cid)
-    return {"conversation": conv, "messages": [public_message(r) for r in rows], "state": st.snapshot() if st else None}
+    return {"conversation": conv, "messages": [public_message(r) for r in rows], "more": more,
+            "state": st.snapshot() if st else None}
 
 
 class ChatIn(BaseModel):
@@ -279,8 +292,10 @@ class ChatIn(BaseModel):
     model: str | None = None
 
 
-def build_content(user: dict, text: str, attachments: list[str]):
+async def build_content(user: dict, text: str, attachments: list[str]):
     """Texte + pièces jointes : les images vont directement au modèle, les documents sont signalés à l'agent."""
+    from ..tools.files import jpeg_for_model
+
     if not attachments:
         return text
     root = settings.user_dir(user["id"]) / "files"
@@ -292,14 +307,8 @@ def build_content(user: dict, text: str, attachments: list[str]):
             continue
         ctype = mimetypes.guess_type(p.name)[0] or ""
         if ctype.startswith("image/"):
-            from PIL import Image
-
-            img = Image.open(p)
-            img.thumbnail((1600, 1600))
-            buf = io.BytesIO()
-            img.convert("RGB").save(buf, "JPEG", quality=82)
-            parts.append({"type": "image", "media_type": "image/jpeg", "data": base64.b64encode(buf.getvalue()).decode(),
-                          "src": f"/files/{a}"})
+            data, _, _ = await asyncio.to_thread(jpeg_for_model, p)
+            parts.append({"type": "image", "media_type": "image/jpeg", "data": data, "src": f"/files/{a}"})
         notes.append(f"[Fichier joint : {a}]")
     parts.insert(0, {"type": "text", "text": (text + "\n\n" if text else "") + "\n".join(notes)})
     return parts
@@ -317,7 +326,7 @@ async def chat(body: ChatIn, user=Depends(auth.current_user)):
                         created_at=now(), updated_at=now())
     if body.model is not None and body.conversation_id:
         db.update("conversations", "id = ?", (cid,), model=body.model)
-    res = await runner.submit(user, cid, build_content(user, body.text.strip(), body.attachments))
+    res = await runner.submit(user, cid, await build_content(user, body.text.strip(), body.attachments))
     return {"conversation_id": cid, **res}
 
 
@@ -382,6 +391,13 @@ class BrowserAction(BaseModel):
 @router.post("/api/browser/action")
 async def browser_action(body: BrowserAction, user=Depends(auth.current_user)):
     """Prise de main : l'utilisateur agit lui-même dans le navigateur d'Ely (connexion, captcha…)."""
+    url = ""
+    if body.action == "goto":
+        from ..netguard import refusal
+
+        url = body.text if "://" in body.text else f"https://{body.text}"
+        if why := await refusal(url, user["role"] == "admin"):
+            raise HTTPException(403, f"Adresse refusée : {why}")
     ub = await manager.for_user(user["id"])
     page = await ub.page(ub.active_key)
     vp = page.viewport_size or {"width": 1280, "height": 860}
@@ -394,7 +410,6 @@ async def browser_action(body: BrowserAction, user=Depends(auth.current_user)):
     elif body.action == "scroll":
         await page.mouse.wheel(0, 600 if body.y >= 0 else -600)
     elif body.action == "goto":
-        url = body.text if body.text.startswith("http") else f"https://{body.text}"
         await page.goto(url, wait_until="domcontentloaded", timeout=45000)
     elif body.action == "back":
         await page.go_back()
@@ -430,15 +445,44 @@ def list_files(user=Depends(auth.current_user)):
     return out[:1000]
 
 
+UPLOAD_MAX = 200 << 20  # octets par envoi
+DISK_RESERVE = 2 << 30  # place gardée libre sur le disque : base de données, sauvegardes, système
+
+
+async def _bounded_form(request: Request, limit: int, where: Path):
+    """Formulaire d'envoi, taille vérifiée avant de lire le corps : un envoi démesuré ne remplit ni le disque ni le
+    dossier temporaire (uvicorn ne lit jamais au-delà de la longueur annoncée)."""
+    size = int(request.headers.get("content-length") or 0)
+    if not size:
+        raise HTTPException(411, "Taille de l'envoi inconnue")
+    if size > limit:
+        raise HTTPException(413, f"Fichier trop volumineux : {limit >> 20} Mo au plus")
+    if shutil.disk_usage(where).free - size < DISK_RESERVE:
+        raise HTTPException(507, "Plus assez de place sur le disque du serveur d'Ely")
+    return await request.form(max_files=1)
+
+
 @router.post("/api/files/upload")
-async def upload(file: UploadFile = File(...), user=Depends(auth.current_user)):
+async def upload(request: Request, user=Depends(auth.current_user)):
     from ..tools.files import received_path
 
-    dest = received_path(_ws(user), file.filename or "fichier")
-    with open(dest, "wb") as f:
-        while chunk := await file.read(1 << 20):
-            f.write(chunk)
-    return {"path": str(dest.relative_to(_ws(user))), "size": dest.stat().st_size}
+    ws = _ws(user)
+    form = await _bounded_form(request, UPLOAD_MAX, ws)
+    try:
+        file = form.get("file")
+        if not isinstance(file, StarletteUpload):
+            raise HTTPException(400, "Aucun fichier envoyé")
+        dest = received_path(ws, file.filename or "fichier")
+        try:
+            with open(dest, "wb") as f:
+                while chunk := await file.read(1 << 20):
+                    f.write(chunk)
+        except BaseException:
+            dest.unlink(missing_ok=True)
+            raise
+    finally:
+        await form.close()
+    return {"path": str(dest.relative_to(ws)), "size": dest.stat().st_size}
 
 
 @router.delete("/api/files")
@@ -508,10 +552,15 @@ async def tts(body: SpeakRequest, user=Depends(auth.current_user)):
 
 
 @router.post("/api/transcribe")
-async def transcribe(file: UploadFile = File(...), user=Depends(auth.current_user)):
+async def transcribe(request: Request, user=Depends(auth.current_user)):
     import os
 
+    form = await _bounded_form(request, 25 << 20, _ws(user))  # limite des services de transcription
+    file = form.get("file")
+    if not isinstance(file, StarletteUpload):
+        raise HTTPException(400, "Aucun fichier envoyé")
     audio = await file.read()
+    await form.close()
     for url, key, model in (("https://api.groq.com/openai/v1/audio/transcriptions", os.environ.get("GROQ_API_KEY"), "whisper-large-v3-turbo"),
                             ("https://api.openai.com/v1/audio/transcriptions", os.environ.get("OPENAI_API_KEY"), "gpt-4o-mini-transcribe")):
         if not key:
