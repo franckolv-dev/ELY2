@@ -417,3 +417,30 @@ async def test_push_notifications_really_leave(monkeypatch):
         assert status == 0 and _time.monotonic() - started < 5
     finally:
         srv.should_exit = True
+
+
+async def test_a_broken_local_model_is_not_waited_for_at_every_call(fake, user):
+    """LM Studio relancé sans ses modèles (« Model is unloaded ») : le premier appel bascule sur le modèle suivant, et
+    les suivants (titres, vérifications, compactions) ne l'attendent plus pendant dix minutes."""
+    from conftest import FakeProvider
+
+    from ely.llm import registry
+    from ely.llm.base import ModelInfo
+
+    local = FakeProvider("lmstudio")
+    local.models = [ModelInfo(id="qwen3.5-4b-mlx", provider="lmstudio", context=32000, loaded=True)]
+    tried = []
+
+    def unloaded(**kw):
+        tried.append(kw["model"])
+        return LLMError("{'message': 'Model is unloaded.'}")
+
+    local.script = unloaded
+    registry.providers["lmstudio"] = local
+    registry.catalog["lmstudio"] = local.models
+    registry.status["lmstudio"] = "ok (1 modèles)"
+    db.set_setting("model_fast", "lmstudio:qwen3.5-4b-mlx")
+    fake.script = lambda **kw: "Réponse du modèle suivant."
+    for _ in range(3):
+        assert await registry.complete("Donne un titre à cette conversation", role="fast") == "Réponse du modèle suivant."
+    assert tried == ["qwen3.5-4b-mlx"]

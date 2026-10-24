@@ -56,6 +56,11 @@ améliorations de cette section ont été écrites par Ely elle-même (auto-amé
 - **Une grande photo jointe ne fige plus le serveur** pendant sa réduction (chat et Telegram).
 - **La vérification de syntaxe d'une auto-modification** utilise le Python d'Ely, même sans `python3` dans le PATH.
 - **La suite de tests ignore le `.env` de la machine** (jeton de Claude, modèles choisis) : même verdict partout.
+- **Un modèle local en panne n'est plus attendu à chaque appel.** LM Studio relancé sans ses modèles (« Model is
+  unloaded », erreur 500 après une coupure de courant) : après un échec, il passe dix minutes en fin de chaîne, au lieu
+  de faire perdre plusieurs secondes à chaque titre, vérification ou compaction.
+- **Une extension MCP dont la commande a disparu le dit en la nommant** (Réglages → Extensions MCP et journal) : sous
+  uvloop, l'erreur se limitait à « No such file or directory », sans dire quel fichier manquait.
 - **Deux tâches d'un même compte se disputaient la page du navigateur interne.** Une routine pouvait changer la page
   d'une conversation en cours et lui faire cliquer au mauvais endroit. Chaque conversation a désormais sa page,
   conservée d'une réponse à l'autre, et chaque sous-agent a la sienne. Les actions d'un même compte s'exécutent l'une

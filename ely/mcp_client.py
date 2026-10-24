@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import re
+import shutil
 from contextlib import AsyncExitStack
 
 from .config import settings
@@ -66,9 +67,13 @@ class Connection:
             from .tools.files import KEEP, SECRET_NAME
 
             # programme tiers : ni les clés d'Ely ni ses jetons, seulement ce que sa configuration lui donne (« env »)
-            env = {k: v for k, v in os.environ.items() if not SECRET_NAME.search(k) or k in KEEP}
-            params = StdioServerParameters(command=self.spec["command"], args=self.spec.get("args", []),
-                                           env={**env, **self.spec.get("env", {})})
+            env = {**{k: v for k, v in os.environ.items() if not SECRET_NAME.search(k) or k in KEEP}, **self.spec.get("env", {})}
+            # nommée ici : sous uvloop, l'erreur du lancement ne dit pas quel fichier manque
+            command = shutil.which(self.spec["command"], path=env.get("PATH"))
+            if not command:
+                raise FileNotFoundError(f"commande introuvable : « {self.spec['command']} » (installée ? chemin complet "
+                                        "dans la configuration ?)")
+            params = StdioServerParameters(command=command, args=self.spec.get("args", []), env=env)
             streams = await stack.enter_async_context(stdio_client(params))
         read, write = streams[0], streams[1]
         session = await stack.enter_async_context(ClientSession(read, write))

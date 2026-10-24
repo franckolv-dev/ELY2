@@ -142,3 +142,16 @@ async def test_an_mcp_server_gets_no_secret_and_serves_the_admin_unless_shared(u
             assert r.is_error is not shared, (shared, r.content)
         finally:
             await mcp_client.manager.stop_all()
+
+
+async def test_a_server_whose_command_is_gone_says_which_one(tmp_path, monkeypatch):
+    """Après un redémarrage du Mac, la commande d'un serveur MCP n'existe plus : son état le dit en la nommant (sous
+    uvloop, l'erreur du lancement ne nomme aucun fichier), sans empêcher les autres serveurs de démarrer."""
+    monkeypatch.setattr(mcp_client, "CONFIG", tmp_path / "mcp.json")
+    mcp_client.save_config({"ely_code": {"command": "/Users/franck/outils/serveur-disparu", "args": []}})
+    await mcp_client.manager.start_all(wait=10)
+    try:
+        status = mcp_client.manager.status()["ely_code"]["status"]
+        assert "commande introuvable" in status and "/Users/franck/outils/serveur-disparu" in status, status
+    finally:
+        await mcp_client.manager.stop_all()
