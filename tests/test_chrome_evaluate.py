@@ -77,6 +77,9 @@ def bridge():
     ('(() => { calls++; return 42; })();\n', 42),
     ('() => { calls++; return 42; }', 42),
     ('async () => { calls++; return await Promise.resolve(42); }', 42),
+    # sans espace après async (routine matinale : la fonction n'était pas appelée, résultat {})
+    ('async()=>{ calls++; return {total: 2}; }', {'total': 2}),
+    ('async(x)=>{ calls++; return 42; }', 42),
     ('function () { calls++; return 42; }', 42),
     ('arg => { calls++; return 42; }', 42),
     ('calls++; 42', 42),

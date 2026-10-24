@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import re
 from email.message import EmailMessage
 
 from ..integrations import connected, get
@@ -106,6 +107,9 @@ async def email_search(ctx: ToolContext, query: str = "", limit: int = 15, unrea
         return ToolResult(NO_MAIL, is_error=True)
     limit = max(1, min(limit, 50))
     if backend == "gmail":
+        # newer_than/older_than n'acceptent que d/m/y : avec un horodatage, Gmail ne renvoie rien sans erreur
+        query = re.sub(r"\bnewer_than:(\d{9,})\b", r"after:\1", query)
+        query = re.sub(r"\bolder_than:(\d{9,})\b", r"before:\1", query)
         q = (query + (" is:unread" if unread_only else "")).strip() or "in:inbox"
         page = await g.gmail_search_page(ctx.user_id, q, limit, page_token)
         items = page["messages"]

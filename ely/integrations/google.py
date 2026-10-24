@@ -61,7 +61,10 @@ _token_locks: WeakKeyDictionary = WeakKeyDictionary()
 _token_failures: OrderedDict = OrderedDict()
 TOKEN_FAILURE_TTL = 60
 TOKEN_FAILURE_LIMIT = 256
-RECONNECT = "Reconnexion Google nécessaire (invalid_grant) : jeton expiré ou révoqué. Réglages → Connexions → Google."
+RECONNECT = ("Reconnexion Google nécessaire (invalid_grant) : jeton expiré ou révoqué. Seule la personne peut "
+             "reconnecter son compte (Réglages → Connexions → Google) ; aucun mot de passe ne remplace cette "
+             "reconnexion, ne le demande pas. Les outils Google restent indisponibles d'ici là : ne les réessaie pas, "
+             "fais le reste de la tâche et signale ce blocage.")
 
 
 def _token_lock(user_id: int) -> asyncio.Lock:

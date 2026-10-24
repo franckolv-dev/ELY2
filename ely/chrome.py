@@ -207,7 +207,7 @@ def extension_zip(request: Request, url: str = "", user=Depends(auth.current_use
 
 
 # ---------------------------------------------------------------------- pilotage d'un onglet
-_FUNC = re.compile(r"^\s*(async\s+)?(function\b|\([^)]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)")
+_FUNC = re.compile(r"^\s*(async\s*)?(function\b|\([^)]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)")
 _NO_ARG = object()
 UPLOAD_MAX = 25_000_000  # octets : au-delà, la liaison WebSocket de l'extension serait trop sollicitée
 
