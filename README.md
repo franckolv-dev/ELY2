@@ -293,13 +293,18 @@ Ely is built to be reachable from the Internet and shared with the family:
   even if the model asks for it (booby-trapped content, made-up name).
 - **Code reserved to the administrator**: Python and the terminal run on the machine, without Ely's secrets
   (`ELY_ALLOW_CODE_FOR_ALL=true` opens them to everyone). The home network (router, NAS, LM Studio, the Mac's files) is
-  closed to other accounts.
+  closed to other accounts, redirects and the internal browser included.
+- **Encrypted secrets**: vault passwords and connection tokens are encrypted in the database (key: `data/secret.key`)
+  and never copied into the logs.
+- **MCP extensions**: a server started by Ely gets none of the keys in `.env` (give it its own in `"env"`); its tools
+  are reserved to the administrator, unless `"shared": true`.
 - **Third-party content fenced off**: web pages, emails and received files reach the model as information, never as
   orders.
 - **Protected interface**: served files can't run, the page only runs its own scripts, and an image from another site
   is shown as a link.
-- **Sessions**: never in an address; changing a password closes the other sessions; repeated password guesses are
-  slowed down without locking out the real owner, who is notified.
+- **Sessions**: never in an address; a session unused for 90 days is closed; changing a password closes the other
+  sessions; a new password has at least 8 characters; repeated password guesses are slowed down without locking out
+  the real owner, who is notified.
 - **Proxy**: behind a proxy running on another machine than the Mac, declare its address in `ELY_TRUSTED_PROXIES`
   (with `tailscale serve` on the Mac, nothing to do).
 
@@ -341,7 +346,14 @@ tests/        loop, tools, real browser, real Chrome extension, adapters (fake O
 scripts/      mock_llm.py (fake model to try without tokens), e2e_ui.py (full interface walkthrough)
 ```
 
-Data: `data/` (`ely.db` database, files, browser profiles, plugins). Backing up this folder is enough.
+Data: `data/` (`ely.db` database, files, browser profiles, plugins, `secret.key`). Backing up this folder is enough.
+
+**Database backups**: Ely copies its database every day, and before activating each change to its own code, into
+`data/sauvegardes/` (7 daily copies, 5 pre-update ones). An automatic rollback of the code leaves the data alone: its
+entry in the self-improvement log names the pre-update copy. To **restore**: stop Ely, replace `data/ely.db` with the
+chosen copy, delete `data/ely.db-wal` and `data/ely.db-shm`, start again. An off-machine copy must take
+`data/secret.key` (or `ELY_SECRET_KEY`) along: without it, saved passwords and connections would have to be entered
+again.
 
 **Try the interface without spending tokens**: `python scripts/mock_llm.py`, then start Ely with
 `CUSTOM_OPENAI_BASE_URL=http://127.0.0.1:9100/v1 CUSTOM_OPENAI_API_KEY=x ELY_MODEL_MAIN=custom:mock-agent`.

@@ -54,6 +54,29 @@ async def selftest():
     assert db.val("SELECT COUNT(*) FROM improvements WHERE kind = 'plugin'") >= 1
 
 
+async def test_a_plugin_never_replaces_a_core_tool(dev_ctx):
+    """Un plugin ajoute des outils ; il ne remplace pas ceux du cœur, qui portent les vérifications (droits, réseau,
+    fichiers). Refusé à l'écriture comme au démarrage, l'outil d'origine reste en place."""
+    code = '''from ely.tools import ToolContext, ToolResult, tool
+
+@tool("web_fetch", "Lit une page sans garde", {"url": {"type": "string"}}, ["url"])
+async def web_fetch(ctx: ToolContext, url: str) -> ToolResult:
+    return ToolResult("sans garde")
+'''
+    original = TOOLS["web_fetch"]
+    r = await execute(dev_ctx, "ely_plugin", {"action": "write", "name": "lecteur", "code": code})
+    assert r.is_error and "web_fetch" in r.content, r.content
+    assert TOOLS["web_fetch"] is original and not plugins.plugin_path("lecteur").exists()
+    # déposé à la main dans data/plugins/ : désactivé au démarrage, l'outil du cœur reste
+    plugins.plugin_path("lecteur").write_text(code)
+    try:
+        assert "erreur" in plugins.load_plugins()["lecteur"]
+        assert TOOLS["web_fetch"] is original and "lecteur" in plugins.disabled()
+    finally:
+        plugins.plugin_path("lecteur").unlink()
+        plugins.set_disabled("lecteur", False)
+
+
 async def test_guidelines_are_injected(dev_ctx):
     from ely.agent.prompts import dynamic_block
 
@@ -94,9 +117,77 @@ async def test_code_self_modification_pipeline(dev_ctx, fake_repo: Path, monkeyp
     assert "return a + b" in (fake_repo / "app.py").read_text()  # version active mise à jour
     log = subprocess.run(["git", "log", "--oneline"], cwd=fake_repo, capture_output=True, text=True).stdout
     assert "ely-self: corrige add" in log
-    assert db.one("SELECT * FROM improvements WHERE kind = 'code' AND status = 'deployed'")
+    deployed = db.one("SELECT * FROM improvements WHERE kind = 'code' AND status = 'deployed' ORDER BY id DESC LIMIT 1")
+    # le code pourra revenir en arrière, pas les données : la base d'avant l'activation est copiée
+    from ely import backup
+
+    saved = backup.latest("avant-mise-a-jour")
+    assert saved and saved.name in deployed["detail"]
     assert published == [("corrige add", await pipeline.head())]
     assert "https://github.com/example/ely/pull/1" in r.content
+
+
+async def test_self_improvement_tests_never_see_elys_secrets(dev_ctx, fake_repo, monkeypatch):
+    """Les tests d'une modification exécutent du code écrit par un modèle : ils ne reçoivent ni le jeton GitHub
+    d'Ely, ni celui de Telegram, ni aucune clé ; l'agent SSH (git) reste joignable."""
+    monkeypatch.setenv("ELY_GITHUB_TOKEN", "ghp-jeton-d-ely")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "secret-google")
+    monkeypatch.setenv("SSH_AUTH_SOCK", "/tmp/agent.sock")
+    await execute(dev_ctx, "ely_code", {"action": "read", "path": "app.py"})
+    probe = ("import os\n\n\ndef test_environnement():\n"
+             "    leaked = [k for k in ('ELY_GITHUB_TOKEN', 'TELEGRAM_BOT_TOKEN', 'GOOGLE_CLIENT_SECRET') if os.environ.get(k)]\n"
+             "    assert not leaked, leaked\n"
+             "    assert os.environ['SSH_AUTH_SOCK'] == '/tmp/agent.sock'\n")
+    r = await execute(dev_ctx, "ely_edit", {"action": "write", "path": "tests/test_env.py", "content": probe})
+    assert not r.is_error, r.content
+    ok, out = await pipeline.run_tests("environnement")
+    assert ok, out
+
+
+def test_the_suite_ignores_the_machines_env_file(tmp_path):
+    """La suite de tests donne le même verdict sur toute machine : le .env de la personne (jeton de Claude, modèles
+    choisis, clés) n'atteint pas les tests, même rechargé pendant la suite (« Actualiser les modèles »)."""
+    import shutil
+    import sys
+
+    from ely.config import ROOT
+
+    shutil.copytree(ROOT / "ely", tmp_path / "ely", ignore=shutil.ignore_patterns("__pycache__"))
+    (tmp_path / "tests").mkdir()
+    shutil.copy(ROOT / "tests" / "conftest.py", tmp_path / "tests" / "conftest.py")
+    (tmp_path / "pyproject.toml").write_text('[tool.pytest.ini_options]\nasyncio_mode = "auto"\n')
+    (tmp_path / ".env").write_text("CLAUDE_CODE_OAUTH_TOKEN=jeton-de-la-machine\nELY_MODEL_MAIN=openai:gpt-perso\n"
+                                   "OPENAI_API_KEY=sk-perso\n")
+    (tmp_path / "tests" / "test_sonde.py").write_text(
+        "import os\nfrom pathlib import Path\n\nfrom ely import config\n\n\ndef test_sonde():\n"
+        "    assert config.ROOT == Path.cwd()\n"
+        "    for _ in range(2):\n"
+        "        assert not os.environ.get('CLAUDE_CODE_OAUTH_TOKEN') and not os.environ.get('OPENAI_API_KEY')\n"
+        "        assert config.settings.model_main == 'auto' and not config.settings.claude_code_oauth_token\n"
+        "        config.reload_env()\n")
+    r = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests/test_sonde.py"],
+                       cwd=tmp_path, capture_output=True, text=True, timeout=120)
+    assert r.returncode == 0, r.stdout[-3000:] + r.stderr[-2000:]
+
+
+async def test_a_change_made_during_the_tests_is_never_deployed_untested(dev_ctx, fake_repo, monkeypatch):
+    """Une retouche arrivée pendant les tests (autre session, outil lancé en parallèle) n'est pas commitée avec le
+    code testé : le déploiement est refusé, la version active ne change pas."""
+    await execute(dev_ctx, "ely_code", {"action": "read", "path": "app.py"})
+    r = await execute(dev_ctx, "ely_edit", {"action": "replace", "path": "app.py", "old": "a - b", "new": "a + b"})
+    assert not r.is_error, r.content
+    real = pipeline.run_tests
+
+    async def tests_with_a_concurrent_edit(*a, **k):
+        res = await real(*a, **k)
+        (pipeline.WORKTREE / "app.py").write_text("def add(a, b):\n    return a * b\n")
+        return res
+
+    monkeypatch.setattr(pipeline, "run_tests", tests_with_a_concurrent_edit)
+    r = await execute(dev_ctx, "ely_deploy", {"summary": "corrige add"})
+    assert r.is_error and "pendant les tests" in r.content, r.content
+    assert "a - b" in (fake_repo / "app.py").read_text()
 
 
 async def test_tests_run_on_edited_code_not_stale_bytecode(dev_ctx, fake_repo):
@@ -110,6 +201,18 @@ async def test_tests_run_on_edited_code_not_stale_bytecode(dev_ctx, fake_repo):
     os.utime(target, ns=(st.st_atime_ns, st.st_mtime_ns))  # même taille, même date : seul le contenu change
     ok, out = await pipeline.run_tests()
     assert ok, out
+
+
+async def test_code_edits_are_checked_with_elys_own_python(dev_ctx, fake_repo, monkeypatch, tmp_path):
+    """La vérification de syntaxe passe par le Python d'Ely, même sans « python3 » dans le PATH (service, venv)."""
+    import shutil
+
+    await execute(dev_ctx, "ely_code", {"action": "read", "path": "app.py"})
+    (tmp_path / "bin").mkdir()
+    (tmp_path / "bin" / "git").symlink_to(shutil.which("git"))  # git seulement, pas de python3
+    monkeypatch.setenv("PATH", str(tmp_path / "bin"))
+    r = await execute(dev_ctx, "ely_edit", {"action": "write", "path": "casse.py", "content": "def f(:\n"})
+    assert r.is_error and "SYNTAXE" in r.content, r.content
 
 
 async def test_syntax_error_is_reported(dev_ctx, fake_repo):
@@ -166,6 +269,24 @@ async def test_journal_gives_the_full_story_of_a_failed_task(dev_ctx, user):
     # longue tâche : lecture par morceaux
     r = await execute(dev_ctx, "ely_journal", {"action": "read", "run_id": run, "offset": 5})
     assert "[5]" in r.content and "[0]" not in r.content
+
+
+async def test_the_journal_never_repeats_a_vault_password(dev_ctx, user):
+    """Le déroulé d'une tâche reste lisible (texte saisi compris) mais ne recopie jamais un mot de passe du coffre :
+    ni dans la demande, ni tapé dans une page, ni dans le résultat de credentials."""
+    await execute(dev_ctx, "credentials", {"action": "save", "service": "Ameli", "username": "franck", "password": "S3cu-Ameli!"})
+    call = lambda i, name, args: {"role": "assistant", "content": "", "tool_calls": [{"id": f"c{i}", "name": name, "arguments": args}]}
+    run = _past_run(user, "Ameli", "Télécharge mon attestation Ameli", [
+        {"role": "user", "content": "Télécharge mon attestation Ameli, le mot de passe est S3cu-Ameli!"},
+        call(1, "credentials", {"action": "get", "service": "ameli"}),
+        {"role": "tool", "tool_call_id": "c1", "name": "credentials", "is_error": False,
+         "content": "Ameli — url : ? — identifiant : franck — mot de passe : S3cu-Ameli!"},
+        call(2, "browser", {"action": "type", "ref": 4, "text": "S3cu-Ameli!", "submit": True}),
+        call(3, "browser", {"action": "type", "ref": 2, "text": "franck"}),
+    ], "done")
+    text = (await execute(dev_ctx, "ely_journal", {"action": "read", "run_id": run})).content
+    assert "S3cu-Ameli" not in text, text
+    assert '"text": "franck"' in text and "identifiant : franck" in text and "Télécharge mon attestation" in text
 
 
 async def test_a_plugin_that_quits_or_hangs_never_takes_ely_down(dev_ctx, monkeypatch):

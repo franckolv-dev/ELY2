@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse, RedirectResponse
 from pydantic import BaseModel
 
-from .. import auth
+from .. import auth, vault
 from ..config import settings
 from ..db import db, now
 from ..integrations import get, google, mail, put, remove, social, verify_state
@@ -225,10 +225,11 @@ def list_creds(user=Depends(auth.current_user)):
 @router.post("/api/credentials")
 def add_cred(body: CredIn, user=Depends(auth.current_user)):
     row = db.one("SELECT id FROM credentials WHERE user_id = ? AND lower(service) = lower(?)", (user["id"], body.service))
+    fields = {**body.model_dump(), "password": vault.seal(body.password)}
     if row:
-        db.update("credentials", "id = ?", (row["id"],), **body.model_dump(), updated_at=now())
+        db.update("credentials", "id = ?", (row["id"],), **fields, updated_at=now())
         return {"id": row["id"]}
-    return {"id": db.insert("credentials", user_id=user["id"], **body.model_dump(), created_at=now(), updated_at=now())}
+    return {"id": db.insert("credentials", user_id=user["id"], **fields, created_at=now(), updated_at=now())}
 
 
 @router.delete("/api/credentials/{cid}")

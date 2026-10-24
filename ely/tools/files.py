@@ -20,17 +20,24 @@ from . import ToolContext, ToolResult, tool
 IMAGE_EXT = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif"}
 
 
+def jpeg_for_model(source: Path | bytes, quality: int = 82) -> tuple[str, int, int]:
+    """Image réduite (1600 px au plus) en JPEG base64, avec ses dimensions. Calcul lourd : à lancer hors de la boucle
+    asyncio (asyncio.to_thread), sinon une grande photo fige tout le serveur."""
+    from PIL import Image
+
+    img = Image.open(io.BytesIO(source) if isinstance(source, bytes) else source)
+    img.thumbnail((1600, 1600))
+    buf = io.BytesIO()
+    img.convert("RGB").save(buf, "JPEG", quality=quality)
+    return base64.b64encode(buf.getvalue()).decode(), img.width, img.height
+
+
 def read_any(path: Path, offset: int = 0, limit: int = 20000) -> tuple[str, list[dict]]:
     """Lit texte, PDF, Word, Excel, images. Renvoie (texte, images)."""
     ext = path.suffix.lower()
     if ext in IMAGE_EXT:
-        from PIL import Image
-
-        img = Image.open(path)
-        img.thumbnail((1600, 1600))
-        buf = io.BytesIO()
-        img.convert("RGB").save(buf, "JPEG", quality=80)
-        return f"Image {path.name} ({img.width}×{img.height})", [{"media_type": "image/jpeg", "data": base64.b64encode(buf.getvalue()).decode()}]
+        data, w, h = jpeg_for_model(path, quality=80)
+        return f"Image {path.name} ({w}×{h})", [{"media_type": "image/jpeg", "data": data}]
     if ext == ".pdf":
         from pypdf import PdfReader
 

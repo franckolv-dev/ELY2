@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
+import httpx
+
 from ..config import settings
 from ..db import db, now
 
@@ -163,9 +165,20 @@ def _coerce(value: Any, spec: dict) -> Any:
     return value
 
 
+class MaybeDone(Exception):
+    """Coupure pendant l'action elle-même (message transmis, réponse jamais reçue) : elle a peut-être eu lieu."""
+
+
+# coupures après l'envoi de la requête : le service a pu agir sans que la réponse arrive
+MAYBE_DONE = (MaybeDone, httpx.ReadTimeout, httpx.WriteTimeout, httpx.ReadError, httpx.WriteError, httpx.RemoteProtocolError)
+
+
+UNCERTAIN = "Résultat incertain"
+
+
 def uncertain(why: str) -> str:
     """Action peut-être faite malgré l'erreur : on ne la refait pas sans vérifier (voir LOST dans agent/loop.py)."""
-    return (f"Résultat incertain : {why}. L'action a peut-être eu lieu quand même : vérifie-le (page, boîte d'envoi, "
+    return (f"{UNCERTAIN} : {why}. L'action a peut-être eu lieu quand même : vérifie-le (page, boîte d'envoi, "
             "agenda, fichiers…) avant de la refaire.")
 
 
@@ -231,17 +244,42 @@ async def execute(ctx: ToolContext, name: str, args: dict) -> ToolResult:
     except Exception as e:  # l'erreur est rendue au modèle, jamais levée
         log.exception("outil %s", name)
         ok, err = False, f"{e.__class__.__name__}: {e}"
-        res = ToolResult(f"Erreur dans {name} : {e.__class__.__name__}: {e}", is_error=True)
+        if t.effects and isinstance(e, MAYBE_DONE):
+            res = ToolResult(uncertain(f"la connexion a été coupée pendant l'action ({e.__class__.__name__}: {e})"), is_error=True)
+        else:
+            res = ToolResult(f"Erreur dans {name} : {e.__class__.__name__}: {e}", is_error=True)
     res.content = spill(ctx, name, res.content or "(aucune sortie)")
     if t.untrusted:
         res.content = fence(name, res.content)
     try:
+        from ..vault import passwords
+
+        hidden = passwords(ctx.user_id)
         db.insert("tool_log", run_id=ctx.run_id, user_id=ctx.user_id, name=name, ok=int(ok),
-                  ms=int((time.monotonic() - started) * 1000), error=err[:500],
-                  args=json.dumps(clean, ensure_ascii=False, default=str)[:1000], created_at=now())
+                  ms=int((time.monotonic() - started) * 1000), error=hide(err, hidden)[:500],
+                  args=json.dumps(redact(clean, hidden), ensure_ascii=False, default=str)[:1000], created_at=now())
     except Exception:
         pass
     return res
+
+
+SECRET_ARGS = {"password", "passwd", "secret", "token", "api_key", "apikey", "card_number", "cvv", "cvc"}
+
+
+def redact(args: Any, hidden: set[str] | frozenset = frozenset()) -> Any:
+    """Arguments d'un appel tels qu'on peut les garder dans un journal : champs secrets masqués, et partout les
+    mots de passe du coffre de la personne (`hidden`), tapés dans une page par exemple."""
+    if isinstance(args, list):
+        return [redact(v, hidden) for v in args]
+    if isinstance(args, dict):
+        return {k: "••••" if k.lower() in SECRET_ARGS and v else redact(v, hidden) for k, v in args.items()}
+    return hide(args, hidden) if isinstance(args, str) else args
+
+
+def hide(text: str, hidden: set[str] | frozenset) -> str:
+    for secret in hidden:
+        text = text.replace(secret, "••••")
+    return text
 
 
 def load_builtin_tools() -> None:

@@ -308,6 +308,10 @@ class Registry:
                             await on_switch(ref, f"nouvel essai après erreur : {str(e)[:120]}")
                         continue
                     break
+            if failure and ref.split(":", 1)[0] in LOCAL and ref != too_long:
+                # LM Studio relancé sans ses modèles (« Model is unloaded »), moteur en panne… : les appels suivants
+                # (titres, vérifications, compactions) ne l'attendent plus à chaque fois
+                self.stalled[ref] = time.time() + STALL_PENALTY
             if i + 1 < len(chain) and on_switch:
                 why = f" ({failure[:160]})" if failure else ""
                 await on_switch(chain[i + 1], f"{ref} indisponible{why}, bascule sur {chain[i + 1]}")

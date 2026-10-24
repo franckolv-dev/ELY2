@@ -112,8 +112,9 @@ async def test_context_overflow_is_compacted_not_fatal(fake, user):
 
 
 async def test_slow_verification_does_not_hold_the_task(fake, user, monkeypatch):
-    """Contrôleur sur un petit modèle local qui réfléchit jusqu'à sa limite : la réponse déjà donnée est acceptée
-    après le délai, sans second essai, au lieu de garder la tâche « en cours » plus de 3 minutes."""
+    """Contrôleur sur un petit modèle local qui réfléchit jusqu'à sa limite : la réponse déjà donnée est rendue
+    après le délai, sans second essai, au lieu de garder la tâche « en cours » plus de 3 minutes. Faute de verdict,
+    la tâche est « terminée sans confirmation » (audit ARC-01)."""
     from ely.agent import loop
 
     calls = []
@@ -131,7 +132,9 @@ async def test_slow_verification_does_not_hold_the_task(fake, user, monkeypatch)
     cid = new_conversation(user)
     res = await runner.submit(user, cid, "Quelle est la météo demain à Béziers ?")
     await wait_idle(cid, timeout=5)
-    assert db.val("SELECT status FROM runs WHERE id = ?", (res["run_id"],)) == "done"
+    assert db.val("SELECT status FROM runs WHERE id = ?", (res["run_id"],)) == "unverified"
+    last = json.loads(db.val("SELECT data FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT 1", (cid,)))
+    assert last["content"].startswith("Demain à Béziers")
     assert len(calls) == 1
 
 
@@ -218,18 +221,23 @@ async def selftest():
     assert r.is_error and "fantome" not in TOOLS
 
 
-async def test_plugin_overriding_core_tool_is_restored(dev_ctx):
-    original = TOOLS["weather"]
+async def test_plugin_overriding_another_plugin_is_restored(dev_ctx):
+    """Un plugin peut remplacer l'outil d'un autre plugin (jamais un outil du cœur) ; désactivé, il rend la place."""
     code = '''from ely.tools import ToolResult, tool
 
-@tool("weather", "météo améliorée", {"location": {"type": "string"}}, ["location"])
-async def weather(ctx, location):
-    return ToolResult("toujours beau")
+@tool("meteo_locale", "{0}", {{"location": {{"type": "string"}}}}, ["location"])
+async def meteo_locale(ctx, location):
+    return ToolResult("{0}")
 '''
-    r = await execute(dev_ctx, "ely_plugin", {"action": "write", "name": "meteo2", "code": code})
-    assert not r.is_error and TOOLS["weather"] is not original
+    r = await execute(dev_ctx, "ely_plugin", {"action": "write", "name": "meteo1", "code": code.format("nuageux")})
+    assert not r.is_error, r.content
+    original = TOOLS["meteo_locale"]
+    r = await execute(dev_ctx, "ely_plugin", {"action": "write", "name": "meteo2", "code": code.format("toujours beau")})
+    assert not r.is_error and (await execute(dev_ctx, "meteo_locale", {"location": "Poitiers"})).content == "toujours beau"
     await execute(dev_ctx, "ely_plugin", {"action": "disable", "name": "meteo2"})
-    assert TOOLS["weather"] is original
+    assert TOOLS["meteo_locale"] is original
+    await execute(dev_ctx, "ely_plugin", {"action": "disable", "name": "meteo1"})
+    assert "meteo_locale" not in TOOLS
 
 
 async def test_cancelled_shell_kills_the_whole_process_group(user):
@@ -409,3 +417,30 @@ async def test_push_notifications_really_leave(monkeypatch):
         assert status == 0 and _time.monotonic() - started < 5
     finally:
         srv.should_exit = True
+
+
+async def test_a_broken_local_model_is_not_waited_for_at_every_call(fake, user):
+    """LM Studio relancé sans ses modèles (« Model is unloaded ») : le premier appel bascule sur le modèle suivant, et
+    les suivants (titres, vérifications, compactions) ne l'attendent plus pendant dix minutes."""
+    from conftest import FakeProvider
+
+    from ely.llm import registry
+    from ely.llm.base import ModelInfo
+
+    local = FakeProvider("lmstudio")
+    local.models = [ModelInfo(id="qwen3.5-4b-mlx", provider="lmstudio", context=32000, loaded=True)]
+    tried = []
+
+    def unloaded(**kw):
+        tried.append(kw["model"])
+        return LLMError("{'message': 'Model is unloaded.'}")
+
+    local.script = unloaded
+    registry.providers["lmstudio"] = local
+    registry.catalog["lmstudio"] = local.models
+    registry.status["lmstudio"] = "ok (1 modèles)"
+    db.set_setting("model_fast", "lmstudio:qwen3.5-4b-mlx")
+    fake.script = lambda **kw: "Réponse du modèle suivant."
+    for _ in range(3):
+        assert await registry.complete("Donne un titre à cette conversation", role="fast") == "Réponse du modèle suivant."
+    assert tried == ["qwen3.5-4b-mlx"]

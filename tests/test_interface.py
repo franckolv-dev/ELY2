@@ -312,3 +312,27 @@ async def test_images_from_other_sites_never_load_by_themselves(ely_url, user):
     finally:
         spy.shutdown()
     assert hits == []
+
+
+async def test_earlier_messages_of_a_long_conversation_load_on_request(ely_url, user):
+    """Une longue conversation s'ouvre sur ses derniers messages ; « Afficher les messages précédents » remonte le fil."""
+    from playwright.async_api import async_playwright
+
+    from ely.agent.runner import save_message
+    from ely.db import db, now
+
+    cid = db.insert("conversations", user_id=user["id"], title="Telegram", created_at=now(), updated_at=now())
+    for i in range(1, 231):
+        save_message(cid, None, {"role": "user", "content": f"Note numéro {i}"})
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(executable_path=os.environ["ELY_BROWSER_EXECUTABLE"])
+        ctx = await browser.new_context(locale="fr-FR")
+        await ctx.add_cookies([{"name": "ely_token", "value": auth.create_session(user["id"]), "url": ely_url}])
+        page = await ctx.new_page()
+        await page.goto(f"{ely_url}/?c={cid}")
+        await until(page, "document.body.innerText.includes('Note numéro 230')")
+        assert "Note numéro 1\n" not in await page.inner_text(".thread") + "\n"
+        await page.click("text=Afficher les messages précédents")
+        await until(page, "document.body.innerText.includes('Note numéro 1\\n') || document.body.innerText.endsWith('Note numéro 1')")
+        assert await page.locator("text=Afficher les messages précédents").count() == 0
+        await browser.close()

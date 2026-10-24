@@ -77,7 +77,7 @@ function Login({ setup, onLogged, dark, onTheme, lang, onLang }) {
           onInput=${(e) => setF({ ...f, name: e.target.value })} autocomplete="given-name" /></label>` : null}
         <label class="field">${t("login.email")}<input class="input" type="email" required value=${f.email}
           onInput=${(e) => setF({ ...f, email: e.target.value })} autocomplete="email" /></label>
-        <label class="field">${t("login.password")}<input class="input" type="password" required minlength="6" value=${f.password}
+        <label class="field">${t("login.password")}<input class="input" type="password" required minlength=${mode === "register" ? 8 : null} value=${f.password}
           onInput=${(e) => setF({ ...f, password: e.target.value })} autocomplete=${mode === "login" ? "current-password" : "new-password"} /></label>
         ${mode === "register" && !first && !setup?.open_registration ? html`<label class="field">${t("login.invite")}<input class="input" required
           value=${f.invite} onInput=${(e) => setF({ ...f, invite: e.target.value })} /></label>` : null}
@@ -219,6 +219,7 @@ function App() {
   const [convs, setConvs] = useState([]);
   const [cur, setCur] = useState(params.get("c") ? parseInt(params.get("c")) : null);
   const [msgs, setMsgs] = useState({});
+  const [older, setOlder] = useState({});  // conversation -> des messages plus anciens restent à charger
   const [live, setLive] = useState({});
   const [models, setModels] = useState([]);
   const [newModel, setNewModel] = useState("");
@@ -310,6 +311,7 @@ function App() {
     stick.current = true;
     get(`/api/conversations/${cur}/messages`).then((d) => {
       setMsgs((m) => ({ ...m, [cur]: d.messages }));
+      setOlder((o) => ({ ...o, [cur]: d.more }));
       if (d.state) setLive((l) => ({ ...l, [cur]: { ...d.state, since: l[cur]?.since || Date.now() } }));
     }).catch(() => setCur(null));
   }, [cur, me]);
@@ -319,6 +321,18 @@ function App() {
     const el = scrollRef.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   });
+
+  // messages plus anciens d'une longue conversation, sans perdre la position de lecture
+  async function loadEarlier() {
+    const c = cur, first = (msgs[c] || [])[0];
+    if (!first) return;
+    const el = scrollRef.current, height = el ? el.scrollHeight : 0;
+    stick.current = false;
+    const d = await get(`/api/conversations/${c}/messages?before=${first.id}`);
+    setMsgs((m) => ({ ...m, [c]: [...d.messages, ...(m[c] || [])] }));
+    setOlder((o) => ({ ...o, [c]: d.more }));
+    requestAnimationFrame(() => { if (el) el.scrollTop += el.scrollHeight - height; });
+  }
 
   function loadConvs(q = "") {
     get(`/api/conversations${q ? "?q=" + encodeURIComponent(q) : ""}`).then(setConvs);
@@ -362,7 +376,10 @@ function App() {
         });
         setConvs((list) => list.map((c) => (active.has(c.id) ? c : { ...c, status: "idle" })));
         const c = curRef.current;
-        if (c) get(`/api/conversations/${c}/messages`).then((d) => setMsgs((m) => ({ ...m, [c]: d.messages }))).catch(() => {});
+        if (c) get(`/api/conversations/${c}/messages`).then((d) => {
+          setMsgs((m) => ({ ...m, [c]: d.messages }));
+          setOlder((o) => ({ ...o, [c]: d.more }));
+        }).catch(() => {});
         break;
       }
       case "delta": {
@@ -506,7 +523,8 @@ function App() {
                   <${Icon} name=${icon} size=${22} /><div><b>${t(`card.${k}`)}</b><span>${t(`card.${k}Sub`)}</span></div></button>`)}</div>
                 <div class="welcome-foot">${t("welcome.foot")}</div>
               </div>`
-              : messages ? html`<${Thread} messages=${messages} live=${state} onSend=${send} onImage=${setLightbox} onCancel=${cancel} />`
+              : messages ? html`${older[cur] ? html`<div class="earlier"><button class="btn small" onClick=${loadEarlier}>${t("thread.earlier")}</button></div>` : null}
+                <${Thread} messages=${messages} live=${state} onSend=${send} onImage=${setLightbox} onCancel=${cancel} />`
               : html`<div class="boot" style="height:50vh"><div class="spinner big"></div></div>`}
           </div>
           ${frame && !liveOpen ? html`<div class="live-mini" onClick=${() => { setLiveOpen(true); liveClosedByUser.current = false; }}>

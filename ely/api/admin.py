@@ -97,6 +97,9 @@ async def patch_user(uid: int, body: UserPatch, user=Depends(auth.admin_user)):
         if uid == user["id"] and body.role != "admin":
             raise HTTPException(400, "Vous ne pouvez pas vous retirer vous-même le rôle administrateur")
         db.run("UPDATE users SET role = ? WHERE id = ?", (body.role, uid))
+        from ..browser import manager
+
+        await manager.close_user(uid)  # rouvert à la demande, avec la garde réseau qui convient au nouveau rôle
     if body.password:  # mot de passe réinitialisé par l'administrateur : toutes les sessions du compte sont fermées
         from .. import chrome
 

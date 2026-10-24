@@ -155,8 +155,8 @@ def _search_sync(c: dict, query: str, limit: int, unread: bool, folder: str) -> 
 def _read_sync(c: dict, uid: str, folder: str) -> dict:
     m = _imap(c)
     try:
-        m.select(folder)
-        typ, d = m.uid("FETCH", uid, "(RFC822)")
+        m.select(folder, readonly=True)  # lire un message ne le marque pas comme lu
+        typ, d = m.uid("FETCH", uid, "(BODY.PEEK[])")
         raw = next((p[1] for p in d if isinstance(p, tuple)), None)
         if not raw:
             raise RuntimeError(f"message {uid} introuvable")
@@ -169,18 +169,29 @@ def _read_sync(c: dict, uid: str, folder: str) -> dict:
         m.logout()
 
 
+def _transmit(s: smtplib.SMTP, msg: EmailMessage) -> None:
+    from ..tools import MaybeDone
+
+    try:
+        s.send_message(msg)
+    except (smtplib.SMTPResponseException, smtplib.SMTPRecipientsRefused):  # refus explicite du serveur : rien n'est parti
+        raise
+    except OSError as e:  # coupure pendant la transmission : le message est peut-être parti
+        raise MaybeDone(f"connexion au serveur d'envoi coupée pendant la transmission ({e.__class__.__name__}: {e})") from e
+
+
 def _send_sync(c: dict, msg: EmailMessage) -> None:
     host, port = c["smtp_host"], int(c.get("smtp_port", 465))
     user = c.get("username") or c["address"]
     if port == 465:
         with smtplib.SMTP_SSL(host, port, context=ssl.create_default_context(), timeout=30) as s:
             s.login(user, c["password"])
-            s.send_message(msg)
+            _transmit(s, msg)
     else:
         with smtplib.SMTP(host, port, timeout=30) as s:
             s.starttls(context=ssl.create_default_context())
             s.login(user, c["password"])
-            s.send_message(msg)
+            _transmit(s, msg)
     if "gmail" not in host:  # Gmail classe tout seul dans « Envoyés »
         try:
             m = _imap(c)

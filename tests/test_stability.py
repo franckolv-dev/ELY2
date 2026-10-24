@@ -465,3 +465,60 @@ async def test_the_internal_browser_comes_back_after_a_crash(user):
         assert await page.title() == "ok"
     finally:
         await manager.shutdown()  # Playwright est lié à la boucle de ce test
+
+
+async def test_the_database_is_backed_up_every_day_and_old_copies_are_dropped(user, monkeypatch):
+    """Une copie cohérente de la base par jour, lisible telle quelle (restauration = remplacer ely.db) ; seules les
+    plus récentes sont gardées, et une copie qui remplirait le disque n'est pas faite."""
+    import sqlite3
+
+    from ely import backup
+    from ely.scheduler import daily_backup
+
+    for old in backup.folder().glob("ely-*-quotidienne.db") if backup.folder().exists() else []:
+        old.unlink()
+    db.set_setting("backup_last_day", "")
+    await daily_backup()
+    await daily_backup()  # même jour : pas de deuxième copie
+    copies = sorted(backup.folder().glob("ely-*-quotidienne.db"))
+    assert len(copies) == 1
+    with sqlite3.connect(copies[0]) as c:
+        assert c.execute("SELECT name FROM users WHERE id = ?", (user["id"],)).fetchone() == ("Franck",)
+
+    for day in range(1, 11):  # dix copies plus anciennes
+        (backup.folder() / f"ely-2026-01-{day:02d}_040000-quotidienne.db").write_bytes(b"")
+    backup.backup("quotidienne")
+    kept = sorted(p.name for p in backup.folder().glob("ely-*-quotidienne.db"))
+    assert len(kept) == backup.KEEP["quotidienne"] and "ely-2026-01-01_040000-quotidienne.db" not in kept
+
+    monkeypatch.setattr(backup, "MARGIN", 1 << 62)
+    with pytest.raises(OSError):
+        backup.backup("quotidienne")
+
+
+async def test_a_big_photo_never_freezes_the_server(fake, user, monkeypatch):
+    """Une grande photo jointe est réduite à part : pendant ce temps, Ely continue de répondre aux autres requêtes."""
+    import httpx
+    from PIL import Image
+
+    from ely import auth
+    from ely.api.app import create_app
+    from ely.config import settings
+
+    fake.script = lambda model, system, messages, tools: "Jolie photo."
+    Image.new("RGB", (64, 64), "teal").save(settings.user_dir(user["id"]) / "files" / "grande-photo.png")
+    real = Image.Image.thumbnail
+
+    def slow_thumbnail(self, *a, **k):  # comme une photo de 40 Mpx
+        time.sleep(0.8)
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(Image.Image, "thumbnail", slow_thumbnail)
+    h = {"Authorization": f"Bearer {auth.create_session(user['id'])}"}
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app()), base_url="http://ely.test") as c:
+        started = time.monotonic()
+        sending = asyncio.create_task(c.post("/api/chat", headers=h, json={"text": "Regarde", "attachments": ["grande-photo.png"]}))
+        await asyncio.sleep(0.1)  # l'envoi est en cours de traitement
+        r = await c.get("/api/health")
+        assert r.status_code == 200 and time.monotonic() - started < 0.6
+        assert (await sending).status_code == 200

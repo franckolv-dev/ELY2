@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 from croniter import croniter
 
+from .. import vault
 from ..db import db, now
 from ..notify import notify as send_notification
 from . import ToolContext, ToolResult, tool
@@ -146,7 +147,7 @@ async def credentials(ctx: ToolContext, action: str, service: str = "", username
         return ToolResult("service manquant", is_error=True)
     if action == "save":
         row = db.one("SELECT id FROM credentials WHERE user_id = ? AND lower(service) = lower(?)", (ctx.user_id, service))
-        fields = {k: v for k, v in {"username": username, "password": password, "url": url, "notes": notes}.items() if v}
+        fields = {k: v for k, v in {"username": username, "password": vault.seal(password), "url": url, "notes": notes}.items() if v}
         if row:
             db.update("credentials", "id = ?", (row["id"],), **fields, updated_at=now())
         else:
@@ -156,5 +157,5 @@ async def credentials(ctx: ToolContext, action: str, service: str = "", username
     rows = db.all("SELECT * FROM credentials WHERE user_id = ? AND (lower(service) LIKE ? OR lower(url) LIKE ?)", (ctx.user_id, q, q))
     if not rows:
         return ToolResult(f"Aucun identifiant pour « {service} ». Demande-les avec ask_user puis enregistre-les (action=save).", is_error=True)
-    return ToolResult("\n".join(f"{r['service']} — url : {r['url'] or '?'} — identifiant : {r['username']} — mot de passe : {r['password']}"
+    return ToolResult("\n".join(f"{r['service']} — url : {r['url'] or '?'} — identifiant : {r['username']} — mot de passe : {vault.unseal(r['password'])}"
                                 + (f" — notes : {r['notes']}" if r["notes"] else "") for r in rows))

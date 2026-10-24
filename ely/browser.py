@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 
 from .config import settings
+from .db import db
 
 log = logging.getLogger("ely.browser")
 
@@ -280,9 +281,14 @@ class BrowserManager:
             pw = await self._playwright()
             profile = settings.user_dir(user_id) / "navigateur"
             profile.mkdir(parents=True, exist_ok=True)
+            from .netguard import proxy
+
+            # compte ordinaire : tout passe par le proxy qui refuse le réseau local (rôle changé : navigateur fermé,
+            # voir admin.patch_user, puis rouvert avec le réglage qui convient)
+            guarded = {} if db.val("SELECT role FROM users WHERE id = ?", (user_id,)) == "admin" else {"proxy": await proxy.settings()}
             ctx = await self._launch(
                 pw.chromium.launch_persistent_context, str(profile), **self._launch_kwargs(), viewport=VIEWPORT, user_agent=UA, locale="fr-FR",
-                timezone_id=settings.timezone, accept_downloads=True)
+                timezone_id=settings.timezone, accept_downloads=True, **guarded)
             await ctx.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             downloads = settings.user_dir(user_id) / "files" / "Téléchargements"
 
@@ -333,15 +339,21 @@ class BrowserManager:
         if self._pw:
             await self._pw.stop()
             self._pw = None
+        from .netguard import proxy
+
+        await proxy.close()
 
 
 manager = BrowserManager()
 
 
-async def render_page(url: str, wait_ms: int = 1500) -> tuple[str, str]:
+async def render_page(url: str, wait_ms: int = 1500, is_admin: bool = False) -> tuple[str, str]:
     """Rendu ponctuel d'une page JavaScript (sans cookies), pour la lecture de contenu."""
+    from .netguard import proxy
+
     browser = await manager.shared()
-    ctx = await browser.new_context(user_agent=UA, locale="fr-FR", viewport=VIEWPORT)
+    guarded = {} if is_admin else {"proxy": await proxy.settings()}
+    ctx = await browser.new_context(user_agent=UA, locale="fr-FR", viewport=VIEWPORT, **guarded)
     try:
         page = await ctx.new_page()
         await page.goto(url, wait_until="domcontentloaded", timeout=30000)
