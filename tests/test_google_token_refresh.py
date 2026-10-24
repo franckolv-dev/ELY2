@@ -53,6 +53,8 @@ async def test_parallel_invalid_grant_is_cached_with_same_error(monkeypatch, tok
     errors = await asyncio.gather(*(google._token(1) for _ in range(20)), return_exceptions=True)
     assert len(calls) == 1
     assert all(isinstance(e, RuntimeError) and str(e) == google.RECONNECT for e in errors)
+    # tâche planifiée : les sous-agents réclamaient le mot de passe Google au lieu de signaler la reconnexion
+    assert "Réglages → Connexions → Google" in str(errors[0]) and "mot de passe" in str(errors[0])
     assert "refresh-1" not in repr(google._token_failures)
     assert "private-provider-text" not in str(errors)
     with pytest.raises(RuntimeError, match="invalid_grant"):
