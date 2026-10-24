@@ -66,6 +66,20 @@ async def test_snapshot_empty_password_remains_actionable(local_page):
     assert '[masquée]' in snapshot["elements"][0]
 
 
+async def test_snapshot_numbers_hidden_file_input_and_upload_works(local_page, tmp_path):
+    await local_page.set_content('''<button>Nouveau</button>
+        <input type="file" multiple style="display:none" id="f">
+        <input type="text" style="display:none" aria-label="Caché">''')
+    snapshot = await local_page.evaluate(SNAPSHOT_JS, 150)
+    lines = snapshot["elements"]
+    assert len(lines) == 2, "le champ texte caché reste ignoré"
+    assert lines[1].startswith("[2] champ(file)")
+    f = tmp_path / "recu.pdf"
+    f.write_bytes(b"%PDF-1.7 recu")
+    await local_page.locator('[data-ely-ref="2"]').set_input_files(str(f))
+    assert await local_page.evaluate("document.querySelector('#f').files[0].name") == "recu.pdf"
+
+
 async def test_snapshot_masks_password_in_shadow_root(local_page):
     await local_page.set_content('<div id="host"></div>')
     await local_page.evaluate('''() => {
