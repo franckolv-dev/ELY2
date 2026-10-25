@@ -71,9 +71,9 @@ PREFS: dict[str, list[tuple[str, list[str]]]] = {
         ("lmstudio", [r"gemma-4-26b", r"qwen3\.5", r"gemma-4-12b", r"qwen3", r"gpt-oss", r"gemma-4-e4b", r"ministral"]),
         ("ollama", [r".*"]),
     ],
-    "embed": [
-        ("lmstudio", [r"nomic-embed", r"embed"]),
-        ("ollama", [r"embed"]),
+    "embed": [  # Qwen3-Embedding d'abord : multilingue, la mémoire d'Ely est en français (nomic v1.5 vise l'anglais)
+        ("lmstudio", [r"qwen3-embedding", r"nomic-embed", r"embed"]),
+        ("ollama", [r"qwen3-embedding", r"embed"]),
         ("openai", [r"^text-embedding-3-small$"]),
         ("gemini", [r"embedding"]),
         ("mistral", [r"^mistral-embed$"]),

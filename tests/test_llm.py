@@ -306,3 +306,22 @@ async def test_a_removed_provider_is_no_longer_offered(fake):
     refs = [m["ref"] for m in registry.all_models()]
     assert not any(r.startswith("geminicli:") for r in refs) and "geminicli" not in registry.status
     assert refs and all(r.startswith("fake:") for r in refs) and registry.reachable("fake")
+
+
+def test_memory_prefers_a_multilingual_embedding_model(fake):
+    """La mémoire d'Ely est en français : en choix automatique, Qwen3-Embedding passe avant nomic-embed (surtout
+    entraîné sur l'anglais) quand LM Studio a les deux ; sans lui, nomic-embed reste pris."""
+    from conftest import FakeProvider
+
+    from ely.llm import registry
+    from ely.llm.base import ModelInfo
+
+    local = FakeProvider("lmstudio")
+    nomic = ModelInfo(id="text-embedding-nomic-embed-text-v1.5@q8_0", provider="lmstudio", kind="embeddings")
+    qwen = ModelInfo(id="text-embedding-qwen3-embedding-0.6b", provider="lmstudio", kind="embeddings")
+    registry.providers["lmstudio"] = local
+    registry.status["lmstudio"] = "ok (3 modèles)"
+    registry.catalog["lmstudio"] = [ModelInfo(id="qwen/qwen3.5-9b", provider="lmstudio"), nomic, qwen]
+    assert registry.resolve("embed") == "lmstudio:text-embedding-qwen3-embedding-0.6b"
+    registry.catalog["lmstudio"] = [ModelInfo(id="qwen/qwen3.5-9b", provider="lmstudio"), nomic]
+    assert registry.resolve("embed") == "lmstudio:text-embedding-nomic-embed-text-v1.5@q8_0"
