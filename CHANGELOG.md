@@ -84,6 +84,9 @@ améliorations de cette section ont été écrites par Ely elle-même (auto-amé
 - **Intégration continue** : la suite de tests tourne sur chaque pull request et à chaque push sur `main`.
 
 ### Modifié
+- **Ely fait le ménage dans ses branches locales.** Une fois par jour, elle supprime les copies locales de ses
+  améliorations (`ely-improvement/…`) dont la PR est fusionnée sur GitHub. Celles dont la PR attend encore, et sa
+  branche de travail `ely-self`, restent.
 - **La mémoire préfère un modèle d'embeddings multilingue.** En choix automatique, Ely prend
   Qwen3-Embedding quand LM Studio (ou Ollama) l'a installé, puis nomic-embed, puis tout modèle d'embeddings. Les
   souvenirs existants sont recalculés d'eux-mêmes avec le nouveau modèle.
