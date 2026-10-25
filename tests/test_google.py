@@ -95,7 +95,7 @@ async def test_email_manage_trashes_and_files_invoices_in_gmail(user, monkeypatc
 
     r = await execute(ctx, "email_manage", {"ids": ["a1", "a2"], "action": "trash"})
     assert not r.is_error and "2 e-mail(s)" in r.content
-    assert sorted(p for m, p, b in seen) == ["/messages/a1/trash", "/messages/a2/trash"]
+    assert sorted(p for m, p, b in seen if m == "POST") == ["/messages/a1/trash", "/messages/a2/trash"]
 
     seen.clear()
     r = await execute(ctx, "email_manage", {"ids": ["f1"], "action": "label", "label": "factures"})
@@ -109,6 +109,44 @@ async def test_email_manage_trashes_and_files_invoices_in_gmail(user, monkeypatc
 
     r = await execute(ctx, "email_manage", {"ids": ["f3"], "action": "label"})
     assert r.is_error
+
+
+async def test_trash_keeps_mail_from_correspondents(user, monkeypatch):
+    """La routine de midi avait mis à la corbeille, avec les newsletters, les e-mails d'une proche et de sa propre adresse."""
+    from conftest import new_conversation
+
+    from ely.tools import ToolContext, execute
+
+    async def _noop(*a, **k):
+        pass
+
+    put(user["id"], "google", {"access_token": "jeton", "refresh_token": "", "expires_at": time.time() + 3600,
+                               "email": "moi@gmail.com"})
+    senders = {"temu": "Temu <temu@eu.temuemail.com>", "gert": "Gert <Gert@gmail.com>", "moi": "Moi <moi@gmail.com>"}
+    trashed = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("/trash"):
+            trashed.append(path.split("/")[-2])
+            return httpx.Response(200, json={"id": "x"})
+        if path.endswith("/messages"):  # recherche « from:me to:… » : seule Gert a déjà reçu un e-mail
+            sent = request.url.params["q"] == "from:me to:gert@gmail.com"
+            return httpx.Response(200, json={"messages": [{"id": "s1"}]} if sent else {})
+        mid = path.rsplit("/", 1)[-1]
+        return httpx.Response(200, json={"payload": {"headers": [{"name": "From", "value": senders[mid]}]}})
+
+    fake_gmail(monkeypatch, handler)
+    ctx = ToolContext(user=user, conversation_id=new_conversation(user), run_id=0, emit=_noop)
+
+    r = await execute(ctx, "email_manage", {"ids": ["temu", "gert", "moi"], "action": "trash"})
+    assert not r.is_error, r.content
+    assert trashed == ["temu"]
+    assert r.content.startswith("1 e-mail(s) mis à la corbeille") and "gert (gert@gmail.com)" in r.content and "moi (moi@gmail.com)" in r.content
+
+    trashed.clear()
+    r = await execute(ctx, "email_manage", {"ids": ["gert"], "action": "trash", "include_correspondents": True})
+    assert trashed == ["gert"] and "1 e-mail(s) mis à la corbeille." == r.content
 
 
 async def test_gmail_request_refused_for_load_is_retried(user, monkeypatch):
