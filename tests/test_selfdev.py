@@ -190,6 +190,39 @@ async def test_a_change_made_during_the_tests_is_never_deployed_untested(dev_ctx
     assert "a - b" in (fake_repo / "app.py").read_text()
 
 
+async def test_merged_improvement_copies_are_cleaned_up(fake_repo, tmp_path):
+    """Ely garde une copie locale de chaque amélioration publiée (ely-improvement/<sha>) jusqu'à la fusion de sa PR.
+    Fusionnée sur GitHub, la copie disparaît ; une copie dont la PR attend encore, et la branche de travail
+    ely-self, restent."""
+    from ely.scheduler import prune_improvement_branches
+
+    def run(*args):
+        return subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=fake_repo, check=True,
+                              capture_output=True, text=True).stdout.strip()
+
+    def improvement(name):
+        run("checkout", "-q", "-b", f"travail-{name}", "main")
+        (fake_repo / f"{name}.py").write_text("x = 1\n")
+        run("add", "-A")
+        run("commit", "-qm", f"ely-self: {name}")
+        sha = run("rev-parse", "HEAD")
+        run("branch", f"ely-improvement/{sha}", sha)
+        run("checkout", "-q", "main")
+        return sha
+
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(tmp_path / "github.git")], check=True)
+    run("remote", "add", "origin", str(tmp_path / "github.git"))
+    run("push", "-q", "origin", "main")
+    run("branch", "ely-self")
+    merged, waiting = improvement("fusionnee"), improvement("en-attente")
+    run("push", "-q", "origin", f"{merged}:refs/heads/main")  # PR fusionnée sur GitHub
+    db.set_setting("branches_pruned_day", "")
+    await prune_improvement_branches()
+    branches = run("branch", "--format=%(refname:short)").split()
+    assert f"ely-improvement/{merged}" not in branches
+    assert f"ely-improvement/{waiting}" in branches and "ely-self" in branches
+
+
 async def test_tests_run_on_edited_code_not_stale_bytecode(dev_ctx, fake_repo):
     await execute(dev_ctx, "ely_code", {"action": "read", "path": "app.py"})
     ok, _ = await pipeline.run_tests()

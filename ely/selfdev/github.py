@@ -101,3 +101,21 @@ async def publish_improvement(summary: str, sha: str) -> str:
             or pr["baseRefName"] != base or not pr["url"].startswith(f"https://github.com/{repo}/pull/")):
         raise RuntimeError("La PR distante ne correspond pas au commit testé : vérifier GitHub avant de poursuivre.")
     return pr["url"]
+
+
+async def prune_merged_backups() -> list[str]:
+    """Supprime les copies locales des améliorations (ely-improvement/<sha>) dont la PR est fusionnée sur GitHub :
+    le commit fait alors partie de la branche principale distante. Une copie dont la PR est ouverte, refusée ou
+    fusionnée par « squash » est gardée ; rien n'est supprimé si GitHub ne répond pas."""
+    code, _ = await pipeline.git("fetch", "--quiet", "origin", timeout=60)
+    if code:
+        return []
+    code, _ = await pipeline.git("rev-parse", "--verify", "--quiet", "refs/remotes/origin/HEAD")
+    base = "refs/remotes/origin/HEAD" if code == 0 else "refs/remotes/origin/main"
+    _, out = await pipeline.git("for-each-ref", "--format=%(refname:short)", "refs/heads/ely-improvement/")
+    gone = []
+    for branch in out.split():
+        code, _ = await pipeline.git("merge-base", "--is-ancestor", f"refs/heads/{branch}", base)
+        if code == 0 and (await pipeline.git("branch", "-D", branch))[0] == 0:
+            gone.append(branch)
+    return gone

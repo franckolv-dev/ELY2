@@ -98,6 +98,18 @@ async def daily_self_improvement() -> None:
                                               "et applique les améliorations les plus utiles.")
 
 
+async def prune_improvement_branches() -> None:
+    """Une fois par jour : les copies locales des améliorations d'Ely déjà fusionnées sur GitHub sont supprimées."""
+    today = dt.date.today().isoformat()
+    if db.get_setting("branches_pruned_day", "") == today:
+        return
+    db.set_setting("branches_pruned_day", today)
+    from .selfdev.github import prune_merged_backups
+
+    if gone := await prune_merged_backups():
+        log.info("%d copie(s) locale(s) d'amélioration fusionnée(s) supprimée(s)", len(gone))
+
+
 async def daily_backup() -> None:
     from .backup import daily
 
@@ -146,7 +158,7 @@ async def prune_old_images() -> int:
 async def scheduler_loop() -> None:
     tick = 0
     while True:
-        for job in (run_due_schedules, calendar_reminders, daily_self_improvement, daily_backup):
+        for job in (run_due_schedules, calendar_reminders, daily_self_improvement, daily_backup, prune_improvement_branches):
             try:
                 await job()
             except Exception:
