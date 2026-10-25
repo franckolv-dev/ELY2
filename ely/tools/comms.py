@@ -134,11 +134,15 @@ MANAGED = {"trash": "mis à la corbeille", "archive": "archivé(s)", "label": "c
 
 
 @tool("email_manage", """Trie des e-mails à partir de leurs ids (email_search) : trash (corbeille, récupérable), archive,
-label (déplace sous le libellé `label`, créé s'il manque), read, unread. Traite tous les ids en un appel.""",
+label (déplace sous le libellé `label`, créé s'il manque), read, unread. Traite tous les ids en un appel.
+trash laisse en place les messages de correspondants (personnes à qui le compte a déjà écrit, ou lui-même).""",
       {"ids": {"type": "array", "items": {"type": "string"}},
-       "action": {"type": "string", "enum": list(MANAGED)}, "label": {"type": "string"}},
+       "action": {"type": "string", "enum": list(MANAGED)}, "label": {"type": "string"},
+       "include_correspondents": {"type": "boolean",
+                                  "description": "trash : true seulement si la personne a demandé de supprimer ces messages précis"}},
       ["ids", "action"], label="Tri e-mail", icon="🗂️", timeout=120)
-async def email_manage(ctx: ToolContext, ids: list[str], action: str, label: str = "") -> ToolResult:
+async def email_manage(ctx: ToolContext, ids: list[str], action: str, label: str = "",
+                       include_correspondents: bool = False) -> ToolResult:
     backend = _backend(ctx)
     if not backend:
         return ToolResult(NO_MAIL, is_error=True)
@@ -147,6 +151,17 @@ async def email_manage(ctx: ToolContext, ids: list[str], action: str, label: str
                           is_error=True)
     if action not in MANAGED or (action == "label" and not label.strip()) or not ids:
         return ToolResult(f"Indique des ids, une action parmi {', '.join(MANAGED)} et, pour label, le libellé.", is_error=True)
+    if action == "trash" and not include_correspondents:
+        # un petit modèle avait mis à la corbeille tous les ids d'une recherche, messages de proches compris
+        kept = await g.gmail_correspondents(ctx.user_id, ids)
+        ids = [i for i in ids if i not in kept]
+        if ids:
+            await g.gmail_manage(ctx.user_id, ids, action)
+        note = (f"{len(kept)} e-mail(s) laissé(s) en place, expéditeur à qui la personne a déjà écrit : "
+                + ", ".join(f"{i} ({a})" for i, a in kept.items())
+                + ". Compte-les comme préservés ; seulement si elle a demandé de supprimer ces messages précis, "
+                  "refais l'appel pour eux avec include_correspondents=true.") if kept else ""
+        return ToolResult(f"{len(ids)} e-mail(s) {MANAGED[action]}." + (f"\n{note}" if note else ""))
     await g.gmail_manage(ctx.user_id, ids, action, label.strip())
     return ToolResult(f"{len(ids)} e-mail(s) {MANAGED[action].format(label.strip())}.")
 

@@ -267,6 +267,30 @@ async def gmail_manage(user_id: int, ids: list[str], action: str, label: str = "
     await api(user_id, "POST", f"{GMAIL}/messages/batchModify", json={"ids": ids, "addLabelIds": add, "removeLabelIds": remove})
 
 
+async def gmail_correspondents(user_id: int, ids: list[str]) -> dict[str, str]:
+    """{id: adresse} des messages envoyés par le compte lui-même ou par quelqu'un à qui il a déjà écrit."""
+    from email.utils import parseaddr
+
+    own = (get(user_id, "google") or {}).get("email", "").lower()
+    slots = asyncio.Semaphore(GMAIL_PARALLEL)
+
+    async def sender(mid):
+        async with slots:
+            m = await api(user_id, "GET", f"{GMAIL}/messages/{mid}", params={"format": "metadata", "metadataHeaders": ["From"]})
+        return mid, parseaddr(_header(m, "From"))[1].lower()
+
+    senders = dict(await asyncio.gather(*(sender(i) for i in ids)))
+
+    async def written_to(addr):
+        async with slots:
+            res = await api(user_id, "GET", f"{GMAIL}/messages", params={"q": f"from:me to:{addr}", "maxResults": 1})
+        return addr, bool(res.get("messages"))
+
+    addrs = {a for a in senders.values() if a and a != own}
+    known = dict(await asyncio.gather(*(written_to(a) for a in addrs)))
+    return {mid: a for mid, a in senders.items() if a and (a == own or known.get(a))}
+
+
 # ---------------------------------------------------------------------- Agenda
 CAL = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
 
