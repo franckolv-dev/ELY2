@@ -118,7 +118,8 @@ Onglet **Développeur → Démarrer le serveur** (port 1234). Ely découvre seul
 Sur un M1 Max 32 Go, ce qui marche bien :
 
 - tâches de fond (mémoire, titres) et petites demandes : `google/gemma-4-26b-a4b` ou `qwen/qwen3.5-9b` ;
-- vecteurs de la mémoire : `text-embedding-nomic-embed-text-v1.5`.
+- vecteurs de la mémoire : `Qwen/Qwen3-Embedding-0.6B-GGUF` (multilingue, préféré par Ely), à défaut
+  `nomic-ai/nomic-embed-text-v1.5-GGUF`. Dans la recherche de LM Studio, tapez le nom Hugging Face complet.
 
 ⚠️ **Réglez la longueur de contexte du modèle à 32 768 tokens au moins** dans LM Studio : la valeur par défaut, souvent
 4 096, est trop courte pour un agent. Ely le signale dans Réglages → Modèles si c'est le cas.

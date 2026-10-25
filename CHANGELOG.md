@@ -84,6 +84,9 @@ améliorations de cette section ont été écrites par Ely elle-même (auto-amé
 - **Intégration continue** : la suite de tests tourne sur chaque pull request et à chaque push sur `main`.
 
 ### Modifié
+- **La mémoire préfère un modèle d'embeddings multilingue.** En choix automatique, Ely prend
+  Qwen3-Embedding quand LM Studio (ou Ollama) l'a installé, puis nomic-embed, puis tout modèle d'embeddings. Les
+  souvenirs existants sont recalculés d'eux-mêmes avec le nouveau modèle.
 - **Une auto-amélioration qui modifie le lanceur `ely.sh` est publiée sans être activée.** Le superviseur déjà lancé
   garde l'ancien lanceur en mémoire : l'administrateur fusionne la PR, puis relance le superviseur complet
   (`./ely.sh update` avec le service, sinon Ctrl+C puis `./ely.sh`).

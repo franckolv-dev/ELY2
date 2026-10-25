@@ -120,7 +120,8 @@ card) or `cpu`, much slower.
 On an M1 Max with 32 GB, these work well:
 
 - background tasks (memory, titles) and small requests: `google/gemma-4-26b-a4b` or `qwen/qwen3.5-9b`;
-- memory embeddings: `text-embedding-nomic-embed-text-v1.5`.
+- memory embeddings: `Qwen/Qwen3-Embedding-0.6B-GGUF` (multilingual, preferred by Ely), otherwise
+  `nomic-ai/nomic-embed-text-v1.5-GGUF`. In LM Studio's search, type the full Hugging Face name.
 
 ⚠️ **Set the model's context length to at least 32,768 tokens** in LM Studio: the default, often 4,096, is too short
 for an agent. Ely flags it in Settings → Models if that's the case.
