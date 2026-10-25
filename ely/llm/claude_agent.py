@@ -9,7 +9,7 @@ clé est présente) embarque le CLI de Claude Code. Pour chaque mission, Ely lui
 
 Identifiants : ANTHROPIC_API_KEY (facturée au token) ou CLAUDE_CODE_OAUTH_TOKEN (jeton créé par `claude setup-token`),
 prioritaire si les deux sont présents. Ely ne prend Claude d'elle-même qu'avec ce jeton : avec une clé seule, Claude doit
-être choisi dans Réglages → Modèles.
+être choisi dans Réglages → Modèles. Le .env est relu dès qu'il change : un jeton commenté ne sert plus à la mission suivante.
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, AsyncIterator, Awaitable, Callable
 
-from ..config import settings
+from ..config import reload_if_changed, settings
 from ..db import db
 from ..tools import Tool, ToolResult
 
@@ -52,6 +52,7 @@ def private_env() -> dict[str, str]:
 
 def credentials() -> dict[str, str]:
     """Variables passées au CLI : une seule source d'identifiants, l'autre vidée."""
+    reload_if_changed()
     if settings.claude_code_oauth_token:
         return {"CLAUDE_CODE_OAUTH_TOKEN": settings.claude_code_oauth_token, "ANTHROPIC_API_KEY": ""}
     if settings.anthropic_api_key:
@@ -67,6 +68,7 @@ def budget() -> float:
 
 
 def status() -> dict:
+    reload_if_changed()
     version = sdk_version()
     source = "token" if settings.claude_code_oauth_token else "api_key" if settings.anthropic_api_key else ""
     ready = bool(version and source)
@@ -76,6 +78,7 @@ def status() -> dict:
 
 def auto_model() -> str | None:
     """Modèle pris d'office pour l'auto-amélioration : Opus, seulement avec le jeton de Claude Code."""
+    reload_if_changed()
     return DEFAULT if settings.claude_code_oauth_token and sdk_version() else None
 
 

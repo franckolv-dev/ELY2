@@ -18,6 +18,18 @@ load_dotenv(ROOT / ".env")
 _FROM_FILE = set(dotenv_values(ROOT / ".env")) - _BOOT_ENV  # venues du .env : oubliées quand il les retire
 
 
+def _env_stamp() -> tuple[int, int] | None:
+    """Date et taille du .env : changent dès qu'il est enregistré."""
+    try:
+        st = (ROOT / ".env").stat()
+    except OSError:
+        return None
+    return st.st_mtime_ns, st.st_size
+
+
+_STAMP = _env_stamp()  # .env tel qu'il a été lu en dernier
+
+
 def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default).strip()
 
@@ -158,7 +170,8 @@ settings = Settings()
 def reload_env() -> None:
     """Relit le .env sans redémarrer (clés d'API ajoutées, changées, retirées ou commentées, modèles…) et met à jour
     les réglages en place."""
-    global _FROM_FILE
+    global _FROM_FILE, _STAMP
+    _STAMP = _env_stamp()
     values = {k: v for k, v in dotenv_values(ROOT / ".env").items() if k not in _BOOT_ENV and v is not None}
     for key in _FROM_FILE - set(values):  # retirée ou commentée : Ely ne s'en sert plus
         os.environ.pop(key, None)
@@ -167,3 +180,10 @@ def reload_env() -> None:
     fresh = Settings()
     for f in fields(Settings):
         setattr(settings, f.name, getattr(fresh, f.name))
+
+
+def reload_if_changed() -> None:
+    """Relit le .env s'il a été enregistré depuis la dernière lecture : une clé ou un jeton commenté vaut aussitôt,
+    sans « Actualiser les modèles » ni redémarrage."""
+    if _env_stamp() != _STAMP:
+        reload_env()
