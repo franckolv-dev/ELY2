@@ -138,6 +138,29 @@ async def test_slow_verification_does_not_hold_the_task(fake, user, monkeypatch)
     assert len(calls) == 1
 
 
+async def test_controller_is_told_not_to_demand_a_checkout(fake, user):
+    """Pour une comparaison de prix, le contrôleur avait exigé que l'offre soit « vérifiée dans le panier » : l'agent a
+    créé un compte Cdiscount, saisi date de naissance, adresse et téléphone et atteint la page de paiement."""
+    prompts = []
+
+    async def fn(model, system, messages, tools):
+        text = last_user_text(messages)
+        if "contrôleur qualité" in text:
+            prompts.append(text)
+            return '{"done": true, "missing": ""}'
+        return "Lefant M310 : 99,99 € sur Cdiscount (vendeur Lefant robotics, livraison gratuite)."
+
+    fake.script = fn
+    cid = new_conversation(user)
+    res = await runner.submit(user, cid, "Trouve le prix le plus avantageux du robot aspirateur Lefant, sur Cdiscount aussi")
+    await wait_idle(cid, timeout=5)
+    assert db.val("SELECT status FROM runs WHERE id = ?", (res["run_id"],)) == "done"
+    assert len(prompts) == 1
+    rule = " ".join(prompts[0].lower().split())
+    assert "panier" in rule and "création de compte" in rule and "données personnelles" in rule
+    assert "comparaison de prix" in rule and "sans passer par le panier" in rule
+
+
 async def test_compaction_never_orphans_a_tool_result(fake, user):
     from ely.agent.loop import AgentLoop
 

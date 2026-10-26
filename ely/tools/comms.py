@@ -24,6 +24,26 @@ NO_MAIL = ("Aucune boîte mail connectée. Options : 1) propose à l'utilisateur
            "dans Réglages → Connexions ; 2) en attendant, utilise son webmail avec l'outil browser (session déjà ouverte ?).")
 
 
+def _gmail_dates(query: str, tz: str) -> str:
+    """Bornes de dates écrites par le modèle → formats compris par Gmail (AAAA/MM/JJ ou secondes epoch).
+    newer_than/older_than n'acceptent que d/m/y, after/before une date à barres obliques ou un horodatage epoch :
+    autrement Gmail ne renvoie rien, sans erreur (la routine matinale concluait « aucun nouveau message »)."""
+    from .pim import parse_local
+
+    query = re.sub(r"\bnewer_than:(\d{9,})\b", r"after:\1", query)
+    query = re.sub(r"\bolder_than:(\d{9,})\b", r"before:\1", query)
+
+    def iso(m: re.Match) -> str:
+        value = m.group(2)
+        try:
+            d = parse_local(value, tz)
+        except ValueError:
+            return m.group(0)
+        return f"{m.group(1)}:{int(d.timestamp())}" if "T" in value else f"{m.group(1)}:{d:%Y/%m/%d}"
+
+    return re.sub(r"\b(after|before):(\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?)", iso, query)
+
+
 def _build(ctx: ToolContext, to: str, subject: str, body: str, cc: str = "", bcc: str = "", attachments: list[str] | None = None,
            html: bool = False, in_reply_to: str = "") -> EmailMessage:
     msg = EmailMessage()
@@ -107,9 +127,9 @@ async def email_search(ctx: ToolContext, query: str = "", limit: int = 15, unrea
         return ToolResult(NO_MAIL, is_error=True)
     limit = max(1, min(limit, 50))
     if backend == "gmail":
-        # newer_than/older_than n'acceptent que d/m/y : avec un horodatage, Gmail ne renvoie rien sans erreur
-        query = re.sub(r"\bnewer_than:(\d{9,})\b", r"after:\1", query)
-        query = re.sub(r"\bolder_than:(\d{9,})\b", r"before:\1", query)
+        from .pim import user_tz
+
+        query = _gmail_dates(query, user_tz(ctx.user))
         q = (query + (" is:unread" if unread_only else "")).strip() or "in:inbox"
         page = await g.gmail_search_page(ctx.user_id, q, limit, page_token)
         items = page["messages"]

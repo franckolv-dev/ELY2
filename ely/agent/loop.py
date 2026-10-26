@@ -183,6 +183,9 @@ Règles :
 - Blocage que seul l'utilisateur peut lever (compte à reconnecter, ex. invalid_grant ; connexion ou autorisation
   exigée sans identifiants enregistrés) : satisfaite si les résultats d'outils le prouvent, que l'agent a tenté l'autre
   accès disponible, n'annonce rien de faux et dit précisément à l'utilisateur quoi faire. Ne pas relancer.
+- Ne jamais exiger plus que la demande : ni achat, panier, parcours de commande, création de compte sur un site, saisie
+  de données personnelles ou paiement que l'utilisateur n'a pas demandés expressément. Une recherche ou comparaison de
+  prix est satisfaite par des prix constatés sur les pages marchandes avec leurs sources, sans passer par le panier.
 Réponds uniquement en JSON : {{"done": true ou false, "missing": "ce qui manque et comment y arriver (1-2 phrases)"}}"""
     deadline = asyncio.get_running_loop().time() + VERIFY_DEADLINE
     for attempt in range(2):
