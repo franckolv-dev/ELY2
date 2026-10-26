@@ -36,7 +36,7 @@ def gmail_pages(monkeypatch):
 
     monkeypatch.setattr(google, 'api', api)
     monkeypatch.setattr(comms, '_backend', lambda ctx: 'gmail')
-    return SimpleNamespace(user_id=42), calls, state
+    return SimpleNamespace(user_id=42, user={'id': 42, 'settings': {'timezone': 'Europe/Paris'}}), calls, state
 
 
 async def test_two_pages_preserve_query_cursor_ids_and_bound_concurrency(gmail_pages):
@@ -141,6 +141,26 @@ async def test_epoch_in_newer_than_becomes_after(gmail_pages):
     state['pages'][''] = {}
     await comms.email_search(ctx, query='in:anywhere newer_than:1792490400 older_than:1792576800 newer_than:2d')
     assert calls[0][1]['q'] == 'in:anywhere after:1792490400 before:1792576800 newer_than:2d'
+
+
+async def test_iso_bounds_in_after_before_become_gmail_dates(gmail_pages):
+    """La routine matinale bornait sa fenêtre avec after:2026-10-24T19:33:00+02:00 : Gmail ne renvoyait rien, sans erreur,
+    et le résumé annonçait « aucun nouveau message » alors que six e-mails étaient arrivés."""
+    from datetime import datetime
+
+    ctx, calls, state = gmail_pages
+    state['pages'][''] = {}
+    await comms.email_search(ctx, query='in:anywhere after:2026-10-24T19:33:00+02:00 before:2026-10-25T09:00Z')
+    start = int(datetime.fromisoformat('2026-10-24T19:33:00+02:00').timestamp())
+    end = int(datetime.fromisoformat('2026-10-25T09:00:00+00:00').timestamp())
+    assert calls[0][1]['q'] == f'in:anywhere after:{start} before:{end}'
+
+    await comms.email_search(ctx, query='has:attachment after:2026-10-18 before:2026-10-25T12:00')
+    noon_paris = int(datetime.fromisoformat('2026-10-25T12:00:00+01:00').timestamp())  # heure locale de la personne
+    assert calls[1][1]['q'] == f'has:attachment after:2026/10/18 before:{noon_paris}'
+
+    await comms.email_search(ctx, query='after:2026/10/18 newer_than:7d from:x after:1792836000')
+    assert calls[2][1]['q'] == 'after:2026/10/18 newer_than:7d from:x after:1792836000'
 
 
 def test_page_token_is_exposed_in_tool_schema():
