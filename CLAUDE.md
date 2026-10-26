@@ -5,7 +5,8 @@ l'interface est bilingue (français vouvoyé / anglais) : tout texte affiché pa
 
 ## Commandes
 - Lancer : `./ely.sh` (superviseur : redémarrage + retour arrière après auto-mise à jour) ou `python -m ely`
-- Tests : `.venv/bin/python -m pytest -q` (modèle simulé, aucun appel réseau réel ; tests navigateur et extension ignorés sans `ELY_BROWSER_EXECUTABLE`, par exemple le Chromium de Playwright : `~/Library/Caches/ms-playwright/chromium-*/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`)
+- Démarrage automatique : `./ely.sh service` (launchd `fr.ely.agent`, journal `data/ely.log`) ; sans lui, Ely ne repart pas après une coupure de courant (la voix XTTS est un service à part, `fr.agent-ely.xtts`)
+- Tests : `.venv/bin/python -m pytest -q` (modèle simulé, aucun appel réseau réel ; tests navigateur et extension ignorés sans `ELY_BROWSER_EXECUTABLE`, par exemple le Chromium de Playwright : `~/Library/Caches/ms-playwright/chromium-*/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`) ; en conteneur Linux : `uv venv --python 3.11 .venv && uv pip install -e ".[dev,claude]"` (extras de la CI) et le Chromium `/opt/pw-browsers/chromium-*/chrome-linux64/chrome`
 - Interface sans tokens : `python scripts/mock_llm.py` + `CUSTOM_OPENAI_BASE_URL=http://127.0.0.1:9100/v1 ELY_MODEL_MAIN=custom:mock-agent`
 - Parcours UI complet : `python scripts/e2e_ui.py http://127.0.0.1:8000 captures/`
 - Publier une version : section dans `CHANGELOG.md`, `__version__` (`ely/__init__.py`) et `pyproject.toml`, puis `git tag vX.Y.Z && git push origin vX.Y.Z` sur `main` : le workflow `Release` publie la release avec les notes du CHANGELOG
@@ -17,8 +18,10 @@ l'interface est bilingue (français vouvoyé / anglais) : tout texte affiché pa
 - Outils : décorateur `@tool` dans `ely/tools/__init__.py` ; un outil renvoie `ToolResult`, ne lève jamais vers le modèle ; les droits (`admin_only`, `available`) sont revérifiés à l'exécution ; `untrusted=True` pour tout outil qui renvoie du contenu écrit par des tiers (encadré pour le modèle)
 - Garder la liste d'outils courte et les descriptions concises (coût en tokens à chaque tour)
 - Format de message canonique : voir l'en-tête de `ely/llm/base.py`
-- Auto-amélioration : `ely/selfdev/` (plugins à chaud dans `data/plugins/`, modifications du code via worktree + tests + `ely.sh`)
-- Claude par l'Agent SDK : `ely/llm/claude_agent.py` (SDK facultatif, extra `claude`) ; une session d'auto-amélioration dont le modèle est `claude:…` est confiée entière à Claude (`AgentLoop.run_with_claude`, mission dans `selfdev/tools.py` : outils natifs gardés par `claude_guard`, outils d'Ely par MCP, redémarrage différé ; quota épuisé en pleine mission → compte rendu markdown puis mission relancée sans Claude, `relaunch_without_claude`)
+- Auto-amélioration : `ely/selfdev/` (plugins à chaud dans `data/plugins/`, modifications du code via worktree + tests + `ely.sh`) ; chaque amélioration publiée garde une copie locale `ely-improvement/<sha>`, supprimée chaque jour une fois sa PR fusionnée (`prune_merged_backups`)
+- Claude par l'Agent SDK : `ely/llm/claude_agent.py` (SDK facultatif, extra `claude`) ; une session d'auto-amélioration dont le modèle est `claude:…` est confiée entière à Claude (`AgentLoop.run_with_claude`, mission dans `selfdev/tools.py` : outils natifs gardés par `claude_guard`, outils d'Ely par MCP, redémarrage différé ; quota épuisé en pleine mission → compte rendu markdown puis mission relancée sans Claude, `relaunch_without_claude`) ; identifiants : jeton `CLAUDE_CODE_OAUTH_TOKEN` (forfait) prioritaire sur `ANTHROPIC_API_KEY` (facturée au token), Claude pris d'office seulement avec le jeton ; consommation dans la table `usage` (`claude:…` = mission par le SDK, `anthropic:…` = API directe, `input_tokens` compte le cache)
+- `.env` : relu par « Actualiser les modèles » (`config.reload_env`) et, pour Claude, dès qu'il change (`reload_if_changed`) ; une variable de l'environnement du shell passe avant le `.env`
+- Serveurs MCP : `data/mcp.json`, `ely/mcp_client.py` (aucune clé d'Ely transmise, outils réservés à l'admin sauf `shared`, commande introuvable refusée à l'ajout)
 
 ## Règles
 - Toute correction s'accompagne d'un test de comportement (pas de test qui lit le code source).
