@@ -623,6 +623,64 @@ async def test_scheduled_task_without_any_action_is_not_accepted_when_controller
     assert used[0] == "agent" and set(used[1:]) == {"fort"}, used
 
 
+async def test_scheduled_task_that_must_notify_is_relaunched_until_notify_is_called(fake, user, monkeypatch):
+    """Veille de prix « notifier Franck via Telegram » : le petit modèle avait rendu un rapport aux liens fictifs
+    (« [Lien de la fiche produit Cdiscount] ») sans jamais appeler notify, et le contrôleur, tout aussi petit, l'avait
+    accepté. Ces deux manques sont constatés sans modèle : la tâche est relancée (sur le modèle fort) jusqu'à l'envoi."""
+    from ely.tools import planning
+
+    with_strong_model(fake)
+    sent = []
+
+    async def fake_notify(user_id, title, body, url=None, receipt=None, **kw):
+        receipt.update(push_accepted=1, push_total=1, telegram_status="accepted", telegram_ids=[7], telegram_total=1)
+        sent.append(body)
+        return 1
+
+    monkeypatch.setattr(planning, "send_notification", fake_notify)
+
+    def agent(messages, tools):
+        controls = [str(m["content"]) for m in messages if m["role"] == "user" and "Contrôle automatique" in str(m["content"])]
+        if not tool_results(messages):
+            return call("calendar_list", start="2030-05-06", end="2030-05-07")
+        if not controls:
+            return "Meilleure offre : M310 à 90 € chez Tradevisio. Lien : [Lien de la fiche produit Cdiscount]"
+        if "fictives" in controls[-1]:
+            return "Meilleure offre : M310 à 90 € chez Tradevisio, https://www.cdiscount.com/m310"
+        if "notify" in controls[-1] and not any(m.get("name") == "notify" for m in tool_results(messages)):
+            return call("notify", title="Veille Lefant", message="M310 à 90 € chez Tradevisio : https://www.cdiscount.com/m310")
+        return "Offre envoyée sur Telegram."
+
+    fake.script, used = routed(agent)  # le contrôleur simulé accepte tout : seuls les garde-fous relancent
+    cid = new_conversation(user)
+    res = await runner.submit(user, cid, "[Tâche planifiée #9] Chercher le prix du Lefant M310 et notifier Franck via Telegram", kind="scheduled")
+    await wait_idle(cid)
+    datas = [json.loads(m["data"]) for m in db.all("SELECT data FROM messages WHERE conversation_id = ? ORDER BY id", (cid,))]
+    controls = [d["content"] for d in datas if d.get("kind") == "control"]
+    assert len(controls) == 2 and "fictives" in controls[0] and "notify" in controls[1], controls
+    assert sent == ["M310 à 90 € chez Tradevisio : https://www.cdiscount.com/m310"]
+    assert datas[-1]["content"] == "Offre envoyée sur Telegram."
+    assert db.val("SELECT status FROM runs WHERE id = ?", (res["run_id"],)) == "done"
+    assert used[:2] == ["agent"] * 2 and set(used[2:]) == {"fort"}, used
+
+
+async def test_conditional_notification_is_not_demanded_twice(fake, user):
+    """Routine « notifier seulement s'il y a du nouveau » sans nouveauté : la remarque n'est faite qu'une fois, puis le
+    verdict du contrôleur s'applique ; la tâche se termine sans notification."""
+    def agent(messages, tools):
+        if not tool_results(messages):
+            return call("calendar_list", start="2030-05-06", end="2030-05-07")
+        return "Rien de nouveau : pas de notification à envoyer."
+
+    fake.script = script(agent)
+    cid = new_conversation(user)
+    res = await runner.submit(user, cid, "[Tâche planifiée #5] S'il y a un nouvel événement, préviens-moi via notify", kind="scheduled")
+    await wait_idle(cid)
+    datas = [json.loads(m["data"]) for m in db.all("SELECT data FROM messages WHERE conversation_id = ? ORDER BY id", (cid,))]
+    assert sum(1 for d in datas if d.get("kind") == "control") == 1
+    assert db.val("SELECT status FROM runs WHERE id = ?", (res["run_id"],)) == "done"
+
+
 async def test_strong_model_on_request(fake, user):
     """« Prenez le modèle fort » : Ely y passe dès le premier appel. Une simple question sur le modèle fort ne
     change rien, et « utilise Opus » passe sur le modèle fort tant que Claude n'est pas relié."""
