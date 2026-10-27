@@ -46,6 +46,9 @@ améliorations de cette section ont été écrites par Ely elle-même (auto-amé
   contrôleur l'avait accepté. Ces manques sont désormais constatés sans modèle : une tâche planifiée sans aucune
   action, une notification demandée jamais envoyée ou une réponse aux valeurs laissées entre crochets est relancée
   (sur le modèle fort), chaque remarque n'étant faite qu'une fois pour les routines conditionnelles.
+- **La copie de travail de l'auto-amélioration repart de la version active quand elle est en retard.** Après des
+  améliorations fusionnées sur GitHub puis mises à jour, la copie restait sur l'ancienne base et le déploiement était
+  refusé pour « tests disparus » (deux sessions de suite). Un travail en cours n'est jamais écrasé.
 - **Un jeton de Claude Code commenté dans `.env` ne sert plus à la mission suivante.** Ely gardait en mémoire les
   identifiants jusqu'à « Actualiser les modèles » ou un redémarrage : la mission de la nuit partait encore sur le forfait
   alors que le `.env` ne laissait que la clé d'API. Le fichier est désormais relu dès qu'il change, avant chaque mission

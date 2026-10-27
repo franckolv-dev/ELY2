@@ -68,12 +68,19 @@ async def ensure_session() -> None:
     """Crée la copie si besoin, sans écraser un travail en cours.
 
     Si la copie contient des commits absents de la version active (retour arrière effectué par le
-    lanceur, fusion refusée), elle est remise à niveau : on ne redéploie jamais une version rejetée."""
+    lanceur, fusion refusée), elle est remise à niveau : on ne redéploie jamais une version rejetée.
+    Une copie en retard sur la version active (améliorations fusionnées puis mises à jour) et sans travail en cours
+    est aussi remise à niveau : deux sessions de suite ont vu leur déploiement refusé pour « tests disparus »."""
     if not (WORKTREE / ".git").exists():
         await prepare()
         return
-    code, out = await git("rev-list", "--count", f"{await head()}..{BRANCH}")
+    active = await head()
+    code, out = await git("rev-list", "--count", f"{active}..{BRANCH}")
     if code or out.strip() != "0":
+        await prepare()
+        return
+    code, behind = await git("rev-list", "--count", f"{BRANCH}..{active}")
+    if (code or behind.strip() != "0") and not (await git("status", "--porcelain", cwd=WORKTREE))[1]:
         await prepare()
 
 
