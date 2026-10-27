@@ -18,7 +18,7 @@ modele = [
     "coqui-tts[codec]>=0.27",
     "torch>=2.9",
     "torchaudio>=2.9",
-    "transformers>=4.55,<5",
+    "transformers>=4.55,<6",
 ]
 dev = ["pytest>=8", "httpx>=0.27"]
 
