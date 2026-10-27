@@ -158,7 +158,35 @@ def action_log(history: list[dict], limit_chars: int = 12000) -> str:
     return text[-limit_chars:] if len(text) > limit_chars else (text or "(aucune action)")
 
 
+# Valeurs laissées en blanc dans une réponse (« [Lien de la fiche produit] », « [Nom du vendeur] ») : rien n'a été constaté
+PLACEHOLDER = re.compile(r"\[(?:lien|url|nom|ins[ée]rer|[àa] compl[ée]ter|placeholder)\b[^\]\n]{0,80}\](?!\()", re.I)
+# Tâche planifiée qui demande une notification (outil notify, « via Telegram »)
+NOTIFY_WANTED = re.compile(r"\bnotify\b|\b(?:via|sur|par)\s+telegram\b", re.I)
+NO_ACTION = "Aucun outil n'a été utilisé : exécute réellement la tâche planifiée avec tes outils, sans rien annoncer que tu n'as pas fait."
+NO_NOTIFY = ("Aucune notification n'a été envoyée alors que la tâche le demande : envoie le compte rendu avec l'outil "
+             "notify (ce qui a été constaté, sans rien inventer), puis réponds.")
+FICTIVE = ("La réponse contient des valeurs fictives entre crochets ([Lien…], [Nom…]) : remplace-les par ce qui a "
+           "réellement été constaté avec les outils, ou retire ces éléments.")
+
+
+def obvious_gap(objective: str, history: list[dict], answer: str) -> str:
+    """Manque flagrant, constaté sans modèle : le petit modèle du contrôleur laissait passer un rapport de tâche planifiée
+    aux liens fictifs, jamais envoyé par notify. Chaque remarque n'est faite qu'une fois (sauf l'absence totale d'action)."""
+    noted = [m.get("content") for m in history if m.get("kind") == "control"]
+    scheduled = objective.startswith("[Tâche planifiée")
+    if scheduled and action_log(history) == "(aucune action)":
+        return NO_ACTION
+    if PLACEHOLDER.search(answer or "") and not any(FICTIVE in str(n) for n in noted):
+        return FICTIVE
+    notified = any(m["role"] == "tool" and m.get("name") == "notify" and not m.get("is_error") for m in history)
+    if scheduled and NOTIFY_WANTED.search(objective) and not notified and not any(NO_NOTIFY in str(n) for n in noted):
+        return NO_NOTIFY
+    return ""
+
+
 async def verify(objective: str, history: list[dict], answer: str, user_id: int, today: str = "") -> tuple[bool | None, str]:
+    if gap := obvious_gap(objective, history, answer):
+        return False, gap
     when = f"\nNous sommes {today} : juge les dates par rapport à ce jour, pas d'après tes connaissances.\n" if today else ""
     prompt = f"""Tu es le contrôleur qualité d'un agent autonome. Détermine si la DEMANDE de l'utilisateur est entièrement satisfaite.
 {when}
@@ -205,9 +233,6 @@ Réponds uniquement en JSON : {{"done": true ou false, "missing": "ce qui manque
             break
         except Exception as e:  # réponse tronquée ou illisible : un nouvel essai, puis on ne bloque jamais l'utilisateur
             log.info("vérification impossible (essai %d) : %s", attempt + 1, e)
-    if objective.startswith("[Tâche planifiée") and action_log(history) == "(aucune action)":
-        # un petit modèle avait rédigé le compte rendu d'actions jamais faites, accepté faute de contrôleur
-        return False, "Aucun outil n'a été utilisé : exécute réellement la tâche planifiée avec tes outils, sans rien annoncer que tu n'as pas fait."
     return None, ""  # pas de verdict : la réponse est rendue, la tâche reste « non confirmée »
 
 

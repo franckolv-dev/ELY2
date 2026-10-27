@@ -41,6 +41,11 @@ améliorations de cette section ont été écrites par Ely elle-même (auto-amé
   « [masquée] » au lieu de sa valeur. Le champ reste utilisable.
 
 ### Corrigé
+- **Une routine qui doit prévenir sur Telegram ne se termine plus sans l'avoir fait.** La veille de prix avait rendu
+  un rapport aux liens fictifs (« [Lien de la fiche produit] ») sans jamais appeler `notify`, et le petit modèle du
+  contrôleur l'avait accepté. Ces manques sont désormais constatés sans modèle : une tâche planifiée sans aucune
+  action, une notification demandée jamais envoyée ou une réponse aux valeurs laissées entre crochets est relancée
+  (sur le modèle fort), chaque remarque n'étant faite qu'une fois pour les routines conditionnelles.
 - **Un jeton de Claude Code commenté dans `.env` ne sert plus à la mission suivante.** Ely gardait en mémoire les
   identifiants jusqu'à « Actualiser les modèles » ou un redémarrage : la mission de la nuit partait encore sur le forfait
   alors que le `.env` ne laissait que la clé d'API. Le fichier est désormais relu dès qu'il change, avant chaque mission
