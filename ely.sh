@@ -54,7 +54,12 @@ chromium_libs() {  # Linux : Chromium a besoin de bibliothèques système que Pl
 
 installed() { [ -x "$PY" ] && [ -f .env ] && ! deps_changed; }
 
-launched() { plutil -extract ProgramArguments.0 raw "$PLIST" 2>/dev/null; }  # programme lancé par le service macOS
+launched() {  # programme lancé par le service macOS (le script, quand /bin/bash le lance)
+  local p
+  p=$(plutil -extract ProgramArguments.0 raw "$PLIST" 2>/dev/null)
+  [ "$p" = /bin/bash ] && p=$(plutil -extract ProgramArguments.1 raw "$PLIST" 2>/dev/null)
+  echo "$p"
+}
 
 # Un autre programme peut porter le même nom de service (une ancienne installation, par exemple) : on n'y touche que
 # s'il lance bien cette installation-ci.
@@ -211,12 +216,13 @@ service() {
     echo "→ le service fr.ely.agent lançait un autre programme ($(launched)) : il est remplacé par Ely."
     echo "  Copie de l'ancien : $ROOT/data/fr.ely.agent.plist.ancien"
   fi
+  # Lancé par /bin/bash : un script lancé directement par launchd se voit refuser l'accès à Documents (code 126).
   cat > "$plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>Label</key><string>fr.ely.agent</string>
-  <key>ProgramArguments</key><array><string>$ROOT/ely.sh</string></array>
+  <key>ProgramArguments</key><array><string>/bin/bash</string><string>$ROOT/ely.sh</string></array>
   <key>WorkingDirectory</key><string>$ROOT</string>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
@@ -227,6 +233,20 @@ service() {
 PLIST
   launchctl unload "$plist" 2>/dev/null
   launchctl load "$plist"
+  # Un service qui s'arrête aussitôt lancé (accès refusé, port occupé…) est relancé en boucle sans rien dire.
+  sleep 2
+  local pid code
+  read -r pid code <<< "$(launchctl list 2>/dev/null | awk '$3 == "fr.ely.agent" { print $1, $2 }')"
+  if [ -z "$pid" ] || { [ "$pid" = "-" ] && [ "$code" != 0 ]; }; then
+    echo "✗ le service fr.ely.agent ne démarre pas${code:+ (code $code)}. Fin du journal $ROOT/data/ely.log :"
+    tail -n 4 "$ROOT/data/ely.log" 2>/dev/null | sed 's/^/  /'
+    if tail -n 4 "$ROOT/data/ely.log" 2>/dev/null | grep -q "Operation not permitted"; then
+      echo "  macOS refuse au service l'accès à ce dossier (Documents, Bureau et Téléchargements sont protégés) :"
+      echo "  installez Ely ailleurs (par exemple ~/ely), ou donnez à /bin/bash l'accès complet au disque"
+      echo "  (Réglages Système → Confidentialité et sécurité → Accès complet au disque)."
+    fi
+    return 1
+  fi
   echo "✓ Ely démarrera automatiquement. Journal : $ROOT/data/ely.log"
 }
 
