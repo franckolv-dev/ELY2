@@ -364,21 +364,28 @@ def test_install_on_linux_points_out_missing_chromium_libraries(tmp_path):
 
 FAKE_PLUTIL = """#!{python}
 import plistlib, sys
-# plutil -extract ProgramArguments.0 raw <fichier>
+# plutil -extract ProgramArguments.N raw <fichier>
 with open(sys.argv[-1], "rb") as f:
-    print(plistlib.load(f)["ProgramArguments"][0])
+    args = plistlib.load(f)["ProgramArguments"]
+n = int(sys.argv[2].rsplit(".", 1)[1])
+if n >= len(args):
+    sys.exit(1)
+print(args[n])
 """
 OLD_SERVICE = {"Label": "fr.ely.agent", "ProgramArguments": ["/opt/homebrew/Cellar/node@20/20.20.2/bin/node", "server.js"],
                "RunAtLoad": True, "KeepAlive": True}
 
 
 def _mac_tools(tmp_path: Path, service: dict | None) -> tuple[dict, Path, Path]:
-    """Un Mac simulé : uname répond Darwin, launchctl note ses appels, et un service fr.ely.agent éventuel."""
+    """Un Mac simulé : uname répond Darwin, launchctl note ses appels, et un service fr.ely.agent éventuel. `launchctl
+    list` affiche launchctl.list : le service y tourne, sauf si le test y écrit autre chose."""
     import plistlib
 
     bin_dir, home, log = tmp_path / "bin", tmp_path / "home", tmp_path / "launchctl.log"
     bin_dir.mkdir()
-    for name, body in {"uname": "#!/bin/sh\necho Darwin\n", "launchctl": f'#!/bin/sh\necho "$*" >> "{log}"\n',
+    (tmp_path / "launchctl.list").write_text("4242\t0\tfr.ely.agent\n")
+    launchctl = f'#!/bin/sh\necho "$*" >> "{log}"\n[ "$1" = list ] && cat "{tmp_path / "launchctl.list"}"\nexit 0\n'
+    for name, body in {"uname": "#!/bin/sh\necho Darwin\n", "launchctl": launchctl,
                        "plutil": FAKE_PLUTIL.format(python=sys.executable)}.items():
         (bin_dir / name).write_text(body)
         (bin_dir / name).chmod(0o755)
@@ -415,7 +422,7 @@ def test_update_never_restarts_another_program_that_holds_the_service_name(tmp_p
 def test_update_restarts_the_launchd_service_of_this_install(tmp_path):
     dev, mac = _published_and_installed(tmp_path)
     _new_version(dev)
-    env, plist, log = _mac_tools(tmp_path, {"Label": "fr.ely.agent", "ProgramArguments": [str(mac / "ely.sh")]})
+    env, plist, log = _mac_tools(tmp_path, {"Label": "fr.ely.agent", "ProgramArguments": ["/bin/bash", str(mac / "ely.sh")]})
     r = _ely_sh(mac, env, "update")
     assert r.returncode == 0, r.stdout + r.stderr
     assert "↻ service Ely redémarré" in r.stdout and "kickstart -k" in log.read_text()
@@ -432,9 +439,31 @@ def test_service_takes_over_the_name_from_another_program_and_unservice_spares_i
     assert r.returncode == 1 and "laissé tel quel" in r.stdout and plist.exists()
     r = _ely_sh(box, env, "service")
     assert r.returncode == 0, r.stdout + r.stderr
-    assert plistlib.loads(plist.read_bytes())["ProgramArguments"] == [f"{box}/ely.sh"]
+    assert plistlib.loads(plist.read_bytes())["ProgramArguments"] == ["/bin/bash", f"{box}/ely.sh"]
     kept = box / "data" / "fr.ely.agent.plist.ancien"
     assert plistlib.loads(kept.read_bytes())["ProgramArguments"][0].endswith("/node") and "remplacé" in r.stdout
     assert "load" in log.read_text()
     r = _ely_sh(box, env, "unservice")
     assert r.returncode == 0 and not plist.exists()
+
+
+def test_service_starts_ely_through_bash_and_says_when_macos_blocks_it(tmp_path):
+    """Sur le Mac de Franck, launchd lançait `ely.sh` directement : macOS lui refusait l'accès au dossier Documents
+    (code 126) et Ely ne repartait pas après une coupure de courant, alors que `./ely.sh service` avait annoncé le
+    démarrage automatique. Le service passe par /bin/bash ; s'il s'arrête aussitôt lancé, `./ely.sh service` le dit."""
+    import plistlib
+
+    box, env, _ = _linux_install(tmp_path / "linux")
+    env, plist, _ = _mac_tools(tmp_path, {"Label": "fr.ely.agent", "ProgramArguments": [str(box / "ely.sh")]})
+    (box / "data").mkdir()
+    (box / "data" / "ely.log").write_text(f"bash: {box}/ely.sh: Operation not permitted\n")
+    (tmp_path / "launchctl.list").write_text("-\t126\tfr.ely.agent\n")
+    r = _ely_sh(box, env, "service")
+    assert r.returncode == 1 and "ne démarre pas (code 126)" in r.stdout and "Operation not permitted" in r.stdout
+    assert "Accès complet au disque" in r.stdout and "démarrera automatiquement" not in r.stdout
+    assert "remplacé" not in r.stdout  # l'ancien service lançait déjà cette installation
+    assert plistlib.loads(plist.read_bytes())["ProgramArguments"] == ["/bin/bash", f"{box}/ely.sh"]
+
+    (tmp_path / "launchctl.list").write_text("4242\t0\tfr.ely.agent\n")
+    r = _ely_sh(box, env, "service")
+    assert r.returncode == 0 and "démarrera automatiquement" in r.stdout, r.stdout + r.stderr

@@ -12,8 +12,9 @@ leur historique est dans [son journal](https://github.com/franckolv-dev/ElyAgent
 
 ## [Non publié]
 
-Hormis la correction de `./ely.sh update` et les corrections issues de l'audit indépendant du 15 octobre 2026, les
-améliorations de cette section ont été écrites par Ely elle-même (auto-amélioration), puis relues et fusionnées.
+Hormis les corrections de `./ely.sh update` et `./ely.sh service` et les corrections issues de l'audit indépendant du
+15 octobre 2026, les améliorations de cette section ont été écrites par Ely elle-même (auto-amélioration), puis relues
+et fusionnées.
 
 ### Sécurité
 - **Le réseau de la maison reste fermé aux comptes de la famille, même par un détour.** Une page publique qui redirige
@@ -80,6 +81,12 @@ améliorations de cette section ont été écrites par Ely elle-même (auto-amé
   redémarré », et Ely restait sur l'ancienne version. Le lanceur vérifie désormais que le service lance bien son propre
   dossier. Sinon, il n'y touche pas et le dit : `./ely.sh service` le remplace (en gardant une copie de l'ancien dans
   `data/`), et `./ely.sh unservice` ne le supprime jamais.
+- **Le démarrage automatique sur Mac ne se faisait jamais, sans que rien ne le signale.** launchd lançait `ely.sh`
+  directement, et macOS lui refusait l'accès au dossier Documents (code 126, « Operation not permitted ») : le service
+  échouait en boucle, et Ely ne repartait pas après une coupure de courant. Le service lance désormais `ely.sh` par
+  `/bin/bash`, comme celui de la voix XTTS. `./ely.sh service` vérifie aussi qu'il tourne ; sinon, il le dit, montre la
+  fin du journal et indique la marche à suivre. **À faire sur un Mac où le service est déjà installé** : arrêter l'Ely
+  lancée à la main (Ctrl+C dans sa fenêtre), puis relancer `./ely.sh service`.
 
 ### Ajouté
 - **Sauvegardes automatiques de la base** dans `data/sauvegardes/` : une par jour (7 gardées) et une avant chaque
