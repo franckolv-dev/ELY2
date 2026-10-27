@@ -41,6 +41,12 @@ améliorations de cette section ont été écrites par Ely elle-même (auto-amé
   « [masquée] » au lieu de sa valeur. Le champ reste utilisable.
 
 ### Corrigé
+- **Un jeton de Claude Code commenté dans `.env` ne sert plus à la mission suivante.** Ely gardait en mémoire les
+  identifiants jusqu'à « Actualiser les modèles » ou un redémarrage : la mission de la nuit partait encore sur le forfait
+  alors que le `.env` ne laissait que la clé d'API. Le fichier est désormais relu dès qu'il change, avant chaque mission
+  de Claude et à l'affichage de Réglages → Modèles.
+- **Ely n'ajoute plus un serveur MCP dont la commande n'existe pas.** Elle avait pris son propre outil `ely_code` pour
+  un programme : l'erreur revenait à chaque démarrage. L'ajout est refusé en nommant la commande introuvable.
 - **Une tâche que le contrôleur ne confirme jamais n'est plus déclarée « terminée ».** Relances épuisées ou contrôleur
   muet : la réponse est rendue avec la réserve du contrôleur (sur Telegram aussi), la tâche est « terminée sans
   confirmation » et Ely n'en tire aucune procédure. Un verdict `"done": "false"` écrit en texte reste un refus.

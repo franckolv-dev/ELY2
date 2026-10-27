@@ -333,3 +333,36 @@ async def test_quota_reached_mid_mission_restarts_it_without_claude(fake, user, 
     assert "Corrige l'addition" in seen["mission"] and report in seen["mission"] and "ely_code action=diff" in seen["mission"]
     assert next(m for m in messages(cid) if m.get("kind") == "relaunch")["content"] == seen["mission"]
     assert "a - b" in (fake_repo / "app.py").read_text()  # rien n'a été déployé
+
+
+async def test_a_token_commented_out_in_env_is_dropped_at_the_next_mission(user, fake_repo, tmp_path, monkeypatch):
+    """Jeton de Claude Code commenté dans .env, sans « Actualiser les modèles » ni redémarrage : Réglages affiche la clé
+    d'API, la mission suivante part avec elle (le forfait n'est plus sollicité) et Claude n'est plus pris d'office."""
+    pytest.importorskip("claude_agent_sdk")
+    import os
+
+    from ely import config
+
+    keys = ("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN")
+    env = tmp_path / ".env"
+    env.write_text("ANTHROPIC_API_KEY=sk-ant-cle\nCLAUDE_CODE_OAUTH_TOKEN=jeton\n")
+    monkeypatch.setattr(claude_agent, "sdk_version", lambda: "0.2.162")
+    db.set_setting("model_selfdev", "auto")
+    ctx = ToolContext(user=user, conversation_id=new_conversation(user), run_id=0, emit=_noop, extra={"selfdev": True})
+    try:
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(config, "ROOT", tmp_path)
+            for k in keys:
+                mp.delenv(k, raising=False)
+                config._BOOT_ENV.discard(k)
+            config.reload_env()
+            assert claude_agent.status()["source"] == "token" and registry.resolve("selfdev") == OPUS
+            env.write_text("ANTHROPIC_API_KEY=sk-ant-cle\n# CLAUDE_CODE_OAUTH_TOKEN=jeton\n")
+            assert claude_agent.status()["source"] == "api_key"
+            assert registry.resolve("selfdev") != OPUS
+            opts = claude_agent.options(claude_session(ctx, "Améliore-toi", OPUS))
+            assert opts.env["ANTHROPIC_API_KEY"] == "sk-ant-cle" and opts.env["CLAUDE_CODE_OAUTH_TOKEN"] == ""
+    finally:
+        for k in keys:
+            os.environ.pop(k, None)
+        config.reload_env()

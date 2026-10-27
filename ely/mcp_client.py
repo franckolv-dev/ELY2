@@ -217,7 +217,12 @@ async def mcp_servers(ctx: ToolContext, action: str, name: str = "", command: st
     else:
         if not (command or url):
             return ToolResult("command ou url requis", is_error=True)
-        servers[name] = {"url": url} if url else {"command": command, "args": args or [], "env": env or {}}
+        if command and not url and not shutil.which(command, path=(env or {}).get("PATH", os.environ.get("PATH"))):
+            # un nom d'outil pris pour un programme (« ely_code ») relançait une erreur au démarrage, sans fin
+            return ToolResult(f"commande introuvable sur cette machine : « {command} ». Un serveur MCP est un programme à "
+                              "lancer (npx, uvx, chemin complet…) ; tes propres outils n'ont pas besoin d'être ajoutés.",
+                              is_error=True)
+        servers[name] ={"url": url} if url else {"command": command, "args": args or [], "env": env or {}}
         if shared:
             servers[name]["shared"] = True
     save_config(servers)

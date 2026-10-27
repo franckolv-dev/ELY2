@@ -155,3 +155,28 @@ async def test_a_server_whose_command_is_gone_says_which_one(tmp_path, monkeypat
         assert "commande introuvable" in status and "/Users/franck/outils/serveur-disparu" in status, status
     finally:
         await mcp_client.manager.stop_all()
+
+
+async def test_a_tool_name_is_never_added_as_an_mcp_server(user, tmp_path, monkeypatch):
+    """Ely prend son propre outil « ely_code » pour un serveur MCP et l'ajoute : refusé en nommant la commande, rien
+    n'est enregistré (l'erreur revenait à chaque démarrage). Un vrai programme, trouvé par le PATH de sa configuration,
+    s'ajoute comme avant."""
+    import asyncio
+    from pathlib import Path
+
+    monkeypatch.setattr(mcp_client, "CONFIG", tmp_path / "mcp.json")
+    ctx = ToolContext(user=user, conversation_id=new_conversation(user), run_id=0, emit=_noop)
+    try:
+        r = await execute(ctx, "mcp_servers", {"action": "add", "name": "ely_code", "command": "ely_code"})
+        assert r.is_error and "« ely_code »" in r.content, r.content
+        assert mcp_client.load_config() == {}
+        script = tmp_path / "srv.py"
+        script.write_text(SERVER)
+        python = Path(sys.executable)
+        r = await execute(ctx, "mcp_servers", {"action": "add", "name": "maison", "command": python.name,
+                                               "args": [str(script)], "env": {"PATH": str(python.parent)}})
+        assert not r.is_error and "maison" in mcp_client.load_config(), r.content
+        await asyncio.wait_for(mcp_client.manager.conns["maison"].ready.wait(), 30)
+        assert mcp_client.manager.status()["maison"]["status"].startswith("ok")
+    finally:
+        await mcp_client.manager.stop_all()
