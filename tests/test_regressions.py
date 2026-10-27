@@ -325,6 +325,35 @@ async def test_worktree_is_reset_after_a_rollback(dev_ctx, tmp_path, monkeypatch
     assert (tmp_path / "wt" / "a.py").read_text() == "A = 'GOOD'\n"
 
 
+async def test_stale_worktree_catches_up_with_the_active_version_unless_work_is_in_progress(dev_ctx, tmp_path, monkeypatch):
+    """26 et 27/10 : la version active avait avancé (améliorations fusionnées sur GitHub puis mises à jour) mais la copie
+    de travail restait sur l'ancienne base ; le déploiement était refusé pour « tests disparus ». Une copie en retard
+    sans travail en cours repart de la version active ; un travail en cours est conservé."""
+    from ely.selfdev import pipeline
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "a.py").write_text("A = 1\n")
+    for cmd in (["git", "init", "-q", "-b", "main"], ["git", "add", "-A"], ["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init"]):
+        subprocess.run(cmd, cwd=repo, check=True)
+    monkeypatch.setattr(pipeline, "ROOT", repo)
+    monkeypatch.setattr(pipeline, "WORKTREE", tmp_path / "wt")
+    await pipeline.prepare()
+    (repo / "tests").mkdir()
+    (repo / "tests" / "test_new.py").write_text("def test_new():\n    assert True\n")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "nouveau test"], cwd=repo, check=True)
+
+    await pipeline.ensure_session()
+    assert (tmp_path / "wt" / "tests" / "test_new.py").exists()
+
+    (repo / "a.py").write_text("A = 2\n")
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qam", "suite"], cwd=repo, check=True)
+    (tmp_path / "wt" / "a.py").write_text("A = 'en cours'\n")
+    await pipeline.ensure_session()
+    assert (tmp_path / "wt" / "a.py").read_text() == "A = 'en cours'\n"
+
+
 async def test_scheduled_task_starts_apart_while_another_is_still_running(fake, user):
     """30/09 : la routine du matin est restée bloquée et celle de midi, programmée dans la même conversation, s'y est
     greffée au lieu de s'exécuter. Une tâche planifiée qui tombe pendant qu'une autre tourne démarre à part."""
