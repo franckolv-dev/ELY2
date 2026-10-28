@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import json
+from urllib.parse import unquote_to_bytes
 
 from ..browser import CONSENT_JS, manager
 from ..chrome import FIND_JS, ChromeLost
@@ -14,6 +17,29 @@ ACTIONS = ["open", "snapshot", "click", "type", "select", "press", "scroll", "ba
 
 ELEMENT_ACTIONS = {"click", "type", "select", "upload"}
 ACTING = ELEMENT_ACTIONS | {"press", "eval", "back"}  # agissent sur la page : une coupure en plein vol rend l'issue incertaine
+# Pages internes du navigateur : hors de portée de l'extension comme du navigateur interne (« https://chrome://downloads »
+# finissait en ERR_NAME_NOT_RESOLVED après une tentative de lecture des téléchargements)
+INTERNAL_SCHEMES = ("chrome:", "chrome-extension:", "devtools:", "edge:", "view-source:")
+INTERNAL_REFUSED = ("Les pages internes du navigateur (chrome://…) ne sont pas accessibles. Pour récupérer un fichier "
+                    "généré par la page (blob, bouton Télécharger), capture-le en JavaScript puis eval(js, text=chemin) : "
+                    "la valeur renvoyée (data URL ou texte) est enregistrée dans l'espace de fichiers.")
+
+
+def _save_eval(ctx: ToolContext, val, path_text: str) -> ToolResult:
+    """Valeur renvoyée par eval enregistrée en fichier : data URL décodé, texte tel quel, autre valeur en JSON."""
+    if val is None:
+        return ToolResult("Rien à enregistrer : le code n'a renvoyé aucune valeur (renvoie un data URL ou un texte).", is_error=True)
+    if isinstance(val, str) and val.startswith("data:"):
+        head, _, payload = val.partition(",")
+        data = base64.b64decode(payload) if ";base64" in head else unquote_to_bytes(payload)
+    elif isinstance(val, str):
+        data = val.encode()
+    else:
+        data = json.dumps(val, ensure_ascii=False).encode()
+    path = ctx.resolve_path(path_text)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+    return ToolResult(f"Enregistré : {ctx.rel(path)} ({len(data)} octets, début : {data[:8]!r})", files=[ctx.rel(path)])
 
 
 async def _present(page, ref: int) -> bool:
@@ -40,14 +66,15 @@ Pour agir sur n'importe quel site : rendez-vous, publication, formulaire, achat,
 Après chaque action tu reçois l'état de la page : texte visible + éléments interactifs numérotés [N]. Agis avec ref=N.
 Actions : open(url, new_tab?) · snapshot · click(ref) · type(ref, text, submit?) · select(ref, text) · press(key: Enter, Tab, Escape, ArrowDown…)
 · scroll(direction: down|up) · back · screenshot (image de la page) · wait(seconds) · text (tout le texte de la page)
-· tabs · switch_tab(tab) · eval(js) · upload(ref, text=chemin du fichier) · close_tab.
+· tabs · switch_tab(tab) · eval(js, text?=chemin : enregistre la valeur renvoyée, data URL ou texte, dans ce fichier)
+· upload(ref, text=chemin du fichier) · close_tab.
 Identifiants : outil credentials. Code de vérification envoyé par e-mail : ouvre la messagerie web dans un nouvel onglet
 (open new_tab, ex. outlook.office.com), lis le dernier message, puis switch_tab. Captcha ou code introuvable : ask_user.""",
     {
         "action": {"type": "string", "enum": ACTIONS},
         "url": {"type": "string"},
         "ref": {"type": "integer", "description": "Numéro de l'élément [N]"},
-        "text": {"type": "string", "description": "Texte à saisir, option à choisir, ou chemin de fichier (upload)"},
+        "text": {"type": "string", "description": "Texte à saisir, option à choisir, ou chemin de fichier (upload, eval)"},
         "submit": {"type": "boolean", "description": "Appuyer sur Entrée après la saisie"},
         "new_tab": {"type": "boolean", "description": "open : dans un nouvel onglet (la page courante reste ouverte)"},
         "key": {"type": "string"},
@@ -60,6 +87,8 @@ Identifiants : outil credentials. Code de vérification envoyé par e-mail : ouv
 )
 async def browser(ctx: ToolContext, action: str, **kw) -> ToolResult:
     url = kw.get("url") or ""
+    if action == "open" and url.lower().startswith(INTERNAL_SCHEMES):
+        return ToolResult(INTERNAL_REFUSED, is_error=True)
     if action == "open" and url and url != "about:blank" and (why := await refusal(url, ctx.is_admin)):
         return ToolResult(f"Adresse refusée : {why}.", is_error=True)  # avant même d'ouvrir un navigateur
     try:
@@ -217,6 +246,8 @@ async def _browser(ctx: ToolContext, action: str, url: str = "", ref: int | None
             else:
                 expr = code  # simple expression, ex. document.title
             val = await page.evaluate(expr)
+            if text:
+                return _save_eval(ctx, val, text)
             return ToolResult(f"Résultat : {val!r}"[:20000])
         elif action == "upload":
             path = ctx.resolve_path(text)

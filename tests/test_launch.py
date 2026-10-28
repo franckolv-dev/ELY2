@@ -17,6 +17,14 @@ from ely.__main__ import PORT_BUSY, SHUTDOWN_LIMIT, STARTUP_FAILED, check_port
 ROOT = Path(__file__).resolve().parent.parent
 
 
+def _sha1(cwd: Path) -> str:
+    """Empreinte de pyproject.toml telle que ely.sh l'écrit dans .venv/.deps, sans dépendre de la commande sha1sum
+    (absente d'un Mac sans coreutils, où ely.sh se rabat sur shasum)."""
+    import hashlib
+
+    return hashlib.sha1((cwd / "pyproject.toml").read_bytes()).hexdigest()
+
+
 def busy_socket() -> tuple[socket.socket, int]:
     s = socket.socket()
     s.bind(("0.0.0.0", 0))
@@ -101,8 +109,7 @@ def _published_and_installed(tmp_path: Path) -> tuple[Path, Path]:
     _git(dev, "push", "-q", "-u", "origin", "main")
     _git(tmp_path, "clone", "-q", str(origin), str(mac))
     (mac / ".venv").mkdir()
-    deps = subprocess.run(["sha1sum", "pyproject.toml"], cwd=mac, capture_output=True, text=True).stdout.split()[0]
-    (mac / ".venv" / ".deps").write_text(deps + "\n")
+    (mac / ".venv" / ".deps").write_text(_sha1(mac) + "\n")
     return dev, mac
 
 
@@ -255,8 +262,7 @@ def test_repeated_crashes_after_an_update_bring_back_the_previous_version(tmp_pa
     venv.mkdir(parents=True)
     (venv / "python").write_text(FAKE_PYTHON.format(python=sys.executable))
     (venv / "python").chmod(0o755)
-    deps = subprocess.run(["sha1sum", "pyproject.toml"], cwd=mac, capture_output=True, text=True).stdout.split()[0]
-    (mac / ".venv" / ".deps").write_text(deps + "\n")
+    (mac / ".venv" / ".deps").write_text(_sha1(mac) + "\n")
     data = mac / "data"
     (data / "selfdev").mkdir(parents=True)
     (data / "selfdev" / "pending_check").write_text(good)  # la mise à jour vient d'être déployée
@@ -294,8 +300,7 @@ def _linux_install(tmp_path: Path, **tools) -> tuple[Path, dict, Path]:
     (box / ".env").write_text("")
     (venv / "python").write_text("#!/bin/sh\nexit 0\n")
     (venv / "python").chmod(0o755)
-    deps = subprocess.run(["sha1sum", "pyproject.toml"], cwd=box, capture_output=True, text=True).stdout.split()[0]
-    (box / ".venv" / ".deps").write_text(deps + "\n")
+    (box / ".venv" / ".deps").write_text(_sha1(box) + "\n")
     env, log = _linux_tools(tmp_path, **tools)
     return box, env, log
 

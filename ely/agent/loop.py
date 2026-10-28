@@ -25,6 +25,7 @@ from ..config import settings
 from ..db import db, now
 from ..llm import LLMError, claude_agent, parse_json_loose, registry
 from ..llm.base import LLMResponse, estimate_tokens, message_text
+from ..llm.registry import LOCAL
 from ..tools import SECRET_ARGS, TOOLS, UNCERTAIN, ToolContext, ToolResult, execute, tools_for
 from .prompts import STABLE, dynamic_block, today_text
 from .runner import ConvState, Runner, public_message, save_message
@@ -498,6 +499,11 @@ class AgentLoop:
         model = self.conv.get("model") or None
         await self.emit("status", {"status": "running"})
         await self.honor_request(objective)
+        # Routine planifiée sur un petit modèle local : son premier tour était un faux accusé de réception
+        # (« c'est noté, je l'exécuterai demain »), relancé puis escaladé à chaque fois, deux minutes perdues par routine.
+        if objective.startswith("[Tâche planifiée") and registry.resolve("strong") \
+                and (model or registry.resolve("main") or "").partition(":")[0] in LOCAL:
+            await self.escalate("tâche planifiée sur un modèle local : modèle d'escalade dès le départ")
 
         steps = int(self.run_row["steps"] or 0)
         rejections = int(self.state.get("rejections", 0))

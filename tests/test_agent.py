@@ -623,6 +623,36 @@ async def test_scheduled_task_without_any_action_is_not_accepted_when_controller
     assert used[0] == "agent" and set(used[1:]) == {"fort"}, used
 
 
+async def test_scheduled_task_on_a_local_main_model_starts_on_the_strong_one(fake, user, monkeypatch):
+    """Routine sur un petit modèle local : son premier tour était un faux accusé de réception (« c'est noté, je
+    l'exécuterai demain »), relancé puis escaladé à chaque fois, deux minutes perdues par routine. Elle démarre
+    directement sur le modèle d'escalade ; une conversation ordinaire reste sur le modèle principal."""
+    from ely.agent import loop
+
+    with_strong_model(fake)
+    monkeypatch.setattr(loop, "LOCAL", ("fake",))
+
+    def agent(messages, tools):
+        if not tool_results(messages):
+            return call("calendar_list", start="2030-05-06", end="2030-05-07")
+        return "Agenda consulté : aucun événement."
+
+    fake.script, used = routed(agent)
+    q = runner.subscribe(user["id"])
+    try:
+        cid = new_conversation(user)
+        await runner.submit(user, cid, "[Tâche planifiée #4] Surveille mon agenda", kind="scheduled")
+        await wait_idle(cid)
+        assert used == ["fort", "fort"], used
+        assert any("tâche planifiée sur un modèle local" in r for r in model_notices(q))
+        cid2 = new_conversation(user)
+        await runner.submit(user, cid2, "Qu'ai-je à l'agenda le 6 mai 2030 ?")
+        await wait_idle(cid2)
+    finally:
+        runner.unsubscribe(user["id"], q)
+    assert used[2:] == ["agent", "agent"], used
+
+
 async def test_scheduled_task_that_must_notify_is_relaunched_until_notify_is_called(fake, user, monkeypatch):
     """Veille de prix « notifier Franck via Telegram » : le petit modèle avait rendu un rapport aux liens fictifs
     (« [Lien de la fiche produit Cdiscount] ») sans jamais appeler notify, et le contrôleur, tout aussi petit, l'avait
