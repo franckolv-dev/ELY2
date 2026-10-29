@@ -16,4 +16,7 @@ node_modules/
 
 # Service vocal (voice/xtts) : l'enregistrement de la voix et le journal restent sur le Mac
 voice/xtts/voices/
-voice/xtts/xtts.log
+voice/xtts/xtts.log*
+
+# Maquettes de travail (Claude Design) : restent sur le Mac
+design/
