@@ -653,6 +653,38 @@ async def test_scheduled_task_on_a_local_main_model_starts_on_the_strong_one(fak
     assert used[2:] == ["agent", "agent"], used
 
 
+async def test_subagents_follow_the_escalated_model_and_blank_templates_are_flagged(fake, user, monkeypatch):
+    """Routine escaladée sur le modèle fort : ses sous-agents (delegate) tournaient quand même sur le petit modèle
+    local et rendaient un gabarit vide (« [Nom du Modèle A] ») que l'agent principal prenait pour un rapport. Les
+    sous-agents suivent le modèle de la tâche, et un rapport aux valeurs en blanc est signalé comme non constaté ;
+    dans une conversation ordinaire, les sous-agents restent sur le modèle principal."""
+    from ely.agent import loop
+
+    with_strong_model(fake)
+    monkeypatch.setattr(loop, "LOCAL", ("fake",))
+
+    def agent(messages, tools):
+        if "Ta sous-tâche" in last_user_text(messages[:1]):
+            return "**1. [Nom du Modèle A]**\nLien poids : [URL précise du dépôt]"
+        if not tool_results(messages):
+            return call("delegate", tasks=["Trouve les modèles sortis cette semaine"])
+        report = tool_results(messages)[-1]["content"]
+        return "Sous-agent : gabarit non rempli, rien de constaté." if "Rapport incomplet" in report else "Rapport pris tel quel."
+
+    fake.script, used = routed(agent)
+    cid = new_conversation(user)
+    await runner.submit(user, cid, "[Tâche planifiée #1] Veille IA : modèles locaux de la semaine", kind="scheduled")
+    await wait_idle(cid)
+    assert used == ["fort", "fort", "fort"], used
+    last = json.loads(db.one("SELECT data FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT 1", (cid,))["data"])
+    assert last["content"] == "Sous-agent : gabarit non rempli, rien de constaté."
+
+    cid2 = new_conversation(user)
+    await runner.submit(user, cid2, "Trouve les modèles sortis cette semaine, en parallèle")
+    await wait_idle(cid2)
+    assert used[3:] == ["agent", "agent", "agent"], used
+
+
 async def test_scheduled_task_that_must_notify_is_relaunched_until_notify_is_called(fake, user, monkeypatch):
     """Veille de prix « notifier Franck via Telegram » : le petit modèle avait rendu un rapport aux liens fictifs
     (« [Lien de la fiche produit Cdiscount] ») sans jamais appeler notify, et le contrôleur, tout aussi petit, l'avait
