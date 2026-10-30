@@ -16,7 +16,21 @@ Un seul processus, une seule base SQLite, zéro service à maintenir.
 
 ---
 
-## Nouveautés de la 4.2
+## Nouveautés de la 4.3
+
+- **Plus sûre pour la famille** : le réseau de la maison reste fermé même par une redirection, les mots de passe et
+  jetons sont chiffrés dans la base, les outils des extensions MCP sont réservés à l'administrateur et les envois de
+  fichiers sont bornés. Voir [Sécurité](#sécurité).
+- **Sauvegarde quotidienne de la base**, et une avant chaque modification qu'Ely apporte à son propre code. Voir
+  [Architecture](#architecture).
+- **Des routines qui vont au bout** : une tâche planifiée ne se termine plus sans avoir agi ni envoyé la notification
+  promise, et sur un petit modèle local elle démarre directement sur le modèle d'escalade.
+- **Plus robuste au quotidien** : un e-mail coupé en plein envoi n'est jamais renvoyé en double, lire un e-mail ne le
+  marque plus comme lu, Google Agenda dépasse les 100 événements, et les longues conversations se chargent par pages.
+- **Démarre vraiment avec le Mac** : `./ely.sh service` fonctionne quand Ely est rangée dans Documents, et le dit si
+  macOS bloque le service.
+
+### Et dans la 4.2
 
 - **Le bon effort au bon endroit** : l'effort de raisonnement se règle par rôle (Moyen ou Élevé). Les demandes
   courantes (actualités, e-mails…) ne font plus réfléchir longuement le modèle le plus puissant ; l'escalade et
@@ -26,18 +40,6 @@ Un seul processus, une seule base SQLite, zéro service à maintenir.
   contributeurs du dépôt. Voir [Auto-amélioration](#auto-amélioration-récursive).
 - **Gmail tient la charge** : plusieurs tâches menées en parallèle ne se font plus refuser par Gmail.
 - **Linux et Windows (WSL2)** : démarrage automatique par systemd, et procédure expliquée. Voir [Démarrage](#démarrage).
-
-### Et dans la 4.1
-
-- **Auto-amélioration confiée à GPT6-Astra ou n'importe quel modèle cloud ou local**, et chaque modification de son propre code **publiée sur
-  GitHub en pull request**, que vous relisez et fusionnez. Voir [Auto-amélioration](#auto-amélioration-récursive).
-- **Prête pour Internet et pour la famille** : droits vérifiés à chaque action, code réservé à l'administrateur,
-  contenus de tiers jamais pris pour des ordres, réseau de la maison fermé aux autres comptes, sessions protégées.
-  Voir [Sécurité](#sécurité).
-- **Plus robuste** : une action au résultat incertain n'est jamais refaite à l'aveugle, un modèle figé est contourné,
-  Ely attend LM Studio s'il démarre après elle, et revient seule à la version précédente si une mise à jour plante.
-- **Tri des e-mails Gmail** (corbeille, archives, libellés) ; sur Telegram, la réponse n'arrive qu'une fois la tâche
-  validée.
 
 Tout le détail dans le [journal des versions](CHANGELOG.md).
 
