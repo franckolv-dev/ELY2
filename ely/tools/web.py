@@ -18,6 +18,15 @@ log = logging.getLogger("ely.web")
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) "
       "Chrome/140.0.0.0 Safari/537.36")
 _cooldown: dict[str, float] = {}  # fournisseur -> timestamp de fin de pause (quota épuisé)
+BOT_BLOCKED = {403, 429, 503}  # réponses typiques d'une protection anti-robot (Darty, Fnac, Cloudflare…)
+
+
+class Blocked(Exception):
+    """Le site refuse les lectures automatiques : seul le navigateur de l'utilisateur passe."""
+
+    def __init__(self, status: int):
+        super().__init__(status)
+        self.status = status
 
 
 async def _searxng(q: str, n: int, category: str | None) -> list[dict]:
@@ -193,11 +202,13 @@ async def fetch_text(url: str, max_chars: int = 20000, is_admin: bool = False) -
             reader = PdfReader(io.BytesIO(r.content))
             text = "\n\n".join((p.extract_text() or "") for p in reader.pages)
             return url.rsplit("/", 1)[-1], text[:max_chars]
-        r.raise_for_status()
+        blocked = r.status_code in BOT_BLOCKED
+        if not blocked:
+            r.raise_for_status()
         html = r.text
     title_m = re.search(r"<title[^>]*>(.*?)</title>", html, re.S | re.I)
     title = re.sub(r"\s+", " ", title_m.group(1)).strip() if title_m else url
-    text = await asyncio.to_thread(_extract, html, url)
+    text = "" if blocked else await asyncio.to_thread(_extract, html, url)
     if len(text) < 300:
         from ..browser import render_page
 
@@ -206,6 +217,8 @@ async def fetch_text(url: str, max_chars: int = 20000, is_admin: bool = False) -
             text = await asyncio.to_thread(_extract, html, url)
         except Exception as e:
             log.info("rendu navigateur impossible pour %s : %s", url, e)
+    if blocked and len(text) < 300:
+        raise Blocked(r.status_code)
     return title, text[:max_chars]
 
 
@@ -221,6 +234,13 @@ async def web_fetch(ctx: ToolContext, url: str, max_chars: int = 15000) -> ToolR
         title, text = await fetch_text(url, max_chars, ctx.is_admin)
     except Refused as e:
         return ToolResult(f"Adresse refusée : {e}.", is_error=True)
+    except Blocked as e:
+        host = httpx.URL(url).host
+        return ToolResult(f"Le site {host} refuse les lectures automatiques (HTTP {e.status}) : inutile de réessayer "
+                          f"web_fetch sur ce domaine. Ouvre la page avec browser action=open, qui passe par un vrai "
+                          "navigateur.", is_error=True)
+    except httpx.HTTPStatusError as e:
+        return ToolResult(f"Page indisponible : HTTP {e.response.status_code} pour {url}.", is_error=True)
     if not text.strip():
         return ToolResult(f"Page vide ou illisible : {url}. Essaie browser action=open.", is_error=True)
     return ToolResult(f"# {title}\nSource : {url}\n\n{text}")

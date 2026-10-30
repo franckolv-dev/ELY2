@@ -42,6 +42,10 @@ et fusionnées.
   « [masquée] » au lieu de sa valeur. Le champ reste utilisable.
 
 ### Corrigé
+- **Un site qui bloque les robots n'use plus les sous-agents.** Darty, Fnac et consorts répondent « 403 » à la
+  lecture de page (`web_fetch`) ; la veille de prix y renvoyait onze fois une exception brute. L'outil tente d'abord
+  le rendu par le navigateur interne, puis explique que le domaine refuse les lectures automatiques et qu'il faut
+  ouvrir la page avec `browser`. Les autres erreurs HTTP sont rendues en une ligne lisible.
 - **Les sous-agents suivent le modèle de la tâche.** Quand une routine était passée sur le modèle d'escalade, ses
   sous-agents (`delegate`) tournaient encore sur le petit modèle local et rendaient un gabarit vide
   (« [Nom du Modèle A] », « [URL précise du dépôt] ») pris pour un rapport. Ils utilisent désormais le modèle
