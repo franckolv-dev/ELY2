@@ -42,6 +42,10 @@ et fusionnées.
   « [masquée] » au lieu de sa valeur. Le champ reste utilisable.
 
 ### Corrigé
+- **Les sous-agents suivent le modèle de la tâche.** Quand une routine était passée sur le modèle d'escalade, ses
+  sous-agents (`delegate`) tournaient encore sur le petit modèle local et rendaient un gabarit vide
+  (« [Nom du Modèle A] », « [URL précise du dépôt] ») pris pour un rapport. Ils utilisent désormais le modèle
+  d'escalade de la tâche, et un rapport aux valeurs laissées en blanc est signalé comme non constaté.
 - **Une routine qui doit prévenir sur Telegram ne se termine plus sans l'avoir fait.** La veille de prix avait rendu
   un rapport aux liens fictifs (« [Lien de la fiche produit] ») sans jamais appeler `notify`, et le petit modèle du
   contrôleur l'avait accepté. Ces manques sont désormais constatés sans modèle : une tâche planifiée sans aucune

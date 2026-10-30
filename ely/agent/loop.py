@@ -289,6 +289,7 @@ class AgentLoop:
         self.selfdev = self.conv.get("channel") == "selfdev" and user.get("role") == "admin"
         self.ask_lock = asyncio.Lock()
         self.repeats: dict[str, tuple[int, float]] = {}  # signature d'appel → (nombre, dernier appel)
+        self.tool_ctx: ToolContext | None = None
 
     async def emit(self, type_: str, data: dict | None = None) -> None:
         await self.runner.emit(self.st, type_, data)
@@ -389,6 +390,8 @@ class AgentLoop:
             return
         self.escalated = True
         self.save_state(escalated=True)
+        if self.tool_ctx:  # les sous-agents délégués suivent le modèle de la tâche
+            self.tool_ctx.extra["role"] = "strong"
         await self.emit("model", {"model": strong, "reason": f"{reason} : bascule sur {strong}"})
 
     async def honor_request(self, text: str) -> None:
@@ -488,7 +491,12 @@ class AgentLoop:
         history = load_history(self.conv_id, {pending["tool_call_id"]} if pending else set())
 
         selfdev = self.selfdev
-        ctx = ToolContext(user=user, conversation_id=self.conv_id, run_id=self.run_id, emit=self.emit, extra={"selfdev": selfdev})
+        # Les sous-agents (delegate) tournaient toujours sur le modèle principal, même quand la tâche avait été escaladée :
+        # sur un petit modèle local, ils rendaient des gabarits vides (« [Nom du Modèle A] », « [JJ/MM/AAAA] »).
+        role = "strong" if self.escalated and registry.resolve("strong") else "main"
+        ctx = ToolContext(user=user, conversation_id=self.conv_id, run_id=self.run_id, emit=self.emit,
+                          extra={"selfdev": selfdev, "role": role})
+        self.tool_ctx = ctx
         tools = tools_for(ctx)
         schemas = [t.schema() for t in tools]
         stable = STABLE
@@ -785,13 +793,17 @@ async def run_subagent(parent: ToolContext, task: str, context: str, idx: int, m
                        "factuel, complet et structuré (c'est tout ce que l'agent principal verra).",
               await dynamic_block(parent.user, task)]
     history: list[dict] = [{"role": "user", "content": (f"Contexte : {context}\n\n" if context else "") + f"Ta sous-tâche : {task}"}]
+    role = parent.extra.get("role") or "main"  # le modèle d'escalade si la tâche y est passée
     last = ""
     for _ in range(max_steps):
-        resp = await registry.chat(role="main", system=system, messages=history, tools=schemas, user_id=parent.user_id, purpose="subagent")
+        resp = await registry.chat(role=role, system=system, messages=history, tools=schemas, user_id=parent.user_id, purpose="subagent")
         msg = resp.to_message()
         history.append(msg)
         last = msg["content"] or last
         if not msg.get("tool_calls"):
+            if PLACEHOLDER.search(last or ""):
+                return (last + "\n\n⚠️ Rapport incomplet : il contient des valeurs laissées en blanc entre crochets (gabarit non rempli). "
+                        "Rien de ce qui est entre crochets n'a été constaté : ne le reprends pas, refais la recherche toi-même avec tes outils.")
             return last or "(rapport vide)"
         for tc in msg["tool_calls"]:
             t = TOOLS.get(tc["name"])
