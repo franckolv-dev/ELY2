@@ -236,6 +236,46 @@ async def test_stale_element_number_gives_the_current_page_not_an_error(ctx, tmp
     await manager.shutdown()
 
 
+async def test_browser_internal_pages_are_refused_with_guidance(ctx):
+    """« chrome://downloads » devenait « https://chrome://downloads » (ERR_NAME_NOT_RESOLVED) : refus clair, sans
+    ouvrir de navigateur, avec la marche à suivre pour récupérer un fichier généré par la page."""
+    r = await execute(ctx, "browser", {"action": "open", "url": "chrome://downloads"})
+    assert r.is_error and "chrome://" in r.content and "eval" in r.content, r.content
+
+
+async def test_browser_eval_value_is_saved_as_a_file(ctx):
+    """Une facture produite en blob par la page (bouton Télécharger) ne pouvait pas quitter le navigateur : l'agent a
+    tenté chrome://downloads, le presse-papiers et l'URL pendant dix minutes. La valeur renvoyée par eval est
+    enregistrée dans l'espace de fichiers : data URL décodé, texte tel quel ; rien renvoyé = erreur explicite."""
+    import base64
+
+    from ely.tools.browser import _save_eval
+
+    pdf = b"%PDF-1.4 facture"
+    r = _save_eval(ctx, "data:application/pdf;base64," + base64.b64encode(pdf).decode(), ".travail/facture.pdf")
+    assert not r.is_error and r.files == [".travail/facture.pdf"], r.content
+    assert ctx.resolve_path(".travail/facture.pdf").read_bytes() == pdf
+    r = _save_eval(ctx, "a,b\n1,2", "export.csv")
+    assert ctx.resolve_path("export.csv").read_text() == "a,b\n1,2"
+    r = _save_eval(ctx, None, "vide.txt")
+    assert r.is_error and not ctx.resolve_path("vide.txt").exists()
+
+
+@pytest.mark.skipif(not os.environ.get("ELY_BROWSER_EXECUTABLE") and not Path.home().joinpath(".cache/ms-playwright").exists(),
+                    reason="Chromium absent")
+async def test_browser_eval_with_a_path_writes_the_page_result(ctx, tmp_path):
+    page = tmp_path / "facture.html"
+    page.write_text("<html><body><h1>Facture</h1></body></html>")
+    await execute(ctx, "browser", {"action": "open", "url": page.as_uri()})
+    r = await execute(ctx, "browser", {"action": "eval", "js": "() => 'data:application/pdf;base64,' + btoa('%PDF-1.4 facture')",
+                                       "text": ".travail/facture-page.pdf"})
+    assert not r.is_error and "Enregistré" in r.content, r.content
+    assert ctx.resolve_path(".travail/facture-page.pdf").read_bytes() == b"%PDF-1.4 facture"
+    from ely.browser import manager
+
+    await manager.shutdown()
+
+
 async def test_seed_skills_match_real_requests(ctx):
     from ely.memory.seed import seed_skills
     from ely.memory.store import relevant_skills
