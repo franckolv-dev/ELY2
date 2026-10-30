@@ -50,6 +50,13 @@ et fusionnées.
   sous-agents (`delegate`) tournaient encore sur le petit modèle local et rendaient un gabarit vide
   (« [Nom du Modèle A] », « [URL précise du dépôt] ») pris pour un rapport. Ils utilisent désormais le modèle
   d'escalade de la tâche, et un rapport aux valeurs laissées en blanc est signalé comme non constaté.
+- **Une routine sur un petit modèle local ne perd plus deux minutes à son premier tour.** Elle répondait d'abord par
+  un faux accusé de réception (« c'est noté, je l'exécuterai demain »), relancé puis escaladé à chaque fois. Une
+  tâche planifiée dont le modèle principal est local démarre désormais sur le modèle d'escalade.
+- **Une facture produite par la page ne reste plus coincée dans le navigateur.** L'agent avait tenté
+  `chrome://downloads`, le presse-papiers et l'adresse pendant dix minutes. `eval` enregistre désormais la valeur
+  renvoyée (data URL ou texte) dans l'espace de fichiers, et les pages internes du navigateur (`chrome://…`) sont
+  refusées avec cette marche à suivre.
 - **Une routine qui doit prévenir sur Telegram ne se termine plus sans l'avoir fait.** La veille de prix avait rendu
   un rapport aux liens fictifs (« [Lien de la fiche produit] ») sans jamais appeler `notify`, et le petit modèle du
   contrôleur l'avait accepté. Ces manques sont désormais constatés sans modèle : une tâche planifiée sans aucune
