@@ -10,11 +10,25 @@ leur historique est dans [son journal](https://github.com/franckolv-dev/ElyAgent
 
 ---
 
-## [Non publié]
+## [4.3.0] — 2026-10-30
 
-Hormis les corrections de `./ely.sh update` et `./ely.sh service` et les corrections issues de l'audit indépendant du
-15 octobre 2026, les améliorations de cette section ont été écrites par Ely elle-même (auto-amélioration), puis relues
-et fusionnées.
+> **Plus sûre pour la famille, plus fiable au quotidien.** Le réseau de la maison reste fermé même par un détour, les
+> mots de passe et jetons sont chiffrés dans la base, et la base est sauvegardée chaque jour. Les routines ne se
+> terminent plus sans avoir agi ni prévenu, un e-mail coupé en plein envoi n'est jamais renvoyé, et Ely redémarre
+> vraiment avec le Mac.
+>
+> **En mettant à jour depuis la 4.2.0** (`./ely.sh update`) :
+> - au premier démarrage, Ely chiffre les secrets déjà enregistrés avec `data/secret.key` : gardez ce fichier avec
+>   toute copie de la base. Revenir ensuite à la 4.2.0 demanderait de reconnecter les services ;
+> - extensions MCP : leurs outils sont réservés à l'administrateur, sauf `"shared": true`, et un serveur ne reçoit plus
+>   les clés du `.env` : donnez-lui celles dont il a besoin dans son `"env"` ;
+> - Mac : relancez une fois `./ely.sh service` (le service installé avant cette version ne démarrait pas), après avoir
+>   arrêté une Ely lancée à la main ;
+> - une session inutilisée depuis 90 jours se ferme, et un nouveau mot de passe compte au moins 8 caractères.
+
+Hormis les corrections du lanceur (`./ely.sh update` et `./ely.sh service`), des identifiants de Claude et des serveurs
+MCP, et celles issues de l'audit indépendant du 15 octobre 2026, les améliorations de cette version ont été écrites par
+Ely elle-même (auto-amélioration), puis relues et fusionnées.
 
 ### Sécurité
 - **Le réseau de la maison reste fermé aux comptes de la famille, même par un détour.** Une page publique qui redirige
@@ -397,6 +411,7 @@ Second lot, durcissement :
 
 Les mesures de l'ancien projet l'ont montré : ces couches coûtaient plus qu'elles ne rapportaient.
 
+[4.3.0]: https://github.com/franckolv-dev/ELY2/releases/tag/v4.3.0
 [4.2.0]: https://github.com/franckolv-dev/ELY2/releases/tag/v4.2.0
 [4.1.0]: https://github.com/franckolv-dev/ELY2/releases/tag/v4.1.0
 [4.0.0]: https://github.com/franckolv-dev/ELY2/releases/tag/v4.0.0

@@ -19,7 +19,19 @@ The interface is bilingual (English / French, formal "vous" by default), and Ely
 
 ---
 
-## What's new in 4.2
+## What's new in 4.3
+
+- **Safer for the family**: the home network stays closed even through a redirect, passwords and tokens are encrypted
+  in the database, MCP tools are reserved to the administrator, and file uploads are capped. See [Security](#security).
+- **Daily database backups**, plus one before each change Ely makes to its own code. See [Architecture](#architecture).
+- **Routines that actually deliver**: a scheduled task can no longer end without acting or without sending the
+  notification it promised, and on a small local model it starts directly on the escalation model.
+- **Sturdier every day**: an email cut off mid-send is never sent twice, reading an email no longer marks it as read,
+  Google Calendar goes beyond 100 events, and long conversations load page by page.
+- **Starts with your Mac, for real**: `./ely.sh service` now works when Ely lives in Documents, and says so if macOS
+  blocks it.
+
+### And in 4.2
 
 - **The right effort in the right place**: reasoning effort is set per role (Medium or High). Everyday requests (news,
   emails…) no longer make the most powerful model think at length; escalation and self-improvement keep High effort.
@@ -30,17 +42,6 @@ The interface is bilingual (English / French, formal "vous" by default), and Ely
 - **Gmail holds up under load**: several tasks running in parallel no longer get turned away by Gmail.
 - **Linux and Windows (WSL2)**: automatic start through systemd, and the steps explained. See
   [Getting started](#getting-started).
-
-### And in 4.1
-
-- **Self-improvement handed to Claude** (Claude Agent SDK), and every change to its own code **published on GitHub as
-  a pull request** that you review and merge. See [Self-improvement](#recursive-self-improvement).
-- **Ready for the Internet and for the family**: permissions checked on every action, code reserved to the
-  administrator, third-party content never taken as orders, home network closed to other accounts, protected sessions.
-  See [Security](#security).
-- **Sturdier**: an action whose outcome is uncertain is never blindly redone, a frozen model is bypassed, Ely waits
-  for LM Studio when it starts later, and rolls back by itself if an update keeps crashing.
-- **Gmail sorting** (trash, archive, labels); on Telegram, the answer only arrives once the task is validated.
 
 All the details in the [changelog](CHANGELOG.md) (in French).
 
