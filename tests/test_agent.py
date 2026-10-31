@@ -743,6 +743,90 @@ async def test_conditional_notification_is_not_demanded_twice(fake, user):
     assert db.val("SELECT status FROM runs WHERE id = ?", (res["run_id"],)) == "done"
 
 
+async def test_changing_a_routine_without_any_tool_is_relaunched_until_the_schedule_is_updated(fake, user):
+    """« Inutile de m'envoyer la veille chaque jour si le prix n'a pas bougé » : le petit modèle répondait « c'est noté »
+    sans toucher à la tâche planifiée, et le contrôleur acceptait. Le manque est constaté sans modèle, une seule fois."""
+    import time
+
+    sid = db.insert("schedules", user_id=user["id"], conversation_id=None, instruction="Veille quotidienne du prix du Lefant M310",
+                    cron="30 12 * * *", next_run=time.time() + 3600, enabled=1, created_at=now())
+
+    def agent(messages, tools):
+        controls = [str(m["content"]) for m in messages if m["role"] == "user" and "Contrôle automatique" in str(m["content"])]
+        if not controls:
+            return "J'ai bien noté : vous ne recevrez un rapport qu'en cas de baisse."
+        if not tool_results(messages):
+            assert "schedule" in controls[-1]
+            return call("schedule", action="update", id=sid, instruction="Veille quotidienne du prix du Lefant M310 ; "
+                        "notifier Franck uniquement si un prix inférieur à ceux déjà vus est trouvé")
+        return "Veille modifiée : rapport uniquement en cas de baisse de prix."
+
+    fake.script = script(agent)
+    cid = new_conversation(user)
+    res = await runner.submit(user, cid, "Concernant la veille pour le robot aspirateur Lefant, inutile de m'envoyer un rapport "
+                              "chaque jour si le prix n'a pas évolué. Envoie-moi un rapport uniquement si tu trouves un tarif inférieur.")
+    await wait_idle(cid)
+    datas = [json.loads(m["data"]) for m in db.all("SELECT data FROM messages WHERE conversation_id = ? ORDER BY id", (cid,))]
+    controls = [d["content"] for d in datas if d.get("kind") == "control"]
+    assert len(controls) == 1 and "schedule" in controls[0], controls
+    assert "uniquement si un prix inférieur" in db.val("SELECT instruction FROM schedules WHERE id = ?", (sid,))
+    assert datas[-1]["content"].startswith("Veille modifiée") and db.val("SELECT status FROM runs WHERE id = ?", (res["run_id"],)) == "done"
+
+    # une simple demande sans routine à modifier n'est pas relancée
+    cid2 = new_conversation(user)
+    fake.script = script(lambda messages, tools: "Les points clés : A, B, C.")
+    await runner.submit(user, cid2, "Résume-moi uniquement les points clés de ce texte : A, B et C sont importants.")
+    await wait_idle(cid2)
+    assert not any(json.loads(m["data"]).get("kind") == "control"
+                   for m in db.all("SELECT data FROM messages WHERE conversation_id = ?", (cid2,)))
+
+
+async def test_relaunch_after_a_sent_report_says_not_to_send_it_again(fake, user, monkeypatch):
+    """Nettoyage Gmail : le bilan était parti sur Telegram, puis chaque refus du contrôleur (preuves déjà apportées)
+    faisait renvoyer un nouveau message ; quatre notifications pour une routine. La relance le dit explicitement."""
+    from ely.tools import planning
+
+    sent = []
+
+    async def fake_notify(user_id, title, body, url=None, receipt=None, **kw):
+        receipt.update(push_accepted=1, push_total=1, telegram_status="accepted", telegram_ids=[7], telegram_total=1)
+        sent.append(body)
+        return 1
+
+    monkeypatch.setattr(planning, "send_notification", fake_notify)
+
+    def agent(messages, tools):
+        controls = [str(m["content"]) for m in messages if m["role"] == "user" and "Contrôle automatique" in str(m["content"])]
+        if not tool_results(messages):
+            return call("notify", title="Bilan", message="16 messages traités, 10 en corbeille.")
+        if controls:
+            assert "déjà été envoyé par notify" in controls[-1]
+            return "Les documents étaient déjà classés dans Drive : rien à ajouter, bilan déjà transmis."
+        return "Bilan envoyé sur Telegram."
+
+    fake.script = script(agent, verdicts=[{"done": False, "missing": "prouver le classement des factures dans Drive"}])
+    cid = new_conversation(user)
+    res = await runner.submit(user, cid, "[Tâche planifiée #2] Nettoyer Gmail puis envoyer le bilan via notify", kind="scheduled")
+    await wait_idle(cid)
+    datas = [json.loads(m["data"]) for m in db.all("SELECT data FROM messages WHERE conversation_id = ? ORDER BY id", (cid,))]
+    controls = [d["content"] for d in datas if d.get("kind") == "control"]
+    assert len(controls) == 1 and "déjà été envoyé par notify" in controls[0], controls
+    assert sent == ["16 messages traités, 10 en corbeille."]
+    assert db.val("SELECT status FROM runs WHERE id = ?", (res["run_id"],)) == "done"
+
+
+def test_address_requests_phrased_as_a_preference_are_recognised():
+    """« Je préfère le tutoiement » n'était pas retenu : Franck a dû le redire un mois plus tard."""
+    from ely.memory.learner import address_request
+
+    assert address_request("Notes dans ta mémoire que je préfère le tutoiement. Je l'utilise pour te parler.") == "tu"
+    assert address_request("Ely, je t'ai déjà dit que tu peux me tutoyer. Je préfère que tu me tutoie, stp.") == "tu"
+    assert address_request("Finalement je préfère le vouvoiement.") == "vous"
+    assert address_request("Arrête le tutoiement, s'il te plaît.") == "vous"
+    assert address_request("Ne me tutoie pas.") == "vous"
+    assert address_request("Comment dit-on le tutoiement en espagnol ?") is None
+
+
 async def test_strong_model_on_request(fake, user):
     """« Prenez le modèle fort » : Ely y passe dès le premier appel. Une simple question sur le modèle fort ne
     change rien, et « utilise Opus » passe sur le modèle fort tant que Claude n'est pas relié."""

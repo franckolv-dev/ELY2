@@ -168,6 +168,18 @@ NO_NOTIFY = ("Aucune notification n'a été envoyée alors que la tâche le dema
              "notify (ce qui a été constaté, sans rien inventer), puis réponds.")
 FICTIVE = ("La réponse contient des valeurs fictives entre crochets ([Lien…], [Nom…]) : remplace-les par ce qui a "
            "réellement été constaté avec les outils, ou retire ces éléments.")
+# Demande de changer une routine existante (« inutile de m'envoyer la veille chaque jour si… ») : un petit modèle
+# répondait « c'est noté » sans toucher à la tâche planifiée, et le contrôleur laissait passer
+ROUTINE_WORDS = re.compile(r"\b(?:veille|routine|t[âa]che planifi[ée]e|chaque (?:jour|matin|soir|semaine|lundi|mardi|mercredi|jeudi|"
+                           r"vendredi|samedi|dimanche)|tous les (?:jours|matins|soirs)|quotidien(?:ne)?s?|hebdomadaires?|r[ée]current(?:e)?s?)\b", re.I)
+CHANGE_WORDS = re.compile(r"\b(?:uniquement|seulement|inutile|plus (?:besoin|la peine)|d[ée]sormais|dor[ée]navant|[àa] partir de "
+                          r"(?:maintenant|demain|lundi)|modifie|change|d[ée]cale|arr[êe]te|annule|supprime|ajoute|retire|"
+                          r"ne (?:m'|me )?(?:envoie|pr[ée]viens|notifie)s? (?:plus|pas|que))\b", re.I)
+ROUTINE_CHANGE = ("La personne demande de modifier une routine existante (veille, rapport récurrent, tâche planifiée) et aucun "
+                  "outil n'a été utilisé : applique le changement avec schedule (action=list, puis action=update id=… avec "
+                  "l'instruction complétée) et confirme ce qui a été modifié ; « c'est noté » ne change rien.")
+ALREADY_NOTIFIED = ("\nLe compte rendu a déjà été envoyé par notify : n'en renvoie pas pour répéter ou prouver ; si une action "
+                    "manquait vraiment, fais-la puis envoie un seul court complément.")
 
 
 def obvious_gap(objective: str, history: list[dict], answer: str) -> str:
@@ -175,14 +187,31 @@ def obvious_gap(objective: str, history: list[dict], answer: str) -> str:
     aux liens fictifs, jamais envoyé par notify. Chaque remarque n'est faite qu'une fois (sauf l'absence totale d'action)."""
     noted = [m.get("content") for m in history if m.get("kind") == "control"]
     scheduled = objective.startswith("[Tâche planifiée")
-    if scheduled and action_log(history) == "(aucune action)":
+    no_action = action_log(history) == "(aucune action)"
+    if scheduled and no_action:
         return NO_ACTION
+    if not scheduled and no_action and ROUTINE_WORDS.search(objective) and CHANGE_WORDS.search(objective) \
+            and not any(ROUTINE_CHANGE in str(n) for n in noted):
+        return ROUTINE_CHANGE
     if PLACEHOLDER.search(answer or "") and not any(FICTIVE in str(n) for n in noted):
         return FICTIVE
-    notified = any(m["role"] == "tool" and m.get("name") == "notify" and not m.get("is_error") for m in history)
-    if scheduled and NOTIFY_WANTED.search(objective) and not notified and not any(NO_NOTIFY in str(n) for n in noted):
+    if scheduled and NOTIFY_WANTED.search(objective) and not has_notified(history) and not any(NO_NOTIFY in str(n) for n in noted):
         return NO_NOTIFY
     return ""
+
+
+def has_notified(history: list[dict]) -> bool:
+    return any(m["role"] == "tool" and m.get("name") == "notify" and not m.get("is_error") for m in history)
+
+
+def rejection_note(missing: str, history: list[dict]) -> str:
+    """Relance après un refus du contrôleur. Routine dont le bilan est déjà parti : le contrôleur réclamait des preuves
+    déjà apportées et chaque relance renvoyait un nouveau message Telegram à la personne (quatre pour un seul nettoyage)."""
+    text = (f"[Contrôle automatique] L'objectif n'est pas encore atteint : {missing}\n"
+            "Continue sans t'arrêter : agis avec tes outils, change de stratégie si besoin.")
+    if has_notified(history):
+        text += ALREADY_NOTIFIED
+    return text
 
 
 async def verify(objective: str, history: list[dict], answer: str, user_id: int, today: str = "") -> tuple[bool | None, str]:
@@ -215,6 +244,10 @@ Règles :
 - Ne jamais exiger plus que la demande : ni achat, panier, parcours de commande, création de compte sur un site, saisie
   de données personnelles ou paiement que l'utilisateur n'a pas demandés expressément. Une recherche ou comparaison de
   prix est satisfaite par des prix constatés sur les pages marchandes avec leurs sources, sans passer par le panier.
+- Compte rendu déjà envoyé (résultat notify confirmé) : ne pas exiger un nouvel envoi. Ne pas redemander une preuve
+  que les résultats d'outils contiennent déjà ; un document déjà présent là où il doit être n'a pas à être ajouté.
+- Modifier une routine, une veille ou une tâche planifiée (fréquence, conditions d'envoi, contenu) est une action :
+  satisfaite seulement par un appel schedule (update) réussi, jamais par « c'est noté ».
 Réponds uniquement en JSON : {{"done": true ou false, "missing": "ce qui manque et comment y arriver (1-2 phrases)"}}"""
     deadline = asyncio.get_running_loop().time() + VERIFY_DEADLINE
     for attempt in range(2):
@@ -597,9 +630,7 @@ class AgentLoop:
                     if rejections < settings.max_verify_retries and no_progress < 3:
                         if registry.resolve("strong"):  # dès le premier échec, sans attendre de piétiner
                             await self.escalate("objectif pas encore atteint, escalade vers le modèle le plus fort")
-                        note = {"role": "user", "kind": "control",
-                                "content": f"[Contrôle automatique] L'objectif n'est pas encore atteint : {missing}\n"
-                                           "Continue sans t'arrêter : agis avec tes outils, change de stratégie si besoin."}
+                        note = {"role": "user", "kind": "control", "content": rejection_note(missing, history)}
                         history.append(note)
                         await self.publish_message(self.persist(note))
                         continue
