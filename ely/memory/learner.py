@@ -44,9 +44,12 @@ def _run_digest(conversation_id: int, run_id: int) -> tuple[str, int, str]:
     return "\n".join(lines)[-24000:], n_tools, status
 
 
-# Demandes explicites de tutoiement ou de vouvoiement (retenues même pour un échange très court)
-_VOUS = re.compile(r"vouvoie[- ]?moi|me vouvoyer|ne me tutoie(?:s)? pas|arr[eê]te de me tutoyer|ne (?:plus |pas )me tutoyer", re.I)
-_TU = re.compile(r"tutoie[- ]?moi|me tutoyer|se tutoyer|tutoyons[- ]nous", re.I)
+# Demandes explicites de tutoiement ou de vouvoiement (retenues même pour un échange très court).
+# « Je préfère le tutoiement » et « je préfère que tu me tutoies » passaient entre les mailles : Franck a dû le redire.
+_VOUS = re.compile(r"vouvoie[- ]?moi|me vouvoyer|ne me tutoie(?:s)? pas|arr[eê]te (?:de me tutoyer|le tutoiement)|ne (?:plus |pas )me tutoyer"
+                   r"|pr[ée]f[èe]re (?:le |être )?vouvoi|plus de tutoiement|revi(?:ens|enir) au vouvoiement", re.I)
+_TU = re.compile(r"tutoie[- ]?moi|me tutoy|me tutoies?\b|se tutoyer|tutoyons[- ]nous|pr[ée]f[èe]re (?:le |être )?tutoi"
+                 r"|passe (?:au|en) tutoiement|avec tutoiement", re.I)
 
 
 def address_request(text: str) -> str | None:

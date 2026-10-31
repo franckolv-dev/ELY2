@@ -10,6 +10,17 @@ leur historique est dans [son journal](https://github.com/franckolv-dev/ElyAgent
 
 ---
 
+## Non publié
+
+### Corrigé
+- **Modifier une routine se fait vraiment.** « Inutile de m'envoyer la veille chaque jour si le prix n'a pas bougé » :
+  un petit modèle répondait « c'est noté » sans toucher à la tâche planifiée. Une telle demande sans aucun outil
+  est maintenant relancée vers `schedule` (update), et le contrôleur ne l'accepte plus sur parole.
+- **Un bilan déjà envoyé n'est plus renvoyé à chaque relance du contrôleur.** La relance le dit explicitement, et le
+  contrôleur n'exige plus de preuve déjà apportée ni de nouvel envoi : quatre messages Telegram pour un seul nettoyage
+  Gmail, c'est fini.
+- **« Je préfère le tutoiement » est retenu**, comme « je préfère que tu me tutoies » ou « arrête le tutoiement ».
+
 ## [4.3.0] — 2026-10-30
 
 > **Plus sûre pour la famille, plus fiable au quotidien.** Le réseau de la maison reste fermé même par un détour, les
