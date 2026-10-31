@@ -6,7 +6,7 @@ import re
 import time
 
 from ..db import db
-from ..llm.registry import price_of
+from ..llm.registry import cost_of
 from ..tools import hide, redact
 from ..vault import passwords
 
@@ -37,10 +37,7 @@ def collect(days: float = 7) -> dict:
                 "SELECT error FROM tool_log WHERE name = ? AND ok = 0 AND created_at > ? ORDER BY id DESC LIMIT 3", (t["name"], since))]
     usage = db.all("SELECT model, purpose, SUM(input_tokens) AS inp, SUM(output_tokens) AS out, SUM(cached_tokens) AS cached, "
                    "COUNT(*) AS calls FROM usage WHERE created_at > ? GROUP BY model, purpose ORDER BY inp DESC", (since,))
-    cost = 0.0
-    for u in usage:
-        pi, po = price_of(u["model"])
-        cost += ((u["inp"] or 0) - (u["cached"] or 0) * 0.9) / 1e6 * pi + (u["out"] or 0) / 1e6 * po
+    cost = sum(cost_of(u["model"], u["inp"] or 0, u["out"] or 0, u["cached"] or 0) for u in usage)
     complaints = []
     for m in db.all("SELECT m.data, c.title FROM messages m JOIN conversations c ON c.id = m.conversation_id "
                     "WHERE m.role = 'user' AND m.created_at > ? ORDER BY m.id DESC LIMIT 400", (since,)):

@@ -89,19 +89,22 @@ STATIC_FALLBACK = {
 }
 # Sans coût au token : un repli automatique peut y aller même si personne ne les a choisis
 FREE_PROVIDERS = ("chatgpt", "lmstudio", "ollama")
-# Prix indicatifs ($ / million de tokens entrée, sortie) pour le tableau de bord
+# Prix indicatifs ($ / million de tokens entrée, sortie, relecture du cache) pour le tableau de bord ;
+# le préfixe le plus précis d'abord (claude-fable-5-1 avant claude-fable-5)
 PRICES = {
-    "claude-fable-5": (10, 50), "claude-opus-5-5": (4, 20), "claude-opus-5": (5, 25), "claude-opus-4": (5, 25),
-    "claude-sonnet-5": (2, 10), "claude-sonnet-4": (3, 15), "claude-haiku-4-5": (1, 5),
+    "claude-fable-5-1": (10, 50, 0.25), "claude-fable-5": (10, 50, 1), "claude-opus-5-5": (4, 20, 0.2),
+    "claude-opus-5": (5, 25, 0.5), "claude-opus-4": (5, 25, 0.5), "claude-sonnet-5": (2, 10, 0.2),
+    "claude-sonnet-4": (3, 15, 0.3), "claude-haiku-4-5": (1, 5, 0.1),
 }
 
 
-def price_of(model_ref: str) -> tuple[float, float]:
+def cost_of(model_ref: str, input_tokens: int, output_tokens: int, cached_tokens: int) -> float:
+    """Coût en $ ; `input_tokens` comprend le cache : relu au prix du cache, écrit au prix d'entrée."""
     mid = model_ref.split(":", 1)[-1]
-    for prefix, p in PRICES.items():
+    for prefix, (pi, po, pc) in PRICES.items():
         if mid.startswith(prefix):
-            return p
-    return (0.0, 0.0)
+            return ((input_tokens - cached_tokens) * pi + cached_tokens * pc + output_tokens * po) / 1e6
+    return 0.0
 
 
 class Registry:

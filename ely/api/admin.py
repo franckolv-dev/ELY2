@@ -11,7 +11,7 @@ from .. import auth
 from ..config import settings
 from ..db import db, now
 from ..llm import registry
-from ..llm.registry import EFFORT_DEFAULTS, EFFORTS, ROLES, price_of
+from ..llm.registry import EFFORT_DEFAULTS, EFFORTS, ROLES, cost_of
 from ..selfdev import metrics, pipeline, plugins
 
 router = APIRouter()
@@ -156,8 +156,7 @@ def usage(days: float = 30, user=Depends(auth.admin_user)):
                   "ORDER BY input DESC", (time.time() - days * 86400,))
     total = 0.0
     for r in rows:
-        pi, po = price_of(r["model"])
-        r["cost"] = round(((r["input"] or 0) - (r["cached"] or 0) * 0.9) / 1e6 * pi + (r["output"] or 0) / 1e6 * po, 4)
+        r["cost"] = round(cost_of(r["model"], r["input"] or 0, r["output"] or 0, r["cached"] or 0), 4)
         total += r["cost"]
     return {"rows": rows, "total_cost": round(total, 3)}
 

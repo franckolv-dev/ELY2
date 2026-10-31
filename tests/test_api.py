@@ -126,6 +126,26 @@ async def test_admin_models_and_selfdev(client, user, fake):
     assert health["ok"] and health["tools"] >= 25
 
 
+async def test_claude_costs_count_the_cache_at_each_models_price(client, user):
+    # Une nuit d'auto-amélioration type : presque tout le contexte est relu depuis le cache
+    db.run("DELETE FROM usage")
+    for model, inp, cached, out in (("claude:claude-fable-5-1", 3_000_000, 2_850_000, 24_000),
+                                    ("claude:claude-opus-5-5", 1_760_000, 1_680_000, 14_000),
+                                    ("anthropic:claude-fable-5", 1_000_000, 900_000, 0)):
+        db.insert("usage", user_id=user["id"], model=model, input_tokens=inp, output_tokens=out, cached_tokens=cached,
+                  purpose="selfdev", created_at=time.time())
+    h = await login(client, user["email"], "motdepasse")
+    rows = {r["model"]: r["cost"] for r in (await client.get("/api/admin/usage", headers=h)).json()["rows"]}
+    # Fable 5.1 : 150 k à 10 $, 2,85 M relus à 0,25 $, 24 k écrits à 50 $
+    assert rows["claude:claude-fable-5-1"] == pytest.approx(1.5 + 0.7125 + 1.2)
+    # Opus 5.5 : 80 k à 4 $, 1,68 M relus à 0,20 $, 14 k écrits à 20 $
+    assert rows["claude:claude-opus-5-5"] == pytest.approx(0.32 + 0.336 + 0.28)
+    # Fable 5 : cache relu à 1 $, le dixième du prix d'entrée
+    assert rows["anthropic:claude-fable-5"] == pytest.approx(1.0 + 0.9)
+    metrics = (await client.get("/api/admin/selfdev", headers=h)).json()["metrics"]
+    assert metrics["estimated_cost_usd"] == pytest.approx(3.4125 + 0.936 + 1.9, abs=0.001)
+
+
 async def test_favicon_is_the_current_icon(client):
     from pathlib import Path
 

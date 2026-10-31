@@ -10,6 +10,16 @@ leur historique est dans [son journal](https://github.com/franckolv-dev/ElyAgent
 
 ---
 
+## [Non publié]
+
+### Corrigé
+- **Le coût affiché de Claude suit le vrai prix du cache.** La consommation (Réglages) et le rapport de
+  l'auto-amélioration comptaient le cache relu au dixième du prix d'entrée pour tous les modèles. Claude Fable 5.1
+  le facture au quarantième et Claude Opus 5.5 au vingtième : une nuit d'auto-amélioration sur Fable 5.1 s'affichait
+  autour de 5,60 $ pour un coût réel de 3,50 à 3,90 $. Chaque modèle a désormais son prix de relecture du cache ;
+  Claude Fable 5 garde le sien (1 $ le million). Le cache écrit reste compté au prix d'entrée, faute de distinction
+  dans la table `usage` : le coût affiché reste un peu en dessous du coût réel.
+
 ## [4.3.0] — 2026-10-30
 
 > **Plus sûre pour la famille, plus fiable au quotidien.** Le réseau de la maison reste fermé même par un détour, les
