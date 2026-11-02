@@ -594,6 +594,27 @@ async def test_identical_read_only_call_is_refused_and_escalates(fake, user):
     assert any("répète la même action" in r for r in model_notices(q))
 
 
+async def test_empty_answer_escalates_to_strong_model(fake, user):
+    """Un petit modèle local rendait trois réponses vides de suite (33 minutes, puis erreur) : dès la première,
+    la tâche passe au modèle d'escalade, qui répond."""
+    with_strong_model(fake)
+
+    def agent(messages, tools):
+        return "" if used[-1] == "agent" else "Il fera 12 °C."
+
+    fake.script, used = routed(agent)
+    q = runner.subscribe(user["id"])
+    try:
+        cid = new_conversation(user)
+        await runner.submit(user, cid, "Et à Vendeuvre-du-Poitou ?")
+        await wait_idle(cid)
+    finally:
+        runner.unsubscribe(user["id"], q)
+    assert used[:2] == ["agent", "fort"], used
+    assert any("réponse vide" in r for r in model_notices(q))
+    assert db.val("SELECT status FROM runs WHERE conversation_id = ?", (cid,)) != "error"
+
+
 async def test_scheduled_task_without_any_action_is_not_accepted_when_controller_fails(fake, user):
     """Un petit modèle rédigeait le compte rendu d'une routine sans avoir appelé un seul outil, et le contrôleur muet
     l'acceptait : sans verdict, une tâche planifiée sans aucune action est relancée (et passe au modèle d'escalade)."""
