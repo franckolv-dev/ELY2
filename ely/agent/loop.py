@@ -605,6 +605,9 @@ class AgentLoop:
                 msg = resp.to_message()
                 if not msg["content"] and not msg.get("tool_calls"):
                     empty += 1
+                    # gemma-4-12b (LM Studio) rendait trois réponses vides de suite, 33 minutes perdues avant l'erreur :
+                    # dès la première, la suite passe au modèle d'escalade
+                    await self.escalate("réponse vide du modèle")
                     if empty >= 3:
                         raise LLMError("Le modèle renvoie des réponses vides : essaie un autre modèle (menu en haut).")
                     history.append({"role": "user", "kind": "control", "content": "[Contrôle] Ta réponse était vide. Continue la tâche ou donne ta réponse finale."})
