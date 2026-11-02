@@ -26,7 +26,7 @@ from ..db import db, now
 from ..llm import LLMError, claude_agent, parse_json_loose, registry
 from ..llm.base import LLMResponse, estimate_tokens, message_text
 from ..llm.registry import LOCAL
-from ..tools import SECRET_ARGS, TOOLS, UNCERTAIN, ToolContext, ToolResult, execute, tools_for
+from ..tools import EXTERNAL_START, SECRET_ARGS, TOOLS, UNCERTAIN, ToolContext, ToolResult, execute, tools_for
 from .prompts import STABLE, dynamic_block, today_text
 from .runner import ConvState, Runner, public_message, save_message
 
@@ -144,18 +144,30 @@ def uncertain_calls(history: list[dict]) -> set[str]:
 
 
 def action_log(history: list[dict], limit_chars: int = 12000) -> str:
-    lines = []
+    """Journal pour le contrôleur. Tâche longue : les lectures de contenu tiers (recherches, e-mails, pages) sont abrégées,
+    sauf les plus récentes ; sinon seule la fin restait et le contrôleur réclamait des « preuves » (bilan notify, mises à
+    la corbeille) coupées du début du journal (six refus pour un seul nettoyage Gmail)."""
+    lines: list[tuple[str, str]] = []  # (ligne complète, ligne abrégée ou "" si à garder entière)
     results = {m["tool_call_id"]: m for m in history if m["role"] == "tool"}
     for m in history:
         if m["role"] == "assistant":
             for tc in m.get("tool_calls") or []:
                 r = results.get(tc["id"], {})
-                args = json.dumps(tc.get("arguments", {}), ensure_ascii=False)[:200]
+                args = json.dumps(tc.get("arguments", {}), ensure_ascii=False)
                 status = "ÉCHEC" if r.get("is_error") else "ok"
-                lines.append(f"- {tc['name']}({args}) → {status} : {(r.get('content') or '')[:350]}")
+                content = r.get("content") if isinstance(r.get("content"), str) else ""
+                full = f"- {tc['name']}({args[:200]}) → {status} : {content[:350]}"
+                short = ""
+                if (t := TOOLS.get(tc["name"])) and t.untrusted:
+                    gist = " ".join(content.replace(EXTERNAL_START.format(name=tc["name"]), "").split())
+                    short = f"- {tc['name']}({args[:120]}) → {status} : {gist[:100]}"
+                lines.append((full, short))
         elif m["role"] == "user" and m.get("kind") == "control":
-            lines.append(f"- [contrôle] {message_text(m)[:200]}")
-    text = "\n".join(lines)
+            lines.append((f"- [contrôle] {message_text(m)[:200]}", ""))
+    text = "\n".join(full for full, _ in lines)
+    if len(text) > limit_chars:
+        recent = len(lines) - 8
+        text = "\n".join(short if short and i < recent else full for i, (full, short) in enumerate(lines))
     return text[-limit_chars:] if len(text) > limit_chars else (text or "(aucune action)")
 
 

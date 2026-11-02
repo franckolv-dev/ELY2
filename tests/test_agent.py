@@ -726,6 +726,36 @@ async def test_scheduled_task_that_must_notify_is_relaunched_until_notify_is_cal
     assert used[:2] == ["agent"] * 2 and set(used[2:]) == {"fort"}, used
 
 
+async def test_controller_still_sees_early_actions_of_a_long_routine(fake, user):
+    """Nettoyage Gmail en 30 étapes : le contrôleur ne voyait que la fin du journal (pages Drive parcourues) et
+    réclamait six fois la « preuve » du bilan notify et des mises à la corbeille faites au début. Les lectures de
+    contenu tiers sont abrégées, sauf les dernières : les actions du début restent visibles."""
+    from ely.agent import loop
+    from ely.tools import EXTERNAL_START
+
+    prompts = []
+
+    def fn(model, system, messages, tools):
+        prompts.append(last_user_text(messages))
+        return '{"done": true, "missing": ""}'
+
+    fake.script = fn
+    objective = "[Tâche planifiée #2] Nettoyage Gmail, bilan via notify"
+    steps = [("email_manage", {"action": "trash", "ids": ["a", "b"]}, "2 e-mail(s) mis à la corbeille."),
+             ("notify", {"message": "Bilan : 19 examinés, 12 à la corbeille"}, "Telegram : 1/1 partie(s) confirmée(s) ; message_id : 820.")]
+    steps += [("browser", {"action": "open", "url": f"https://drive.google.com/{i}"},
+               EXTERNAL_START.format(name="browser") + "\nPage : Drive " + "x" * 2000) for i in range(40)]
+    history = [{"role": "user", "content": objective}]
+    for i, (name, args, content) in enumerate(steps):
+        history.append({"role": "assistant", "content": "", "tool_calls": [{"id": f"c{i}", "name": name, "arguments": args}]})
+        history.append({"role": "tool", "tool_call_id": f"c{i}", "name": name, "content": content})
+    done, _ = await loop.verify(objective, history, "Bilan envoyé (message 820).", user["id"])
+    assert done is True
+    prompt = next(p for p in prompts if "contrôleur qualité" in p)
+    assert "message_id : 820" in prompt and "2 e-mail(s) mis à la corbeille" in prompt
+    assert prompt.count("x" * 200) == 8  # les dernières pages restent entières
+
+
 async def test_conditional_notification_is_not_demanded_twice(fake, user):
     """Routine « notifier seulement s'il y a du nouveau » sans nouveauté : la remarque n'est faite qu'une fois, puis le
     verdict du contrôleur s'applique ; la tâche se termine sans notification."""
