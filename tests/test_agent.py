@@ -7,6 +7,7 @@ import json
 from conftest import call, last_user_text, new_conversation, wait_idle
 
 from ely.agent.runner import runner
+from ely.config import settings
 from ely.db import db, now
 from ely.llm.base import LLMError, LLMResponse
 
@@ -830,6 +831,53 @@ async def test_changing_a_routine_without_any_tool_is_relaunched_until_the_sched
     await wait_idle(cid2)
     assert not any(json.loads(m["data"]).get("kind") == "control"
                    for m in db.all("SELECT data FROM messages WHERE conversation_id = ?", (cid2,)))
+
+
+async def test_refusal_that_only_asks_for_the_google_reconnection_already_reported_is_accepted(fake, user):
+    """Routine Gmail de Gert, jeton Google expiré : l'agent avait tenté le navigateur et dit quoi faire, mais le petit
+    contrôleur refusait deux fois en réclamant la reconnexion elle-même, et la routine finissait bloquée sur ask_user."""
+    from ely.agent import loop
+    from ely.integrations.google import RECONNECT
+
+    verdict = {"missing": "Le token Google est expiré ; l'utilisateur doit se reconnecter dans Réglages → Connexions → Google."}
+
+    def fn(model, system, messages, tools):
+        return json.dumps({"done": False, **verdict}, ensure_ascii=False)
+
+    fake.script = fn
+    objective = "[Tâche planifiée #7] Nettoyage Gmail quotidien, rapport disponible"
+    history = [{"role": "user", "content": objective},
+               {"role": "assistant", "content": "", "tool_calls": [{"id": "c1", "name": "email_search", "arguments": {"query": "in:inbox"}}]},
+               {"role": "tool", "tool_call_id": "c1", "name": "email_search", "is_error": True, "content": f"Erreur dans email_search : RuntimeError: {RECONNECT}"}]
+    answer = "Nettoyage non exécuté : jeton expiré. Reconnectez le compte dans Réglages → Connexions → Google."
+    assert await loop.verify(objective, history, answer, user["id"]) == (True, "")
+
+    # un autre manque reste un refus
+    verdict["missing"] = "Les e-mails des catégories Promotions n'ont pas été supprimés."
+    done, missing = await loop.verify(objective, history, answer, user["id"])
+    assert done is False and "Promotions" in missing
+
+
+async def test_link_to_a_file_never_written_is_relaunched_until_the_file_exists(fake, user):
+    """« Génère un fichier markdown » : gemma-4-12b répondait avec un lien /files/… sans avoir appelé file_write, le
+    contrôleur acceptait et la personne cliquait sur un fichier introuvable. Le lien est vérifié sans modèle."""
+    def agent(messages, tools):
+        controls = [str(m["content"]) for m in messages if m["role"] == "user" and "Contrôle automatique" in str(m["content"])]
+        if not controls:
+            return "J'ai généré le document : [Analyse statut](/files/Analyse%20statut.md)"
+        if not tool_results(messages):
+            assert "Analyse statut.md" in controls[-1] and "file_write" in controls[-1]
+            return call("file_write", path="Analyse statut.md", content="# Statuts\nMicro-entreprise, EURL, SASU")
+        return "Document créé : [Analyse statut](/files/Analyse%20statut.md)"
+
+    fake.script = script(agent)
+    cid = new_conversation(user)
+    res = await runner.submit(user, cid, "Compare les statuts juridiques et génère un fichier markdown à télécharger")
+    await wait_idle(cid)
+    datas = [json.loads(m["data"]) for m in db.all("SELECT data FROM messages WHERE conversation_id = ? ORDER BY id", (cid,))]
+    assert sum(1 for d in datas if d.get("kind") == "control") == 1
+    assert (settings.user_dir(user["id"]) / "files" / "Analyse statut.md").is_file()
+    assert datas[-1]["content"].startswith("Document créé") and db.val("SELECT status FROM runs WHERE id = ?", (res["run_id"],)) == "done"
 
 
 async def test_relaunch_after_a_sent_report_says_not_to_send_it_again(fake, user, monkeypatch):
