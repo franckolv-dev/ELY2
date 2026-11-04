@@ -19,6 +19,7 @@ import re
 import time
 import unicodedata
 from dataclasses import replace
+from urllib.parse import unquote
 
 from ..auth import tv
 from ..config import settings
@@ -190,6 +191,11 @@ CHANGE_WORDS = re.compile(r"\b(?:uniquement|seulement|inutile|plus (?:besoin|la 
 ROUTINE_CHANGE = ("La personne demande de modifier une routine existante (veille, rapport récurrent, tâche planifiée) et aucun "
                   "outil n'a été utilisé : applique le changement avec schedule (action=list, puis action=update id=… avec "
                   "l'instruction complétée) et confirme ce qui a été modifié ; « c'est noté » ne change rien.")
+# Lien vers l'espace de fichiers dans la réponse : gemma-4-12b annonçait « [Analyse…](/files/Analyse.md) » sans avoir
+# appelé file_write, le contrôleur acceptait et la personne cliquait sur un fichier introuvable
+FILE_LINK = re.compile(r"\]\(/files/([^)\s]+)\)")
+MISSING_FILE = ("La réponse donne un lien vers {names}, qui n'existe pas dans l'espace de fichiers : crée réellement le "
+                "fichier avec file_write (contenu complet), puis donne le lien exact du fichier écrit.")
 ALREADY_NOTIFIED = ("\nLe compte rendu a déjà été envoyé par notify : n'en renvoie pas pour répéter ou prouver ; si une action "
                     "manquait vraiment, fais-la puis envoie un seul court complément.")
 
@@ -212,6 +218,27 @@ def obvious_gap(objective: str, history: list[dict], answer: str) -> str:
     return ""
 
 
+def missing_files(answer: str, user_id: int) -> str:
+    root = (settings.user_dir(user_id) / "files").resolve()
+    missing = []
+    for link in FILE_LINK.findall(answer or ""):
+        path = unquote(re.split(r"[?#]", link)[0])
+        p = (root / path).resolve()
+        if p.is_relative_to(root) and not p.is_file():
+            missing.append(path)
+    return MISSING_FILE.format(names=", ".join(missing)) if missing else ""
+
+
+# Refus qui ne réclame que la reconnexion Google, déjà signalée : le petit contrôleur refusait deux fois la routine de
+# nettoyage Gmail de Gert pour un jeton expiré, malgré sa règle, et la tâche planifiée finissait bloquée sur ask_user
+RECONNECT_ONLY = re.compile(r"reconne|jeton|token|invalid_grant", re.I)
+
+
+def reconnect_only(history: list[dict], answer: str, missing: str) -> bool:
+    blocked = any(m["role"] == "tool" and m.get("is_error") and "invalid_grant" in str(m.get("content")) for m in history)
+    return blocked and "Connexions" in (answer or "") and bool(RECONNECT_ONLY.search(missing))
+
+
 def has_notified(history: list[dict]) -> bool:
     return any(m["role"] == "tool" and m.get("name") == "notify" and not m.get("is_error") for m in history)
 
@@ -227,7 +254,7 @@ def rejection_note(missing: str, history: list[dict]) -> str:
 
 
 async def verify(objective: str, history: list[dict], answer: str, user_id: int, today: str = "") -> tuple[bool | None, str]:
-    if gap := obvious_gap(objective, history, answer):
+    if gap := obvious_gap(objective, history, answer) or missing_files(answer, user_id):
         return False, gap
     when = f"\nNous sommes {today} : juge les dates par rapport à ce jour, pas d'après tes connaissances.\n" if today else ""
     prompt = f"""Tu es le contrôleur qualité d'un agent autonome. Détermine si la DEMANDE de l'utilisateur est entièrement satisfaite.
@@ -273,7 +300,10 @@ Réponds uniquement en JSON : {{"done": true ou false, "missing": "ce qui manque
                 done = {"true": True, "false": False}.get(done.strip().lower())
             if not isinstance(done, bool):
                 raise ValueError(f"verdict illisible : {raw[:200]}")
-            return done, str(v.get("missing", ""))[:600]
+            missing = str(v.get("missing", ""))[:600]
+            if not done and reconnect_only(history, answer, missing):
+                return True, ""
+            return done, missing
         except TimeoutError:
             log.info("vérification abandonnée : pas de réponse en %d s", VERIFY_DEADLINE)
             break
