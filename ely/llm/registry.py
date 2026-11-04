@@ -39,6 +39,9 @@ EFFORTS = ("medium", "high")
 CALL_DEADLINE = 20 * 60
 # Un modèle qui vient de rester muet passe en fin de chaîne pendant ce temps : l'étape suivante ne l'attend pas encore
 STALL_PENALTY = 10 * 60
+# Modèle local qui ne fait que réfléchir depuis ce temps, sans écrire ni agir : le suivant de la chaîne prend le relais
+# (gemma-4-12b a réfléchi 16 000 tokens sur une question fiscale, plus de 20 minutes, pour une réponse vide)
+THINK_DEADLINE = 5 * 60
 # Fournisseur local injoignable (LM Studio lancé après Ely, redémarré…) : revérifié au plus une fois par minute
 LOCAL = ("lmstudio", "ollama")
 RECHECK = 60
@@ -94,6 +97,19 @@ PRICES = {
     "claude-fable-5": (10, 50), "claude-opus-5-5": (4, 20), "claude-opus-5": (5, 25), "claude-opus-4": (5, 25),
     "claude-sonnet-5": (2, 10), "claude-sonnet-4": (3, 15), "claude-haiku-4-5": (1, 5),
 }
+
+
+def think_limit(on_delta: DeltaCallback) -> DeltaCallback:
+    start, wrote = time.monotonic(), False
+
+    async def guarded(kind: str, text: str) -> None:
+        nonlocal wrote
+        wrote = wrote or kind != "thinking"
+        if not wrote and time.monotonic() - start > THINK_DEADLINE:
+            raise LLMError(f"réflexion sans réponse depuis {THINK_DEADLINE / 60:.0f} min", retryable=True, kind="timeout")
+        if on_delta:
+            await on_delta(kind, text)
+    return guarded
 
 
 def price_of(model_ref: str) -> tuple[float, float]:
@@ -281,8 +297,9 @@ class Registry:
             for attempt in range(3):
                 try:
                     mt = max_tokens or (32000 if prov.kind == "anthropic" else 16000)
+                    delta = think_limit(on_delta) if ref.split(":", 1)[0] in LOCAL and i + 1 < len(chain) else on_delta
                     try:
-                        resp = await asyncio.wait_for(prov.chat(mid, system, messages, tools, on_delta, mt, effort), CALL_DEADLINE)
+                        resp = await asyncio.wait_for(prov.chat(mid, system, messages, tools, delta, mt, effort), CALL_DEADLINE)
                     except TimeoutError:
                         raise LLMError(f"pas de réponse complète en {CALL_DEADLINE // 60} min", retryable=True, kind="timeout") from None
                     self.record_usage(user_id, resp, purpose)
