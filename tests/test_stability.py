@@ -21,7 +21,7 @@ from ely import integrations
 from ely.agent.runner import runner, save_message
 from ely.db import db
 from ely.llm import LLMError, registry
-from ely.llm.base import LLMResponse, estimate_tokens
+from ely.llm.base import LLMResponse, ModelInfo, estimate_tokens
 from ely.tools import TOOLS, ToolContext, execute
 
 registry_module = sys.modules["ely.llm.registry"]  # le paquet expose l'instance sous le même nom que le module
@@ -209,6 +209,48 @@ async def test_a_small_model_that_only_thinks_hands_background_calls_to_the_next
     assert await registry.complete("Résume", role="fast", purpose="compaction") == "Résumé : factures classées."
     assert await registry.complete("Résume encore", role="fast", purpose="compaction") == "Résumé : factures classées."
     assert calls == ["fast", "agent", "agent"]
+
+
+class _EndlessThinker:
+    """Petit modèle local qui réfléchit sans fin, sans jamais écrire de réponse."""
+
+    kind = "openai"
+
+    def __init__(self) -> None:
+        self.models = [ModelInfo(id="gemma-4-12b", provider="lmstudio")]
+
+    def info(self, model):
+        return self.models[0]
+
+    async def chat(self, model, system, messages, tools=None, on_delta=None, max_tokens=0, effort="high"):
+        for _ in range(100):
+            if on_delta:
+                await on_delta("thinking", "Hmm, voyons encore le régime fiscal… ")
+            await asyncio.sleep(0.05)
+        return LLMResponse(text="", stop_reason="length", model=f"lmstudio:{model}")
+
+
+async def test_a_local_model_that_only_thinks_hands_over_without_waiting_for_the_deadline(fake, monkeypatch):
+    """gemma-4-12b réfléchissait plus de 20 minutes sur une question fiscale pour rendre une réponse vide : au-delà du
+    délai de réflexion sans rien écrire, le modèle suivant répond et le local passe en fin de chaîne."""
+    monkeypatch.setattr(registry_module, "THINK_DEADLINE", 0.3)
+    registry.providers["lmstudio"] = _EndlessThinker()
+    registry.catalog["lmstudio"] = registry.providers["lmstudio"].models
+    registry.status["lmstudio"] = "ok (1 modèle)"
+    db.set_setting("model_main", "lmstudio:gemma-4-12b")
+    db.set_setting("model_fallbacks", "fake:agent")
+    fake.script = lambda model, system, messages, tools: "SASU ou micro-entreprise : voici la comparaison."
+    seen = []
+
+    async def on_delta(kind, text):
+        seen.append(kind)
+
+    started = time.monotonic()
+    resp = await registry.chat(system=["s"], messages=[{"role": "user", "content": "Quel statut pour 72 000 € de CA ?"}],
+                               on_delta=on_delta)
+    assert resp.model == "fake:agent" and resp.text.startswith("SASU")
+    assert time.monotonic() - started < 2  # sans la limite : 5 s de réflexion pour rien
+    assert "thinking" in seen and registry.stalled.get("lmstudio:gemma-4-12b", 0) > time.time()
 
 
 class _LateLMStudio:
