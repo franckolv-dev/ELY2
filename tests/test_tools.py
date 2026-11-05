@@ -276,6 +276,33 @@ async def test_browser_eval_with_a_path_writes_the_page_result(ctx, tmp_path):
     await manager.shutdown()
 
 
+def test_browser_eval_accepts_await_outside_a_function():
+    from ely.tools.browser import _eval_expr
+
+    # Tâche 312 : « await is only valid in async functions » sur un fetch écrit en corps d'instructions
+    body = "const r=await fetch('/api/facture'); return r.status"
+    assert _eval_expr(body).startswith("async () => {")
+    assert _eval_expr("await Promise.resolve(3)").startswith("async () =>")
+    assert _eval_expr("return document.title") == "() => { return document.title }"
+    assert _eval_expr("document.title") == "document.title"
+    assert _eval_expr("(async()=>{await 1})()") == "(async()=>{await 1})()"
+
+
+@pytest.mark.skipif(not os.environ.get("ELY_BROWSER_EXECUTABLE") and not Path.home().joinpath(".cache/ms-playwright").exists(),
+                    reason="Chromium absent")
+async def test_browser_eval_runs_top_level_await(ctx, tmp_path):
+    page = tmp_path / "page.html"
+    page.write_text("<html><body><h1>Factures</h1></body></html>")
+    await execute(ctx, "browser", {"action": "open", "url": page.as_uri()})
+    r = await execute(ctx, "browser", {"action": "eval", "js": "const v = await Promise.resolve(41); return v + 1"})
+    assert not r.is_error and "42" in r.content, r.content
+    r = await execute(ctx, "browser", {"action": "eval", "js": "await Promise.resolve('ok')"})
+    assert not r.is_error and "'ok'" in r.content, r.content
+    from ely.browser import manager
+
+    await manager.shutdown()
+
+
 async def test_seed_skills_match_real_requests(ctx):
     from ely.memory.seed import seed_skills
     from ely.memory.store import relevant_skills
