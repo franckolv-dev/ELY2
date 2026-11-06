@@ -32,8 +32,12 @@ def _eval_expr(js: str) -> str:
     asy = "async " if re.search(r"\bawait\b", code) else ""
     if code.startswith(("(", "function", "async")):
         return code  # fonction complète
-    if "return" in code or ";" in code or "\n" in code:
+    if "return" in code or (asy and (";" in code or "\n" in code)):
         return f"{asy}() => {{ {code} }}"  # corps d'instructions
+    if ";" in code or "\n" in code:
+        # Bloc : la valeur de la dernière instruction est renvoyée (« el.click(); 'ok' » rendait None, tâche 317)
+        # et ses const restent locales d'un appel à l'autre
+        return f"{{\n{code}\n}}"
     if asy:
         return f"async () => ({code})"
     return code  # simple expression, ex. document.title

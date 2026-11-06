@@ -303,6 +303,23 @@ async def test_browser_eval_runs_top_level_await(ctx, tmp_path):
     await manager.shutdown()
 
 
+@pytest.mark.skipif(not os.environ.get("ELY_BROWSER_EXECUTABLE") and not Path.home().joinpath(".cache/ms-playwright").exists(),
+                    reason="Chromium absent")
+async def test_browser_eval_statements_return_last_value(ctx, tmp_path):
+    page = tmp_path / "page.html"
+    page.write_text("<html><body><h1 onclick=\"this.dataset.vu='1'\">Factures</h1></body></html>")
+    await execute(ctx, "browser", {"action": "open", "url": page.as_uri()})
+    # Tâche 317 : « el.click(); 'selected' » renvoyait None, l'agent ne savait pas si le clic avait eu lieu
+    r = await execute(ctx, "browser", {"action": "eval", "js": "document.querySelector('h1').click(); 'selected'"})
+    assert not r.is_error and "'selected'" in r.content, r.content
+    for _ in range(2):  # const redéclarée d'un appel à l'autre sans erreur
+        r = await execute(ctx, "browser", {"action": "eval", "js": "const h = document.querySelector('h1');\nh.dataset.vu"})
+        assert not r.is_error and "'1'" in r.content, r.content
+    from ely.browser import manager
+
+    await manager.shutdown()
+
+
 async def test_seed_skills_match_real_requests(ctx):
     from ely.memory.seed import seed_skills
     from ely.memory.store import relevant_skills
