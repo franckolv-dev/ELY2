@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import re
 from urllib.parse import unquote_to_bytes
 
 from ..browser import CONSENT_JS, manager
@@ -23,6 +24,19 @@ INTERNAL_SCHEMES = ("chrome:", "chrome-extension:", "devtools:", "edge:", "view-
 INTERNAL_REFUSED = ("Les pages internes du navigateur (chrome://…) ne sont pas accessibles. Pour récupérer un fichier "
                     "généré par la page (blob, bouton Télécharger), capture-le en JavaScript puis eval(js, text=chemin) : "
                     "la valeur renvoyée (data URL ou texte) est enregistrée dans l'espace de fichiers.")
+
+
+def _eval_expr(js: str) -> str:
+    """Code de l'action eval rendu évaluable ; un await hors fonction passe dans une fonction async."""
+    code = js.strip()
+    asy = "async " if re.search(r"\bawait\b", code) else ""
+    if code.startswith(("(", "function", "async")):
+        return code  # fonction complète
+    if "return" in code or ";" in code or "\n" in code:
+        return f"{asy}() => {{ {code} }}"  # corps d'instructions
+    if asy:
+        return f"async () => ({code})"
+    return code  # simple expression, ex. document.title
 
 
 def _save_eval(ctx: ToolContext, val, path_text: str) -> ToolResult:
@@ -238,14 +252,7 @@ async def _browser(ctx: ToolContext, action: str, url: str = "", ref: int | None
             body = await page.evaluate("() => document.body ? document.body.innerText : ''")
             return ToolResult(f"URL : {page.url}\n\n{body}")
         elif action == "eval":
-            code = js.strip()
-            if code.startswith(("(", "function", "async")):
-                expr = code  # fonction complète
-            elif "return" in code or ";" in code or "\n" in code:
-                expr = f"() => {{ {code} }}"  # corps d'instructions
-            else:
-                expr = code  # simple expression, ex. document.title
-            val = await page.evaluate(expr)
+            val = await page.evaluate(_eval_expr(js))
             if text:
                 return _save_eval(ctx, val, text)
             return ToolResult(f"Résultat : {val!r}"[:20000])
