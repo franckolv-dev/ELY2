@@ -96,6 +96,13 @@ async def test_files_and_python(ctx):
     assert r.is_error
 
 
+async def test_missing_module_suggests_standard_library(ctx):
+    r = await execute(ctx, "run_python", {"code": "import requests, feedparser_absent_ely"})
+    assert r.is_error and "« feedparser_absent_ely » n'est pas installé" in r.content and "xml.etree" in r.content, r.content
+    r = await execute(ctx, "run_python", {"code": "raise ValueError('autre')"})
+    assert r.is_error and "n'est pas installé" not in r.content
+
+
 async def test_long_output_is_spilled(ctx):
     r = await execute(ctx, "run_python", {"code": "print('x' * 60000)"})
     assert "tronquée" in r.content and len(r.content) < 30000

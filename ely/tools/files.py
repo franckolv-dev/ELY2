@@ -131,6 +131,7 @@ def received_path(workspace: Path, name: str) -> Path:
     return dest
 
 
+MISSING_MODULE = re.compile(r"ModuleNotFoundError: No module named '([\w.]+)'")
 SECRET_NAME = re.compile(r"KEY|TOKEN|SECRET|PASS|CREDENTIAL|COOKIE|AUTH", re.I)
 KEEP = {"SSH_AUTH_SOCK"}  # agent SSH (git push…) : un chemin de socket, pas un secret
 
@@ -187,9 +188,14 @@ async def run_python(ctx: ToolContext, code: str, timeout: int = 120) -> ToolRes
     script = tmp / f"script_{uuid.uuid4().hex[:8]}.py"
     script.write_text(code, encoding="utf-8")
     try:
-        return await _run(ctx, [sys.executable, str(script)], max(5, min(timeout, 880)))
+        r = await _run(ctx, [sys.executable, str(script)], max(5, min(timeout, 880)))
     finally:
         script.unlink(missing_ok=True)
+    # « import feedparser » faisait échouer tout le script de veille RSS (résumé matinal de Franck)
+    if r.is_error and (m := MISSING_MODULE.search(r.content)):
+        r.content += (f"\nLe module « {m.group(1)} » n'est pas installé : refais le script sans lui (requests ou httpx, "
+                      "xml.etree.ElementTree pour un flux RSS/Atom, json, csv, re).")
+    return r
 
 
 @tool("run_shell", "Exécute une commande shell (bash) sur le serveur d'Ely, dans l'espace de fichiers de l'utilisateur.",
