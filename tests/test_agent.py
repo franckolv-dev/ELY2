@@ -858,6 +858,37 @@ async def test_refusal_that_only_asks_for_the_google_reconnection_already_report
     assert done is False and "Promotions" in missing
 
 
+async def test_refusal_that_only_leaves_an_action_to_the_user_ends_the_task(fake, user):
+    """Tâche 330 : conseil sur les modèles locaux, le petit contrôleur réclamait cinq fois la capture et les extraits
+    Markdown que seule la personne peut transmettre ; la tâche finissait « non confirmée » après des relances inutiles."""
+    verdicts = [{"done": False, "missing": "La capture du PDF manque ; l'utilisateur doit la transmettre pour valider le script."}]
+
+    def agent(messages, tools):
+        return "Essayez Qwen3.8-27B. Transmettez-moi la capture du PDF pour que je vérifie le script généré."
+
+    fake.script = script(agent, verdicts=verdicts)
+    cid = new_conversation(user)
+    res = await runner.submit(user, cid, "Quel modèle local choisir pour écrire de l'ExtendScript ?")
+    await wait_idle(cid)
+    run = db.one("SELECT * FROM runs WHERE id = ?", (res["run_id"],))
+    datas = [json.loads(m["data"]) for m in db.all("SELECT data FROM messages WHERE conversation_id = ? ORDER BY id", (cid,))]
+    assert run["status"] == "done" and not any(d.get("kind") in ("control", "note") for d in datas)
+
+    # un manque qui reste à la charge de l'agent est toujours un refus
+    from ely.agent import loop
+    verdict = {}
+
+    def fn(model, system, messages, tools):
+        return json.dumps({"done": False, **verdict}, ensure_ascii=False)
+
+    fake.script = fn
+    for missing in ("Il faut générer le script, puis l'utilisateur doit l'exécuter dans InDesign.",
+                    "L'agent doit envoyer le compte rendu ; l'utilisateur doit le recevoir par Telegram.",
+                    "Il faut retrouver le document ou contacter l'utilisateur."):
+        verdict["missing"] = missing
+        assert await loop.verify("Prépare le script", [], "Voici", user["id"]) == (False, missing)
+
+
 async def test_link_to_a_file_never_written_is_relaunched_until_the_file_exists(fake, user):
     """« Génère un fichier markdown » : gemma-4-12b répondait avec un lien /files/… sans avoir appelé file_write, le
     contrôleur acceptait et la personne cliquait sur un fichier introuvable. Le lien est vérifié sans modèle."""

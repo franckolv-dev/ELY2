@@ -239,6 +239,18 @@ def reconnect_only(history: list[dict], answer: str, missing: str) -> bool:
     return blocked and "Connexions" in (answer or "") and bool(RECONNECT_ONLY.search(missing))
 
 
+# Refus qui ne laisse qu'une action à la personne (« l'utilisateur doit transmettre la capture ») : relancer l'agent n'y
+# peut rien ; le petit contrôleur refusait cinq fois un conseil sur les modèles locaux (tâche 330), poussant l'agent à
+# charger un modèle de 27B non demandé et à finir sur « je n'ai pas pu confirmer »
+USER_TODO = re.compile(r"\b(?:l['’]utilisateur|la personne)\s+(?:doit|devra|devrait)\s+(?!recevoir|[êe]tre\b)"
+                       r"|\bil faut que (?:l['’]utilisateur|la personne)\b", re.I)
+AGENT_TODO = re.compile(r"\bl['’]agent\s+(?:doit|devra|devrait)\b|\bil (?:faut|reste [àa])\s+(?!que (?:l['’]utilisateur|la personne)\b)", re.I)
+
+
+def user_only(missing: str) -> bool:
+    return bool(USER_TODO.search(missing)) and not AGENT_TODO.search(missing)
+
+
 def has_notified(history: list[dict]) -> bool:
     return any(m["role"] == "tool" and m.get("name") == "notify" and not m.get("is_error") for m in history)
 
@@ -269,7 +281,8 @@ RÉPONSE FINALE DE L'AGENT :
 {answer[:4000]}
 
 Règles :
-- Question, conseil ou conversation : satisfaite si la réponse y répond correctement et complètement.
+- Question, conseil ou conversation : satisfaite si la réponse y répond correctement et complètement, sans exiger
+  d'action, d'installation ou d'essai que la demande ne réclame pas.
 - Action demandée (envoyer, publier, réserver, créer, ajouter, acheter, planifier, rédiger un fichier…) : satisfaite
   uniquement si les résultats d'outils prouvent qu'elle a réellement été effectuée avec succès. Une intention
   (« je vais… »), une simple description ou un brouillon non demandé ne suffit pas.
@@ -280,6 +293,8 @@ Règles :
 - Blocage que seul l'utilisateur peut lever (compte à reconnecter, ex. invalid_grant ; connexion ou autorisation
   exigée sans identifiants enregistrés) : satisfaite si les résultats d'outils le prouvent, que l'agent a tenté l'autre
   accès disponible, n'annonce rien de faux et dit précisément à l'utilisateur quoi faire. Ne pas relancer.
+- Si le seul manque est une action de l'utilisateur (fournir un fichier ou une information qu'il est seul à avoir,
+  faire un essai de son côté) que l'agent lui a demandée : satisfaite.
 - Ne jamais exiger plus que la demande : ni achat, panier, parcours de commande, création de compte sur un site, saisie
   de données personnelles ou paiement que l'utilisateur n'a pas demandés expressément. Une recherche ou comparaison de
   prix est satisfaite par des prix constatés sur les pages marchandes avec leurs sources, sans passer par le panier.
@@ -301,7 +316,7 @@ Réponds uniquement en JSON : {{"done": true ou false, "missing": "ce qui manque
             if not isinstance(done, bool):
                 raise ValueError(f"verdict illisible : {raw[:200]}")
             missing = str(v.get("missing", ""))[:600]
-            if not done and reconnect_only(history, answer, missing):
+            if not done and (reconnect_only(history, answer, missing) or user_only(missing)):
                 return True, ""
             return done, missing
         except TimeoutError:
