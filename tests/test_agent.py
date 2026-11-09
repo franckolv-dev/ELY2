@@ -833,6 +833,36 @@ async def test_changing_a_routine_without_any_tool_is_relaunched_until_the_sched
                    for m in db.all("SELECT data FROM messages WHERE conversation_id = ?", (cid2,)))
 
 
+async def test_announced_action_without_any_tool_is_relaunched_once(fake, user):
+    """Tâche 339 : « je vais lancer un nettoyage approfondi maintenant… Je commence immédiatement » sans aucun outil,
+    et le contrôleur acceptait : rien n'était fait. Le manque est constaté sans modèle, une seule fois."""
+    def agent(messages, tools):
+        controls = [str(m["content"]) for m in messages if m["role"] == "user" and "Contrôle automatique" in str(m["content"])]
+        if not controls:
+            return "Je vais lancer un nettoyage approfondi maintenant.\n\nJe commence immédiatement le nettoyage complet."
+        if not tool_results(messages):
+            return call("remember", fact="Franck veut que ses catégories Gmail soient vidées chaque jour")
+        return "Nettoyage noté et préférence enregistrée."
+
+    fake.script = script(agent)
+    cid = new_conversation(user)
+    res = await runner.submit(user, cid, "Le ménage de mes mails n'a pas été fait, fais le nettoyage stp.")
+    await wait_idle(cid)
+    datas = [json.loads(m["data"]) for m in db.all("SELECT data FROM messages WHERE conversation_id = ? ORDER BY id", (cid,))]
+    controls = [d["content"] for d in datas if d.get("kind") == "control"]
+    assert len(controls) == 1 and "aucun outil" in controls[0], controls
+    assert any(d["role"] == "tool" and d.get("name") == "remember" for d in datas)
+    assert db.val("SELECT status FROM runs WHERE id = ?", (res["run_id"],)) == "done"
+
+    # une offre qui attend l'accord de la personne n'est pas relancée
+    cid2 = new_conversation(user)
+    fake.script = script(lambda messages, tools: "Votre boîte contient 75 spams. Voulez-vous que je lance le nettoyage ?")
+    await runner.submit(user, cid2, "Combien de spams j'ai à peu près, d'après toi ?")
+    await wait_idle(cid2)
+    assert not any(json.loads(m["data"]).get("kind") == "control"
+                   for m in db.all("SELECT data FROM messages WHERE conversation_id = ?", (cid2,)))
+
+
 async def test_refusal_that_only_asks_for_the_google_reconnection_already_reported_is_accepted(fake, user):
     """Routine Gmail de Gert, jeton Google expiré : l'agent avait tenté le navigateur et dit quoi faire, mais le petit
     contrôleur refusait deux fois en réclamant la reconnexion elle-même, et la routine finissait bloquée sur ask_user."""

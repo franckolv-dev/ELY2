@@ -196,6 +196,14 @@ ROUTINE_CHANGE = ("La personne demande de modifier une routine existante (veille
 FILE_LINK = re.compile(r"\]\(/files/([^)\s]+)\)")
 MISSING_FILE = ("La réponse donne un lien vers {names}, qui n'existe pas dans l'espace de fichiers : crée réellement le "
                 "fichier avec file_write (contenu complet), puis donne le lien exact du fichier écrit.")
+# Action annoncée sans aucun outil appelé : gemma-4-12b répondait « je vais lancer un nettoyage approfondi maintenant…
+# Je commence immédiatement » à Franck (tâche 339), le contrôleur acceptait et rien n'était fait
+PROMISE = re.compile(r"(?<!que )(?<!si )\bje (?:commence|lance|m['’]en occupe|m['’]y mets|vais (?:maintenant |imm[ée]diatement |"
+                     r"donc |tout de suite |d[èe]s maintenant )?(?:lancer|commencer|proc[ée]der|ex[ée]cuter|effectuer|nettoyer|"
+                     r"supprimer|archiver|trier|envoyer|cr[ée]er|rechercher|chercher|v[ée]rifier|m['’](?:en )?occuper|r[ée]server|"
+                     r"ajouter|programmer|planifier|t[ée]l[ée]charger|classer|ranger))\b", re.I)
+PROMISED = ("La réponse annonce une action (« je commence… », « je vais lancer… ») alors qu'aucun outil n'a été utilisé : "
+            "fais-la réellement maintenant avec tes outils, puis rends compte de ce qui a été fait, sans rien annoncer d'autre.")
 ALREADY_NOTIFIED = ("\nLe compte rendu a déjà été envoyé par notify : n'en renvoie pas pour répéter ou prouver ; si une action "
                     "manquait vraiment, fais-la puis envoie un seul court complément.")
 
@@ -211,6 +219,9 @@ def obvious_gap(objective: str, history: list[dict], answer: str) -> str:
     if not scheduled and no_action and ROUTINE_WORDS.search(objective) and CHANGE_WORDS.search(objective) \
             and not any(ROUTINE_CHANGE in str(n) for n in noted):
         return ROUTINE_CHANGE
+    if not scheduled and no_action and PROMISE.search(answer or "") and not (answer or "").rstrip().endswith("?") \
+            and not any(PROMISED in str(n) for n in noted):
+        return PROMISED
     if PLACEHOLDER.search(answer or "") and not any(FICTIVE in str(n) for n in noted):
         return FICTIVE
     if scheduled and NOTIFY_WANTED.search(objective) and not has_notified(history) and not any(NO_NOTIFY in str(n) for n in noted):
