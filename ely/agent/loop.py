@@ -266,6 +266,18 @@ def has_notified(history: list[dict]) -> bool:
     return any(m["role"] == "tool" and m.get("name") == "notify" and not m.get("is_error") for m in history)
 
 
+def relaunched_since_notify(history: list[dict]) -> bool:
+    """Bilan envoyé par notify puis déjà une relance du contrôleur : le petit contrôleur refusait encore le résumé matinal
+    de Franck (tâche 341) pour des sections « manquantes » pourtant écrites et un rapport « en cours » déjà livré."""
+    notified = False
+    for m in history:
+        if m["role"] == "tool" and m.get("name") == "notify" and not m.get("is_error"):
+            notified = True
+        elif notified and m.get("kind") == "control" and str(m.get("content", "")).startswith("[Contrôle automatique]"):
+            return True
+    return False
+
+
 def rejection_note(missing: str, history: list[dict]) -> str:
     """Relance après un refus du contrôleur. Routine dont le bilan est déjà parti : le contrôleur réclamait des preuves
     déjà apportées et chaque relance renvoyait un nouveau message Telegram à la personne (quatre pour un seul nettoyage)."""
@@ -327,7 +339,7 @@ Réponds uniquement en JSON : {{"done": true ou false, "missing": "ce qui manque
             if not isinstance(done, bool):
                 raise ValueError(f"verdict illisible : {raw[:200]}")
             missing = str(v.get("missing", ""))[:600]
-            if not done and (reconnect_only(history, answer, missing) or user_only(missing)):
+            if not done and (reconnect_only(history, answer, missing) or user_only(missing) or relaunched_since_notify(history)):
                 return True, ""
             return done, missing
         except TimeoutError:

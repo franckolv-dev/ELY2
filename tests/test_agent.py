@@ -888,6 +888,32 @@ async def test_refusal_that_only_asks_for_the_google_reconnection_already_report
     assert done is False and "Promotions" in missing
 
 
+async def test_routine_already_notified_is_relaunched_only_once_by_the_controller(fake, user):
+    """Tâche 341 : résumé matinal envoyé sur Telegram, une relance utile (veille Hugging Face), puis deux refus erronés
+    du petit contrôleur (sections « manquantes » pourtant présentes, rapport « en cours » déjà livré)."""
+    from ely.agent import loop
+
+    def fn(model, system, messages, tools):
+        return json.dumps({"done": False, "missing": "Le rapport ne contient pas la section Agenda du jour."}, ensure_ascii=False)
+
+    fake.script = fn
+    objective = "[Tâche planifiée #1] Résumé matinal de Franck, à envoyer via notify sur Telegram"
+    history = [{"role": "user", "content": objective},
+               {"role": "assistant", "content": "", "tool_calls": [{"id": "n1", "name": "notify", "arguments": {"message": "Résumé"}}]},
+               {"role": "tool", "tool_call_id": "n1", "name": "notify", "content": "Telegram : 1/1 partie(s) confirmée(s) par l'API"}]
+    answer = "Résumé envoyé sur Telegram."
+    done, missing = await loop.verify(objective, history, answer, user["id"])
+    assert done is False and "Agenda" in missing  # première relance après l'envoi : gardée
+
+    history.append({"role": "user", "kind": "control", "content": loop.rejection_note(missing, history)})
+    assert await loop.verify(objective, history, answer, user["id"]) == (True, "")
+
+    # une relance antérieure à l'envoi ne compte pas
+    early = [history[0], {"role": "user", "kind": "control", "content": loop.rejection_note("Envoi manquant", [])}, *history[1:3]]
+    done, _ = await loop.verify(objective, early, answer, user["id"])
+    assert done is False
+
+
 async def test_refusal_that_only_leaves_an_action_to_the_user_ends_the_task(fake, user):
     """Tâche 330 : conseil sur les modèles locaux, le petit contrôleur réclamait cinq fois la capture et les extraits
     Markdown que seule la personne peut transmettre ; la tâche finissait « non confirmée » après des relances inutiles."""
