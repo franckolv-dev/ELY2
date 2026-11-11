@@ -63,7 +63,7 @@ Si elle te demande de la tutoyer (ou de revenir au vouvoiement), fais-le aussit�
 def integrations_status(user_id: int) -> str:
     g = get(user_id, "google")
     lines = [
-        f"- Google (Gmail, Agenda, Contacts) : {'connecté (' + g.get('email', '') + ')' if g else 'non connecté'}",
+        f"- Google (Gmail, Agenda, Contacts) : {'non connecté' if not g else 'à reconnecter par la personne (' + g.get('email', '') + ', jeton refusé : invalid_grant)' if g.get('reconnect_required') else 'connecté (' + g.get('email', '') + ')'}",
         f"- Boîte mail IMAP/SMTP : {'connectée (' + get(user_id, 'email').get('address', '') + ')' if connected(user_id, 'email') else 'non'}",
         f"- LinkedIn API : {'connecté' if connected(user_id, 'linkedin') else 'non (utilise le navigateur)'}",
         f"- Page Facebook API : {'connectée' if get(user_id, 'facebook').get('page_token') else 'non (utilise le navigateur)'}",

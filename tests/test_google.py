@@ -162,3 +162,47 @@ async def test_gmail_request_refused_for_load_is_retried(user, monkeypatch):
     fake_gmail(monkeypatch, handler)
     assert await google.gmail_search(user["id"], "from:digiposte", 10) == []
     assert len(calls) == 2
+
+
+async def test_revoked_google_token_shows_reconnect_until_refresh_works(user, monkeypatch):
+    """Tâche 347 : le jeton de Gert était révoqué depuis dix jours, Réglages affichait « Connecté » et sa routine
+    échouait chaque matin sans qu'il le sache."""
+    from collections import OrderedDict
+
+    from ely.agent.prompts import integrations_status
+    from ely.api.app import create_app
+
+    monkeypatch.setattr(google, "_token_failures", OrderedDict())
+    client = httpx.AsyncClient  # avant fake_gmail, qui remplace httpx.AsyncClient partout
+    put(user["id"], "google", {"access_token": "vieux", "refresh_token": "r", "expires_at": 0, "email": "gert@gmail.com"})
+    revoked = [True]
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "oauth2.googleapis.com":
+            if revoked[0]:
+                return httpx.Response(400, json={"error": "invalid_grant"})
+            return httpx.Response(200, json={"access_token": "neuf", "expires_in": 3600})
+        return httpx.Response(200, json={"messages": []})
+
+    fake_gmail(monkeypatch, handler)
+    try:
+        await google.gmail_search(user["id"], "in:inbox", 5)
+    except RuntimeError as e:
+        assert "invalid_grant" in str(e)
+    else:
+        raise AssertionError("jeton révoqué accepté")
+
+    async with client(transport=httpx.ASGITransport(app=create_app()), base_url="http://ely.test") as c:
+        tok = (await c.post("/api/auth/login", json={"email": user["email"], "password": "motdepasse"})).json()["token"]
+        h = {"Authorization": f"Bearer {tok}"}
+        g = (await c.get("/api/integrations", headers=h)).json()["google"]
+        assert g["connected"] and g["reconnect_required"]
+        assert "à reconnecter" in integrations_status(user["id"])
+
+        # la marque ne bloque pas un renouvellement qui réussit à nouveau
+        revoked[0] = False
+        google._token_failures.clear()
+        assert await google.gmail_search(user["id"], "in:inbox", 5) == []
+        g = (await c.get("/api/integrations", headers=h)).json()["google"]
+        assert g["connected"] and not g["reconnect_required"]
+        assert "connecté (gert@gmail.com)" in integrations_status(user["id"])

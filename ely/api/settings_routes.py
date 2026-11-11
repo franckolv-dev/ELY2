@@ -90,6 +90,7 @@ def integrations(request: Request, user=Depends(auth.current_user)):
     base = settings.external_url(_base(request))
     return {
         "google": {"available": google.enabled(), "connected": bool(g), "email": g.get("email", ""),
+                   "reconnect_required": bool(g.get("reconnect_required")),
                    "redirect_uri": google.redirect_uri(_base(request))},
         "email": {"connected": bool(e), "address": e.get("address", ""), "imap_host": e.get("imap_host", ""),
                   "smtp_host": e.get("smtp_host", "")},
