@@ -10,7 +10,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import shutil
 from dataclasses import dataclass, field
+from subprocess import Popen
 
 from ..auth import get_user
 from ..db import db, now
@@ -21,6 +24,7 @@ log = logging.getLogger("ely.runner")
 # statut final d'une tâche planifiée (outil schedule, action list)
 FINAL_STATUS = {"done": "terminée", "unverified": "terminée sans confirmation", "error": "en échec", "cancelled": "arrêtée",
                 "stopped": "interrompue (limite d'étapes)"}
+CAFFEINATE = shutil.which("caffeinate")  # macOS seulement
 
 
 @dataclass
@@ -77,6 +81,21 @@ class Runner:
         self.subscribers: dict[int, set[asyncio.Queue]] = {}
         self.shutting_down = False
         self.listeners: list = []  # canaux externes (Telegram…) : async fn(user_id, event)
+        self.awake: Popen | None = None
+
+    def keep_awake(self) -> None:
+        """macOS : tant qu'une tâche travaille, le Mac ne se met pas en veille de lui-même (tâche 351 : résumé matinal
+        figé de 9 h 04 à 11 h 16, appel au modèle compris, Chrome déconnecté au réveil ; routines de midi parties à
+        12 h 20). Une question en attente de réponse ne le garde pas éveillé."""
+        if not CAFFEINATE:
+            return
+        busy = any(s.task and not s.task.done() and s.status == "running" for s in self.states.values())
+        alive = self.awake is not None and self.awake.poll() is None
+        if busy and not alive:  # -w : l'assertion tombe d'elle-même si Ely s'arrête
+            self.awake = Popen([CAFFEINATE, "-i", "-w", str(os.getpid())])
+        elif not busy and alive:
+            self.awake.terminate()
+            self.awake = None
 
     # ------------------------------------------------------------------ événements
     def subscribe(self, user_id: int) -> asyncio.Queue:
@@ -192,6 +211,7 @@ class Runner:
                 if self.shutting_down:
                     return
                 st.status = "idle"
+                self.keep_awake()
                 st.ask = None
                 st.ask_future = None
                 st.partial = st.activity = ""
@@ -211,6 +231,7 @@ class Runner:
                     self._start(st, new_id, user, resume=False)
 
         st.task = asyncio.create_task(body())
+        self.keep_awake()
 
     def working(self, except_channel: str = "") -> list[ConvState]:
         """Tâches en plein travail (une question en attente ne compte pas : elle survit au redémarrage), hors canal donné."""

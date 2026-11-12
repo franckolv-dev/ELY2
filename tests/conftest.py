@@ -115,9 +115,11 @@ def user():
 
 @pytest.fixture(autouse=True, scope="session")
 def _tools():
+    from ely.agent import runner
     from ely.tools import load_builtin_tools
 
     load_builtin_tools()
+    runner.CAFFEINATE = None  # les tests ne retiennent pas la mise en veille du Mac
     yield
     shutil.rmtree(_TMP, ignore_errors=True)
 

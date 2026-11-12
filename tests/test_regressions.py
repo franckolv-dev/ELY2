@@ -138,6 +138,51 @@ async def test_slow_verification_does_not_hold_the_task(fake, user, monkeypatch)
     assert len(calls) == 1
 
 
+async def test_mac_stays_awake_only_while_a_task_works(fake, user, monkeypatch):
+    """Tâche 351 : le Mac s'est mis en veille en plein résumé matinal, figé de 9 h 04 à 11 h 16. Une tâche qui
+    travaille retient la veille ; une question en attente de réponse et la fin de la tâche la libèrent."""
+    from ely.agent import runner as runner_mod
+
+    launched, stopped = [], []
+
+    class Caffeinate:
+        def __init__(self, cmd):
+            launched.append(cmd)
+            self.code = None
+
+        def poll(self):
+            return self.code
+
+        def terminate(self):
+            self.code = 0
+            stopped.append(True)
+
+    monkeypatch.setattr(runner_mod, "CAFFEINATE", "/usr/bin/caffeinate")
+    monkeypatch.setattr(runner_mod, "Popen", Caffeinate)
+    release = asyncio.Event()
+
+    async def fn(model, system, messages, tools):
+        text = last_user_text(messages)
+        if "contrôleur qualité" in text or "Donne un titre" in text:
+            return '{"done": true, "missing": ""}'
+        if not tool_results(messages):
+            await release.wait()
+            return call("ask_user", question="Quel compte ?")
+        return "Résumé envoyé."
+
+    fake.script = fn
+    cid = new_conversation(user)
+    await runner.submit(user, cid, "Fais mon résumé du matin")
+    await asyncio.sleep(0.05)
+    assert len(launched) == 1 and launched[0][:3] == ["/usr/bin/caffeinate", "-i", "-w"] and not stopped
+    release.set()
+    await wait_status(cid, "waiting_user")
+    assert len(stopped) == 1
+    await runner.submit(user, cid, "Gmail")
+    await wait_idle(cid)
+    assert len(launched) == 2 and len(stopped) == 2 and runner.awake is None
+
+
 async def test_controller_is_told_not_to_demand_a_checkout(fake, user):
     """Pour une comparaison de prix, le contrôleur avait exigé que l'offre soit « vérifiée dans le panier » : l'agent a
     créé un compte Cdiscount, saisi date de naissance, adresse et téléphone et atteint la page de paiement."""
