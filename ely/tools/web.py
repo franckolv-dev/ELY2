@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import time
+from datetime import date
 
 import httpx
 
@@ -246,6 +247,7 @@ async def web_fetch(ctx: ToolContext, url: str, max_chars: int = 15000) -> ToolR
     return ToolResult(f"# {title}\nSource : {url}\n\n{text}")
 
 
+WEEKDAYS = ("lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche")
 WMO = {0: "ciel dégagé", 1: "plutôt dégagé", 2: "partiellement nuageux", 3: "couvert", 45: "brouillard", 48: "brouillard givrant",
        51: "bruine légère", 53: "bruine", 55: "bruine forte", 61: "pluie faible", 63: "pluie", 65: "forte pluie",
        66: "pluie verglaçante", 67: "forte pluie verglaçante", 71: "neige faible", 73: "neige", 75: "forte neige",
@@ -268,7 +270,7 @@ async def weather(ctx: ToolContext, location: str, days: int = 3) -> ToolResult:
         p = next((r for r in res if any(h in str(r.get(k, "")).casefold() for h in hints
                                         for k in ("admin1", "admin2", "admin3", "country", "country_code"))), res[0])
         f = await c.get("https://api.open-meteo.com/v1/forecast", params={
-            "latitude": p["latitude"], "longitude": p["longitude"], "timezone": "auto", "forecast_days": max(1, min(days, 14)),
+            "latitude": p["latitude"], "longitude": p["longitude"], "timezone": "auto", "forecast_days": max(2, min(days, 14)),
             "current": "temperature_2m,apparent_temperature,weather_code,wind_speed_10m,relative_humidity_2m,precipitation",
             "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max"})
         d = f.json()
@@ -278,6 +280,9 @@ async def weather(ctx: ToolContext, location: str, days: int = 3) -> ToolResult:
              f"vent {cur['wind_speed_10m']} km/h, humidité {cur['relative_humidity_2m']}%"]
     dd = d["daily"]
     for i, day in enumerate(dd["time"]):
-        lines.append(f"{day} : {WMO.get(dd['weather_code'][i], '?')}, {dd['temperature_2m_min'][i]}–{dd['temperature_2m_max'][i]}°C, "
+        # Jour de la semaine et repère relatif écrits en clair : qwen3.5-9b annonçait « demain (mercredi 13 novembre) »
+        # pour un vendredi, et lfm3-omni-2b donnait la météo du jour pour celle du lendemain (tâches 359, 360)
+        label = WEEKDAYS[date.fromisoformat(day).weekday()] + {0: " (aujourd'hui)", 1: " (demain)"}.get(i, "")
+        lines.append(f"{label} {day} : {WMO.get(dd['weather_code'][i], '?')}, {dd['temperature_2m_min'][i]}–{dd['temperature_2m_max'][i]}°C, "
                      f"pluie {dd['precipitation_sum'][i]} mm ({dd['precipitation_probability_max'][i]}%), vent max {dd['wind_speed_10m_max'][i]} km/h")
     return ToolResult("\n".join(lines))

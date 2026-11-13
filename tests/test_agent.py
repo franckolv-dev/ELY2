@@ -945,6 +945,38 @@ async def test_refusal_that_only_leaves_an_action_to_the_user_ends_the_task(fake
         assert await loop.verify("Prépare le script", [], "Voici", user["id"]) == (False, missing)
 
 
+async def test_refusal_that_asks_for_nothing_is_accepted(fake, user):
+    """Tâche 361 : « quel modèle es-tu ? » refusé parce que « la demande ne contient pas d'action » ; tâche 365 :
+    surveillance Digiposte refusée trois fois pour « aucun nouveau mail pertinent n'a été trouvé », cas où la routine
+    dit de terminer. Un manque réel, ou « nouveau » hors d'une routine, reste un refus."""
+    from ely.agent import loop
+    verdict = {}
+
+    def fn(model, system, messages, tools):
+        return json.dumps({"done": False, **verdict}, ensure_ascii=False)
+
+    fake.script = fn
+    verdict["missing"] = "la demande ne contient pas d'action, donc aucune action n'a été effectuée."
+    assert await loop.verify("quel modèle es-tu ?", [], "Je suis Ely.", user["id"]) == (True, "")
+
+    routine = "[Tâche planifiée #5] Surveiller les nouveaux mails Digiposte ; s'il n'y en a pas, terminer immédiatement."
+    history = [{"role": "user", "content": routine},
+               {"role": "assistant", "content": "", "tool_calls": [{"id": "c1", "name": "email_search", "arguments": {"query": "from:digiposte"}}]},
+               {"role": "tool", "tool_call_id": "c1", "name": "email_search", "content": "2 e-mail(s), déjà traités"}]
+    answer = "Aucun nouveau mail Digiposte pertinent. Je termine sans accéder à Digiposte."
+    for missing in ("Aucun nouveau mail Digiposte pertinent n'a été trouvé. Les deux notifications ont déjà été traitées.",
+                    "Aucun nouveau mail Digiposte pertinent n'a été trouvé depuis le 30/09/2026; la routine ne peut être "
+                    "exécutée sans accès Digiposte ni téléchargement de nouveau PDF."):
+        verdict["missing"] = missing
+        assert await loop.verify(routine, history, answer, user["id"]) == (True, "")
+
+    for objective, missing in ((routine, "Aucun nouveau mail n'a été trouvé : il faut aussi chercher dans les spams."),
+                               (routine, "Le bulletin d'octobre n'a pas été importé dans Drive."),
+                               ("Trouve-moi les nouveaux mails", "Aucun nouveau mail n'a été trouvé.")):
+        verdict["missing"] = missing
+        assert await loop.verify(objective, history, answer, user["id"]) == (False, missing)
+
+
 async def test_link_to_a_file_never_written_is_relaunched_until_the_file_exists(fake, user):
     """« Génère un fichier markdown » : gemma-4-12b répondait avec un lien /files/… sans avoir appelé file_write, le
     contrôleur acceptait et la personne cliquait sur un fichier introuvable. Le lien est vérifié sans modèle."""

@@ -262,6 +262,20 @@ def user_only(missing: str) -> bool:
     return bool(USER_TODO.search(missing)) and not AGENT_TODO.search(missing)
 
 
+# Refus qui ne réclame rien : lfm3-omni-2b refusait « quel modèle es-tu ? » parce que « la demande ne contient pas
+# d'action » (tâche 361), et une surveillance Digiposte pour « aucun nouveau mail pertinent n'a été trouvé », alors que
+# la routine disait de terminer dans ce cas (tâche 365) : trois relances, puis « je n'ai pas pu confirmer »
+NO_ACTION_ASKED = re.compile(r"\b(?:demande|question)\s+ne\s+(?:contient|comporte|demande|r[ée]clame)\s+(?:pas|aucune)\s+(?:d['’])?action"
+                             r"|\baucune action n['’](?:est|[ée]tait|a [ée]t[ée]) (?:demand[ée]e|requise|n[ée]cessaire)", re.I)
+NOTHING_NEW = re.compile(r"^\W*(?:pas de |aucun(?:e)?s? )(?:[\w'’-]+ ){0,3}?nouve(?:au|l|lle|aux|lles)\b", re.I)
+
+
+def nothing_asked(objective: str, missing: str) -> bool:
+    if AGENT_TODO.search(missing):
+        return False
+    return bool(NO_ACTION_ASKED.search(missing)) or (objective.startswith("[Tâche planifiée") and bool(NOTHING_NEW.search(missing)))
+
+
 def has_notified(history: list[dict]) -> bool:
     return any(m["role"] == "tool" and m.get("name") == "notify" and not m.get("is_error") for m in history)
 
@@ -339,7 +353,8 @@ Réponds uniquement en JSON : {{"done": true ou false, "missing": "ce qui manque
             if not isinstance(done, bool):
                 raise ValueError(f"verdict illisible : {raw[:200]}")
             missing = str(v.get("missing", ""))[:600]
-            if not done and (reconnect_only(history, answer, missing) or user_only(missing) or relaunched_since_notify(history)):
+            if not done and (reconnect_only(history, answer, missing) or user_only(missing) or relaunched_since_notify(history)
+                             or nothing_asked(objective, missing)):
                 return True, ""
             return done, missing
         except TimeoutError:
