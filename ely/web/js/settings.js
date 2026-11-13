@@ -185,8 +185,13 @@ function Connections({ onMe }) {
     <button class="btn small danger" onClick=${onOff}>${off}</button></div>`;
   return html`
     <${ChromeRow} onMe=${onMe} />
-    <${Row} title="Google" hint=${t("conn.googleHint")} badge=${html`<${Status} on=${data.google.connected} label=${t("common.connected")} />`}>
-      ${data.google.connected ? html`<${Linked} who=${data.google.email} onOff=${() => disconnect("google")} />`
+    <${Row} title="Google" hint=${t("conn.googleHint")} badge=${data.google.reconnect_required
+      ? html` <span class="pill err">${t("conn.googleExpired")}</span>`
+      : html`<${Status} on=${data.google.connected} label=${t("common.connected")} />`}>
+      ${data.google.connected && data.google.reconnect_required ? html`<p class="desc">${t("conn.googleExpiredHelp")}</p>
+        <div class="row"><a class="btn primary" href="/api/integrations/google/start">${t("conn.googleReconnect")}</a>
+          <button class="btn small danger" onClick=${() => disconnect("google")}>${t("common.disconnect")}</button></div>`
+        : data.google.connected ? html`<${Linked} who=${data.google.email} onOff=${() => disconnect("google")} />`
         : data.google.available ? html`<div><a class="btn primary" href="/api/integrations/google/start">${t("conn.googleConnect")}</a></div>`
         : html`<p class="desc">${t("conn.googleAdmin", { uri: data.google.redirect_uri })}</p>`}
     <//>

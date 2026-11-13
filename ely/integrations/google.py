@@ -82,8 +82,8 @@ def _token_lock(user_id: int) -> asyncio.Lock:
 
 def _token_fingerprint(data: dict) -> bytes:
     # Inclure toute la connexion : une reconnexion, même avec le même refresh
-    # token, invalide immédiatement l'échec précédent.
-    return hashlib.sha256(repr(sorted(data.items())).encode()).digest()
+    # token, invalide immédiatement l'échec précédent. La marque « à reconnecter » n'en fait pas partie.
+    return hashlib.sha256(repr(sorted((k, v) for k, v in data.items() if k != "reconnect_required")).encode()).digest()
 
 
 async def _token(user_id: int) -> str:
@@ -118,12 +118,16 @@ async def _token(user_id: int) -> str:
                     _token_failures[user_id] = (fingerprint, time.monotonic() + TOKEN_FAILURE_TTL)
                     while len(_token_failures) > TOKEN_FAILURE_LIMIT:
                         _token_failures.popitem(last=False)
+                    # affiché dans Réglages → Connexions : sinon la personne voit « Connecté » et ignore le blocage
+                    if not data.get("reconnect_required"):
+                        put(user_id, "google", {**data, "reconnect_required": True})
                     raise RuntimeError(RECONNECT)
                 # Une panne réseau/serveur ou de configuration n'est pas la preuve
                 # d'un jeton révoqué ; elle reste réessayable, sans cache négatif.
                 raise RuntimeError(f"Échec du renouvellement Google OAuth (HTTP {r.status_code}) ; "
                                    "reconnexion utilisateur non établie.")
             tok = r.json()
+            data.pop("reconnect_required", None)
             data.update(access_token=tok["access_token"], expires_at=time.time() + int(tok.get("expires_in", 3600)) - 60)
             if tok.get("refresh_token"):
                 data["refresh_token"] = tok["refresh_token"]
