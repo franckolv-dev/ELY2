@@ -432,6 +432,7 @@ class AgentLoop:
         from ..notify import notify
 
         self.st.status = "waiting_user"
+        self.runner.keep_awake()
         self.st.ask = {"question": question, "options": options or [], "tool_call_id": tool_call_id}
         self.st.ask_future = asyncio.get_running_loop().create_future()
         db.run("UPDATE runs SET status = 'waiting_user', updated_at = ? WHERE id = ?", (now(), self.run_id))
@@ -446,6 +447,7 @@ class AgentLoop:
 
     async def _ask_done(self) -> None:
         self.st.status = "running"
+        self.runner.keep_awake()
         self.st.ask = None
         self.st.ask_future = None
         db.run("UPDATE runs SET status = 'running', updated_at = ? WHERE id = ?", (now(), self.run_id))
