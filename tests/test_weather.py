@@ -34,3 +34,24 @@ async def test_weather_accepts_city_with_region_and_country(user, monkeypatch):
     r = await execute(ctx, "weather", {"location": "Bédarieux, Hérault, France"})
     assert not r.is_error, r.content
     assert asked == ["Bédarieux"] and "Occitanie" in r.content and "France" in r.content
+
+
+async def test_weather_names_weekday_and_tomorrow(user, monkeypatch):
+    """« Demain » demandé avec days=1 : le lendemain est quand même fourni, chaque jour porte son nom et son repère."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "geocoding" in request.url.host:
+            return httpx.Response(200, json={"results": [{"name": "Poitiers", "latitude": 46.6, "longitude": 0.3,
+                                                          "admin1": "Nouvelle-Aquitaine", "country": "France"}]})
+        n = int(request.url.params["forecast_days"])
+        return httpx.Response(200, json={
+            "current": {"temperature_2m": 12, "apparent_temperature": 12, "weather_code": 3, "wind_speed_10m": 4, "relative_humidity_2m": 96},
+            "daily": {"time": ["2026-11-12", "2026-11-13"][:n], "weather_code": [61, 3][:n], "temperature_2m_min": [7, 3][:n],
+                      "temperature_2m_max": [13, 10][:n], "precipitation_sum": [0, 0][:n],
+                      "precipitation_probability_max": [78, 0][:n], "wind_speed_10m_max": [18, 15][:n]}})
+
+    real = httpx.AsyncClient
+    monkeypatch.setattr(web.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+    ctx = ToolContext(user=user, conversation_id=new_conversation(user), run_id=0, emit=_noop)
+    r = await execute(ctx, "weather", {"location": "Poitiers", "days": 1})
+    assert "jeudi (aujourd'hui) 2026-11-12" in r.content, r.content
+    assert "vendredi (demain) 2026-11-13" in r.content, r.content
