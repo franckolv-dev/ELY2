@@ -977,6 +977,34 @@ async def test_refusal_that_asks_for_nothing_is_accepted(fake, user):
         assert await loop.verify(objective, history, answer, user["id"]) == (False, missing)
 
 
+async def test_deep_research_done_with_a_single_search_is_relaunched_once(fake, user):
+    """Tâche 371 : « fais une recherche approfondie… analyse de marché » de la traduction IDML, rendue par lfm3-omni-2b
+    après un seul web_search (prix tirés des extraits, aucune page ouverte) ; le petit contrôleur acceptait."""
+    from ely.agent import loop
+
+    fake.script = script(lambda messages, tools: "")
+    objective = ("Fais une recherche approfondie pour lister les solutions de traduction IDML, leurs prix, "
+                 "et une analyse de marché du besoin.")
+
+    def searched(*names):
+        history = [{"role": "user", "content": objective}]
+        for i, name in enumerate(names):
+            history += [{"role": "assistant", "content": "", "tool_calls": [{"id": f"c{i}", "name": name, "arguments": {}}]},
+                        {"role": "tool", "tool_call_id": f"c{i}", "name": name, "content": "Résultats…"}]
+        return history
+
+    answer = "| Solution | Prix |\n| IDML Translate | 25,75 € |"
+    done, missing = await loop.verify(objective, searched("web_search"), answer, user["id"])
+    assert done is False and "web_fetch" in missing
+
+    # une seule relance ; une recherche réellement menée ou déléguée passe au contrôleur habituel
+    relaunched = searched("web_search") + [{"role": "user", "kind": "control", "content": loop.rejection_note(missing, [])}]
+    assert await loop.verify(objective, relaunched, answer, user["id"]) == (True, "")
+    assert await loop.verify(objective, searched("web_search", "web_fetch", "web_fetch"), answer, user["id"]) == (True, "")
+    assert await loop.verify(objective, searched("delegate"), answer, user["id"]) == (True, "")
+    assert await loop.verify("Cherche un code promo Indy", searched("web_search"), answer, user["id"]) == (True, "")
+
+
 async def test_link_to_a_file_never_written_is_relaunched_until_the_file_exists(fake, user):
     """« Génère un fichier markdown » : gemma-4-12b répondait avec un lien /files/… sans avoir appelé file_write, le
     contrôleur acceptait et la personne cliquait sur un fichier introuvable. Le lien est vérifié sans modèle."""
