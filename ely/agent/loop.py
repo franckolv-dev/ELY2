@@ -204,6 +204,14 @@ PROMISE = re.compile(r"(?<!que )(?<!si )\bje (?:commence|lance|m['’]en occupe|
                      r"ajouter|programmer|planifier|t[ée]l[ée]charger|classer|ranger))\b", re.I)
 PROMISED = ("La réponse annonce une action (« je commence… », « je vais lancer… ») alors qu'aucun outil n'a été utilisé : "
             "fais-la réellement maintenant avec tes outils, puis rends compte de ce qui a été fait, sans rien annoncer d'autre.")
+# Recherche approfondie demandée, faite en une requête : lfm3-omni-2b rendait une « analyse de marché » de la traduction
+# IDML après un seul web_search, prix tirés des extraits sans ouvrir une page (tâche 371), et le contrôleur acceptait
+DEEP_RESEARCH = re.compile(r"\brecherches?\s+(?:approfondies?|compl[èe]tes?|exhaustives?|d[ée]taill[ée]es?|pouss[ée]es?)\b"
+                           r"|\b(?:analyse|[ée]tude)\s+(?:du\s+|de\s+)?march[ée]\b|\ble\s+maximum\s+de\s+(?:sites?|sources?)\b", re.I)
+WEB_TOOLS = ("web_search", "web_fetch", "browser")
+SHALLOW = ("Une recherche approfondie est demandée, mais le web n'a été consulté que une ou deux fois : multiplie les "
+           "requêtes (angles, concurrents, langues), ouvre les pages sources avec web_fetch pour relever les informations "
+           "(prix, offres) avec leurs liens, et n'avance rien que ces pages ne montrent ; delegate peut paralléliser.")
 ALREADY_NOTIFIED = ("\nLe compte rendu a déjà été envoyé par notify : n'en renvoie pas pour répéter ou prouver ; si une action "
                     "manquait vraiment, fais-la puis envoie un seul court complément.")
 
@@ -222,6 +230,10 @@ def obvious_gap(objective: str, history: list[dict], answer: str) -> str:
     if not scheduled and no_action and PROMISE.search(answer or "") and not (answer or "").rstrip().endswith("?") \
             and not any(PROMISED in str(n) for n in noted):
         return PROMISED
+    calls = [tc["name"] for m in history if m["role"] == "assistant" for tc in m.get("tool_calls") or []]
+    if DEEP_RESEARCH.search(objective) and "delegate" not in calls and sum(n in WEB_TOOLS for n in calls) < 3 \
+            and not any(SHALLOW in str(n) for n in noted):
+        return SHALLOW
     if PLACEHOLDER.search(answer or "") and not any(FICTIVE in str(n) for n in noted):
         return FICTIVE
     if scheduled and NOTIFY_WANTED.search(objective) and not has_notified(history) and not any(NO_NOTIFY in str(n) for n in noted):
